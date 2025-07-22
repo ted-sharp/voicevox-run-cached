@@ -176,8 +176,6 @@ dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
 ## 関連リンク
 
 - [VOICEVOX公式サイト](https://voicevox.hiroshiba.jp/)
-- [VOICEVOX REST API仕様](https://voicevox.hiroshiba.jp/api/)
-- [Issues](https://github.com/ted-sharp/voicevox-run-cached/issues)
 
 ---
 
