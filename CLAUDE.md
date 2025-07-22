@@ -51,12 +51,12 @@ Since no code exists yet, standard .NET commands will apply once implementation 
 
 ### Command Interface
 ```
-VoiceVoxWrapper.exe <text> [--speaker <id>] [--speed <value>] [--pitch <value>] [--volume <value>] [--no-cache] [--cache-only] [--speakers] [--help]
+VoicevoxRunCached.exe <text> [--speaker <id>] [--speed <value>] [--pitch <value>] [--volume <value>] [--no-cache] [--cache-only] [--speakers] [--help]
 ```
 
 ## Project Status
 
-This repository contains only requirements documentation. Implementation should follow the 4-stage development plan:
+The application has been fully implemented and includes all core functionality:
 1. **Stage 1**: MVP with basic text-to-speech
 2. **Stage 2**: Full speaker support and caching
 3. **Stage 3**: Configuration and error handling
