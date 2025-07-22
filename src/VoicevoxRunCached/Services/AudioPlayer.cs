@@ -155,9 +155,9 @@ public class AudioPlayer : IDisposable
                 ((WaveOutEvent)_wavePlayer).DeviceNumber = _settings.OutputDevice;
             }
 
-            // Optimized buffering settings for minimal latency with stability
-            ((WaveOutEvent)_wavePlayer).DesiredLatency = 60; // Reduced to 60ms for faster transitions
-            ((WaveOutEvent)_wavePlayer).NumberOfBuffers = 3;  // Increased to 3 buffers for seamless transitions
+            // Optimized buffering settings for stability - slightly higher latency for reliability
+            ((WaveOutEvent)_wavePlayer).DesiredLatency = 100; // 100ms for stable initialization
+            ((WaveOutEvent)_wavePlayer).NumberOfBuffers = 3;   // 3 buffers for seamless transitions
 
             _wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
 
@@ -189,12 +189,14 @@ public class AudioPlayer : IDisposable
                 ((WaveOutEvent)_wavePlayer).DeviceNumber = _settings.OutputDevice;
             }
 
-            // Optimized buffering settings for minimal latency with stability
-            ((WaveOutEvent)_wavePlayer).DesiredLatency = 60; // Reduced to 60ms for faster transitions
-            ((WaveOutEvent)_wavePlayer).NumberOfBuffers = 3;  // Increased to 3 buffers for seamless transitions
+            // Optimized buffering settings for stability - slightly higher latency for reliability
+            ((WaveOutEvent)_wavePlayer).DesiredLatency = 100; // 100ms for stable initialization
+            ((WaveOutEvent)_wavePlayer).NumberOfBuffers = 3;   // 3 buffers for seamless transitions
 
             _wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
 
+            bool isFirstSegment = true;
+            
             for (int i = 0; i < segments.Count; i++)
             {
                 var segment = segments[i];
@@ -221,7 +223,8 @@ public class AudioPlayer : IDisposable
                     }
                 }
                 
-                await PlaySegmentAsync(segment.AudioData);
+                await PlaySegmentAsync(segment.AudioData, isFirstSegment);
+                isFirstSegment = false;
             }
 
             // Ensure background generation is complete
@@ -236,7 +239,7 @@ public class AudioPlayer : IDisposable
         }
     }
 
-    private async Task PlaySegmentAsync(byte[] audioData)
+    private async Task PlaySegmentAsync(byte[] audioData, bool isFirstSegment = false)
     {
         try
         {
@@ -298,8 +301,17 @@ public class AudioPlayer : IDisposable
 
             _wavePlayer.Init(reader);
             
-            // Minimal delay for initialization - reduced for faster transitions
-            await Task.Delay(10);
+            // First segment needs longer initialization for audio device setup
+            if (isFirstSegment)
+            {
+                // Extended delay for first segment to ensure proper audio device initialization
+                await Task.Delay(100); // 100ms for device initialization
+            }
+            else
+            {
+                // Minimal delay for subsequent segments
+                await Task.Delay(10);
+            }
             
             _wavePlayer.Play();
 
