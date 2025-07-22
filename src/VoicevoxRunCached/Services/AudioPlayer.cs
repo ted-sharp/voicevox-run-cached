@@ -15,6 +15,97 @@ public class AudioPlayer : IDisposable
     {
         _settings = settings;
         MediaFoundationApi.Startup();
+        
+        // Pre-warm audio device to avoid initialization delay on first playback
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await PrewarmAudioDeviceAsync();
+            }
+            catch
+            {
+                // Ignore pre-warming errors - not critical
+            }
+        });
+    }
+
+    private async Task PrewarmAudioDeviceAsync()
+    {
+        try
+        {
+            // Create a very short silent audio to initialize the device
+            var silentWavData = CreateSilentWavData(100); // 100ms silence
+            
+            using var audioStream = new MemoryStream(silentWavData);
+            using var reader = new WaveFileReader(audioStream);
+            using var wavePlayer = new WaveOutEvent();
+            
+            if (_settings.OutputDevice >= 0)
+            {
+                wavePlayer.DeviceNumber = _settings.OutputDevice;
+            }
+            
+            // Use same buffer settings as main playback
+            wavePlayer.DesiredLatency = 100;
+            wavePlayer.NumberOfBuffers = 3;
+            wavePlayer.Volume = 0.0f; // Silent pre-warming
+            
+            var tcs = new TaskCompletionSource<bool>();
+            
+            wavePlayer.PlaybackStopped += (sender, e) =>
+            {
+                tcs.TrySetResult(true);
+            };
+            
+            wavePlayer.Init(reader);
+            wavePlayer.Play();
+            
+            // Wait for pre-warming to complete or timeout after 2 seconds
+            await tcs.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        }
+        catch
+        {
+            // Pre-warming failed, but this is not critical
+        }
+    }
+
+    private byte[] CreateSilentWavData(int durationMs)
+    {
+        // Create minimal WAV file with silence
+        const int sampleRate = 22050;
+        const int channels = 1;
+        const int bitsPerSample = 16;
+        
+        var samplesCount = (sampleRate * durationMs) / 1000;
+        var dataSize = samplesCount * channels * (bitsPerSample / 8);
+        var fileSize = 44 + dataSize - 8;
+        
+        using var stream = new MemoryStream();
+        using var writer = new BinaryWriter(stream);
+        
+        // WAV header
+        writer.Write("RIFF".ToCharArray());
+        writer.Write(fileSize);
+        writer.Write("WAVE".ToCharArray());
+        writer.Write("fmt ".ToCharArray());
+        writer.Write(16); // PCM format chunk size
+        writer.Write((short)1); // PCM format
+        writer.Write((short)channels);
+        writer.Write(sampleRate);
+        writer.Write(sampleRate * channels * (bitsPerSample / 8)); // Byte rate
+        writer.Write((short)(channels * (bitsPerSample / 8))); // Block align
+        writer.Write((short)bitsPerSample);
+        writer.Write("data".ToCharArray());
+        writer.Write(dataSize);
+        
+        // Silent audio data (all zeros)
+        for (int i = 0; i < samplesCount; i++)
+        {
+            writer.Write((short)0);
+        }
+        
+        return stream.ToArray();
     }
 
     public async Task PlayAudioStreamingAsync(byte[] audioData, Func<byte[], Task>? cacheCallback = null)
@@ -305,7 +396,8 @@ public class AudioPlayer : IDisposable
             if (isFirstSegment)
             {
                 // Extended delay for first segment to ensure proper audio device initialization
-                await Task.Delay(100); // 100ms for device initialization
+                // Wait for pre-warming to complete if still in progress
+                await Task.Delay(200); // 200ms for device initialization and stability
             }
             else
             {

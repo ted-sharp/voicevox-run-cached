@@ -561,3 +561,9 @@ Thumbs.db
 *.swp
 *.swo
 *~
+
+# VoicevoxRunCached specific
+cache/
+*.mp3
+*.meta.json
+release/
