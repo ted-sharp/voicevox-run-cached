@@ -74,8 +74,6 @@ Set-Alias voice "C:\Program Files\VoicevoxRunCached\VoicevoxRunCached.exe"
 **バッチファイル作成**
 
 適切な保存場所：
-- `C:\Windows\System32\` （システム全体、管理者権限必要）
-- `C:\Windows\` （システム全体、管理者権限必要）  
 - `%USERPROFILE%\bin\` （ユーザー専用、推奨）
 - `C:\Tools\bin\` （カスタムツール用）
 
