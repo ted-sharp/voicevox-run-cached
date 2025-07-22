@@ -38,8 +38,12 @@ class Program
 
     private static IConfiguration BuildConfiguration()
     {
+        // Use the directory where the executable is located, not the current working directory
+        var executablePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
+        var executableDirectory = Path.GetDirectoryName(executablePath) ?? Directory.GetCurrentDirectory();
+        
         return new ConfigurationBuilder()
-            .SetBasePath(Directory.GetCurrentDirectory())
+            .SetBasePath(executableDirectory)
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
             .Build();
     }
