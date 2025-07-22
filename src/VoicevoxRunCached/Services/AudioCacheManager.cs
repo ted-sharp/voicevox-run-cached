@@ -1,6 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using NAudio.Wave;
+using NAudio.Lame;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 
@@ -19,7 +21,7 @@ public class AudioCacheManager
     public async Task<byte[]?> GetCachedAudioAsync(VoiceRequest request)
     {
         var cacheKey = ComputeCacheKey(request);
-        var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.wav");
+        var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
         var metaFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
 
         if (!File.Exists(audioFilePath) || !File.Exists(metaFilePath))
@@ -50,12 +52,14 @@ public class AudioCacheManager
     public async Task SaveAudioCacheAsync(VoiceRequest request, byte[] audioData)
     {
         var cacheKey = ComputeCacheKey(request);
-        var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.wav");
+        var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
         var metaFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
 
         try
         {
-            await File.WriteAllBytesAsync(audioFilePath, audioData);
+            // Convert WAV to MP3
+            var mp3Data = ConvertWavToMp3(audioData);
+            await File.WriteAllBytesAsync(audioFilePath, mp3Data);
 
             var metadata = new CacheMetadata
             {
@@ -143,11 +147,28 @@ public class AudioCacheManager
         return DateTime.UtcNow - createdAt > TimeSpan.FromDays(_settings.ExpirationDays);
     }
 
+    private byte[] ConvertWavToMp3(byte[] wavData)
+    {
+        try
+        {
+            using var wavStream = new MemoryStream(wavData);
+            using var waveReader = new WaveFileReader(wavStream);
+            using var outputStream = new MemoryStream();
+            
+            MediaFoundationEncoder.EncodeToMp3(waveReader, outputStream, 128000);
+            return outputStream.ToArray();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Failed to convert WAV to MP3: {ex.Message}", ex);
+        }
+    }
+
     private Task DeleteCacheFileAsync(string cacheKey)
     {
         try
         {
-            var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.wav");
+            var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
             var metaFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
 
             if (File.Exists(audioFilePath))

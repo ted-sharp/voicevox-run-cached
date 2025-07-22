@@ -1,4 +1,5 @@
 using NAudio.Wave;
+using NAudio.MediaFoundation;
 using VoicevoxRunCached.Configuration;
 
 namespace VoicevoxRunCached.Services;
@@ -12,6 +13,7 @@ public class AudioPlayer : IDisposable
     public AudioPlayer(AudioSettings settings)
     {
         _settings = settings;
+        MediaFoundationApi.Startup();
     }
 
     public async Task PlayAudioAsync(byte[] audioData)
@@ -24,7 +26,45 @@ public class AudioPlayer : IDisposable
             StopAudio();
 
             using var audioStream = new MemoryStream(audioData);
-            using var waveFileReader = new WaveFileReader(audioStream);
+            WaveStream reader;
+            
+            // Try to detect if it's MP3 or WAV by reading the header
+            audioStream.Position = 0;
+            var header = new byte[12];
+            var bytesRead = await audioStream.ReadAsync(header, 0, 12);
+            audioStream.Position = 0;
+            
+            // Check for WAV header (RIFF....WAVE)
+            bool isWav = bytesRead >= 12 && 
+                         header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F' &&
+                         header[8] == 'W' && header[9] == 'A' && header[10] == 'V' && header[11] == 'E';
+            
+            // Check for MP3 header (starts with 0xFF)
+            bool isMp3 = bytesRead >= 2 && header[0] == 0xFF && (header[1] & 0xE0) == 0xE0;
+            
+            if (isWav)
+            {
+                reader = new WaveFileReader(audioStream);
+            }
+            else if (isMp3)
+            {
+                reader = new Mp3FileReader(audioStream);
+            }
+            else
+            {
+                // Try MP3 first since we're primarily caching MP3 files now
+                try
+                {
+                    audioStream.Position = 0;
+                    reader = new Mp3FileReader(audioStream);
+                }
+                catch
+                {
+                    // Fall back to WAV if MP3 fails
+                    audioStream.Position = 0;
+                    reader = new WaveFileReader(audioStream);
+                }
+            }
             
             _wavePlayer = new WaveOutEvent();
             
@@ -39,6 +79,7 @@ public class AudioPlayer : IDisposable
             
             _wavePlayer.PlaybackStopped += (sender, e) =>
             {
+                reader.Dispose();
                 if (e.Exception != null)
                 {
                     tcs.TrySetException(e.Exception);
@@ -49,7 +90,7 @@ public class AudioPlayer : IDisposable
                 }
             };
 
-            _wavePlayer.Init(waveFileReader);
+            _wavePlayer.Init(reader);
             _wavePlayer.Play();
 
             await tcs.Task;
@@ -102,6 +143,7 @@ public class AudioPlayer : IDisposable
         if (!_disposed)
         {
             StopAudio();
+            MediaFoundationApi.Shutdown();
             _disposed = true;
         }
         GC.SuppressFinalize(this);
