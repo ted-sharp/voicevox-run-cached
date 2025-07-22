@@ -141,25 +141,94 @@ class Program
             var cacheManager = new AudioCacheManager(settings.Cache);
             byte[]? audioData = null;
 
+            // Process text in segments for better cache efficiency
             if (!noCache)
             {
-                Console.WriteLine("Checking cache...");
-                audioData = await cacheManager.GetCachedAudioAsync(request);
-                if (audioData != null)
+                Console.WriteLine("Processing segments...");
+                var segments = await cacheManager.ProcessTextSegmentsAsync(request);
+                var cachedCount = segments.Count(s => s.IsCached);
+                var totalCount = segments.Count;
+                
+                if (cachedCount > 0)
                 {
-                    Console.WriteLine("Found in cache!");
+                    Console.WriteLine($"Found {cachedCount}/{totalCount} segments in cache!");
                 }
+
+                var audioSegments = new List<byte[]>();
+                var uncachedSegments = new List<TextSegment>();
+
+                // Collect cached segments and identify uncached ones
+                foreach (var segment in segments)
+                {
+                    if (segment.IsCached && segment.AudioData != null)
+                    {
+                        audioSegments.Add(segment.AudioData);
+                    }
+                    else
+                    {
+                        uncachedSegments.Add(segment);
+                        audioSegments.Add(Array.Empty<byte>()); // Placeholder
+                    }
+                }
+
+                // Generate uncached segments
+                if (uncachedSegments.Count > 0)
+                {
+                    if (cacheOnly)
+                    {
+                        Console.WriteLine($"Error: {uncachedSegments.Count} segments not cached and --cache-only specified");
+                        Environment.Exit(1);
+                        return;
+                    }
+
+                    Console.WriteLine($"Generating {uncachedSegments.Count} segments...");
+                    using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
+                    await apiClient.InitializeSpeakerAsync(request.SpeakerId);
+
+                    for (int i = 0; i < segments.Count; i++)
+                    {
+                        if (!segments[i].IsCached)
+                        {
+                            var segmentRequest = new VoiceRequest
+                            {
+                                Text = segments[i].Text,
+                                SpeakerId = request.SpeakerId,
+                                Speed = request.Speed,
+                                Pitch = request.Pitch,
+                                Volume = request.Volume
+                            };
+
+                            var audioQuery = await apiClient.GenerateAudioQueryAsync(segmentRequest);
+                            var segmentAudio = await apiClient.SynthesizeAudioAsync(audioQuery, segmentRequest.SpeakerId);
+                            
+                            audioSegments[i] = segmentAudio;
+                            segments[i].AudioData = segmentAudio;
+
+                            // Cache the segment
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    await cacheManager.SaveAudioCacheAsync(segmentRequest, segmentAudio);
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.WriteLine($"Warning: Failed to cache segment: {ex.Message}");
+                                }
+                            });
+                        }
+                    }
+                }
+
+                // Play segments sequentially
+                Console.WriteLine("Playing audio...");
+                using var audioPlayer = new AudioPlayer(settings.Audio);
+                var validSegments = TextSegmentProcessor.GetSegmentAudioData(audioSegments);
+                await audioPlayer.PlayAudioSequentiallyAsync(validSegments);
             }
-
-            if (audioData == null)
+            else
             {
-                if (cacheOnly)
-                {
-                    Console.WriteLine("Error: No cached audio found and --cache-only specified");
-                    Environment.Exit(1);
-                    return;
-                }
-
+                // Original non-cached behavior for --no-cache
                 Console.WriteLine("Generating speech...");
                 using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
                 
@@ -167,27 +236,7 @@ class Program
                 
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(request);
                 audioData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId);
-
-                Console.WriteLine("Playing audio...");
-                using var audioPlayer = new AudioPlayer(settings.Audio);
                 
-                if (!noCache)
-                {
-                    // Play with streaming cache - audio plays immediately while caching happens in parallel
-                    await audioPlayer.PlayAudioStreamingAsync(audioData, async (data) =>
-                    {
-                        Console.WriteLine("Saving to cache...");
-                        await cacheManager.SaveAudioCacheAsync(request, data);
-                    });
-                }
-                else
-                {
-                    // Play without caching
-                    await audioPlayer.PlayAudioAsync(audioData);
-                }
-            }
-            else
-            {
                 Console.WriteLine("Playing audio...");
                 using var audioPlayer = new AudioPlayer(settings.Audio);
                 await audioPlayer.PlayAudioAsync(audioData);

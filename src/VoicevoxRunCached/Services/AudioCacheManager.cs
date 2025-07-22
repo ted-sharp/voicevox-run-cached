@@ -126,6 +126,33 @@ public class AudioCacheManager
         }
     }
 
+    public async Task<List<TextSegment>> ProcessTextSegmentsAsync(VoiceRequest request)
+    {
+        var segments = TextSegmentProcessor.SegmentText(request.Text);
+        
+        // Check cache for each segment
+        foreach (var segment in segments)
+        {
+            var segmentRequest = new VoiceRequest
+            {
+                Text = segment.Text,
+                SpeakerId = request.SpeakerId,
+                Speed = request.Speed,
+                Pitch = request.Pitch,
+                Volume = request.Volume
+            };
+            
+            var cachedData = await GetCachedAudioAsync(segmentRequest);
+            if (cachedData != null)
+            {
+                segment.IsCached = true;
+                segment.AudioData = cachedData;
+            }
+        }
+        
+        return segments;
+    }
+
     public string ComputeCacheKey(VoiceRequest request)
     {
         var keyString = $"{request.Text}|{request.SpeakerId}|{request.Speed:F2}|{request.Pitch:F2}|{request.Volume:F2}";

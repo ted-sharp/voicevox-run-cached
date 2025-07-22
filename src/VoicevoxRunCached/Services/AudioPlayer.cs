@@ -139,6 +139,121 @@ public class AudioPlayer : IDisposable
         }
     }
 
+    public async Task PlayAudioSequentiallyAsync(List<byte[]> audioSegments)
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(AudioPlayer));
+
+        try
+        {
+            // Initialize single WavePlayer instance for all segments
+            _wavePlayer = new WaveOutEvent();
+            
+            if (_settings.OutputDevice >= 0)
+            {
+                ((WaveOutEvent)_wavePlayer).DeviceNumber = _settings.OutputDevice;
+            }
+
+            // Optimized buffering settings for minimal latency with stability
+            ((WaveOutEvent)_wavePlayer).DesiredLatency = 60; // Reduced to 60ms for faster transitions
+            ((WaveOutEvent)_wavePlayer).NumberOfBuffers = 3;  // Increased to 3 buffers for seamless transitions
+
+            _wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
+
+            foreach (var segment in audioSegments)
+            {
+                if (segment.Length == 0) continue;
+                
+                await PlaySegmentAsync(segment);
+            }
+        }
+        finally
+        {
+            StopAudio();
+        }
+    }
+
+    private async Task PlaySegmentAsync(byte[] audioData)
+    {
+        try
+        {
+            using var audioStream = new MemoryStream(audioData);
+            WaveStream reader;
+            
+            // Try to detect if it's MP3 or WAV by reading the header
+            audioStream.Position = 0;
+            var header = new byte[12];
+            var bytesRead = await audioStream.ReadAsync(header, 0, 12);
+            audioStream.Position = 0;
+            
+            // Check for WAV header (RIFF....WAVE)
+            bool isWav = bytesRead >= 12 && 
+                         header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F' &&
+                         header[8] == 'W' && header[9] == 'A' && header[10] == 'V' && header[11] == 'E';
+            
+            // Check for MP3 header (starts with 0xFF)
+            bool isMp3 = bytesRead >= 2 && header[0] == 0xFF && (header[1] & 0xE0) == 0xE0;
+            
+            if (isWav)
+            {
+                reader = new WaveFileReader(audioStream);
+            }
+            else if (isMp3)
+            {
+                reader = new Mp3FileReader(audioStream);
+            }
+            else
+            {
+                // Try MP3 first since we're primarily caching MP3 files now
+                try
+                {
+                    audioStream.Position = 0;
+                    reader = new Mp3FileReader(audioStream);
+                }
+                catch
+                {
+                    // Fall back to WAV if MP3 fails
+                    audioStream.Position = 0;
+                    reader = new WaveFileReader(audioStream);
+                }
+            }
+            
+            var tcs = new TaskCompletionSource<bool>();
+            
+            _wavePlayer.PlaybackStopped += (sender, e) =>
+            {
+                reader.Dispose();
+                if (e.Exception != null)
+                {
+                    tcs.TrySetException(e.Exception);
+                }
+                else
+                {
+                    tcs.TrySetResult(true);
+                }
+            };
+
+            _wavePlayer.Init(reader);
+            
+            // Minimal delay for initialization - reduced for faster transitions
+            await Task.Delay(10);
+            
+            _wavePlayer.Play();
+
+            await tcs.Task;
+            
+            // Ensure complete audio playback - increased delay for proper segment completion
+            await Task.Delay(120);
+            
+            // Stop but don't dispose the WavePlayer - reuse for next segment
+            _wavePlayer.Stop();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Failed to play audio segment: {ex.Message}", ex);
+        }
+    }
+
     public async Task PlayAudioAsync(byte[] audioData)
     {
         if (_disposed)
