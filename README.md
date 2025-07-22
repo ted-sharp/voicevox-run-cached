@@ -28,8 +28,66 @@ VoicevoxRunCachedは、VOICEVOX REST APIを使用してテキストから音声�
 
 1. [Releases](https://github.com/ted-sharp/voicevox-run-cached/releases)から最新版をダウンロード
 2. `VoicevoxRunCached-v1.0.0-win-x64.zip`を任意のフォルダに展開
+   - 推奨場所: `C:\Program Files\VoicevoxRunCached\` または `C:\Tools\VoicevoxRunCached\`
 3. `appsettings.json`でVOICEVOXエンジンの設定を確認・調整
-4. コマンドプロンプトまたはPowerShellから実行
+4. **オプション**: パス設定やエイリアス設定（詳細は下記参照）
+5. コマンドプロンプトまたはPowerShellから実行
+
+### パス設定とエイリアス設定
+
+どこからでもコマンドを実行できるように設定することをお勧めします：
+
+#### 環境変数PATHに追加（推奨）
+
+**方法1: GUI設定**
+1. Windowsキー + R → `sysdm.cpl` → Enter
+2. 「詳細設定」タブ → 「環境変数」
+3. 「システム環境変数」の「Path」を選択 → 「編集」
+4. 「新規」→ VoicevoxRunCached.exeがあるフォルダを追加
+   - 例: `C:\Program Files\VoicevoxRunCached`
+5. 「OK」で保存後、新しいコマンドプロンプトを開く
+
+**方法2: PowerShellコマンド（管理者権限必要）**
+```powershell
+# 現在のPATHを表示
+$env:PATH -split ";"
+
+# PATHに追加（例: C:\Program Files\VoicevoxRunCached）
+[Environment]::SetEnvironmentVariable("PATH", $env:PATH + ";C:\Program Files\VoicevoxRunCached", [EnvironmentVariableTarget]::Machine)
+```
+
+#### エイリアス設定
+
+**PowerShell用エイリアス**
+```powershell
+# 一時的なエイリアス（現在のセッションのみ）
+Set-Alias voice "C:\Program Files\VoicevoxRunCached\VoicevoxRunCached.exe"
+
+# 永続的なエイリアス（PowerShellプロファイルに追加）
+# プロファイルファイルを開く
+notepad $PROFILE
+
+# 以下の行を追加して保存
+Set-Alias voice "C:\Program Files\VoicevoxRunCached\VoicevoxRunCached.exe"
+```
+
+**バッチファイル作成**
+```batch
+@echo off
+rem voice.bat として PATH が通った場所に保存
+"C:\Program Files\VoicevoxRunCached\VoicevoxRunCached.exe" %*
+```
+
+#### 設定後の使用例
+
+PATH設定後:
+```bash
+# フルパス不要
+VoicevoxRunCached.exe "こんにちは！"
+
+# またはエイリアス使用
+voice "こんにちは！"
+```
 
 ### ソースからビルド
 
@@ -54,6 +112,14 @@ VoicevoxRunCached.exe "テストメッセージです。" --speaker 1
 VoicevoxRunCached.exe "速度を変更します。" --speed 1.2 --pitch 0.1 --volume 0.8
 ```
 
+**エイリアス設定後の簡単な使用方法:**
+```bash
+# 短いコマンドで実行
+voice "こんにちは、世界！"
+voice "テストメッセージです。" -s 1
+voice "速度を変更します。" --speed 1.2
+```
+
 ### コマンドライン引数
 
 | 引数 | 説明 | デフォルト |
@@ -72,6 +138,9 @@ VoicevoxRunCached.exe "速度を変更します。" --speed 1.2 --pitch 0.1 --vo
 ```bash
 # 利用可能なスピーカー一覧を表示
 VoicevoxRunCached.exe speakers
+
+# エイリアス使用時
+voice speakers
 ```
 
 ## 設定ファイル
