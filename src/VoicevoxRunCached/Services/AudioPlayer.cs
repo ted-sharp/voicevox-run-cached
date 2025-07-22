@@ -1,6 +1,7 @@
 using NAudio.Wave;
 using NAudio.MediaFoundation;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services;
 
@@ -165,6 +166,68 @@ public class AudioPlayer : IDisposable
                 if (segment.Length == 0) continue;
                 
                 await PlaySegmentAsync(segment);
+            }
+        }
+        finally
+        {
+            StopAudio();
+        }
+    }
+
+    public async Task PlayAudioSequentiallyWithGenerationAsync(List<TextSegment> segments, Task? generationTask)
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(AudioPlayer));
+
+        try
+        {
+            // Initialize single WavePlayer instance for all segments
+            _wavePlayer = new WaveOutEvent();
+            
+            if (_settings.OutputDevice >= 0)
+            {
+                ((WaveOutEvent)_wavePlayer).DeviceNumber = _settings.OutputDevice;
+            }
+
+            // Optimized buffering settings for minimal latency with stability
+            ((WaveOutEvent)_wavePlayer).DesiredLatency = 60; // Reduced to 60ms for faster transitions
+            ((WaveOutEvent)_wavePlayer).NumberOfBuffers = 3;  // Increased to 3 buffers for seamless transitions
+
+            _wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
+
+            for (int i = 0; i < segments.Count; i++)
+            {
+                var segment = segments[i];
+                
+                // If segment is not cached, wait for generation to complete up to this point
+                if (!segment.IsCached || segment.AudioData == null)
+                {
+                    Console.WriteLine($"Waiting for segment {i + 1} to be generated...");
+                    
+                    // Wait until this segment is ready or generation task completes
+                    while (!segment.IsCached || segment.AudioData == null)
+                    {
+                        if (generationTask?.IsCompleted == true)
+                        {
+                            break; // Generation is done, no point in waiting further
+                        }
+                        await Task.Delay(50); // Check every 50ms
+                    }
+                    
+                    if (segment.AudioData == null)
+                    {
+                        Console.WriteLine($"Warning: Segment {i + 1} could not be generated, skipping...");
+                        continue;
+                    }
+                }
+                
+                await PlaySegmentAsync(segment.AudioData);
+            }
+
+            // Ensure background generation is complete
+            if (generationTask != null)
+            {
+                await generationTask;
             }
         }
         finally

@@ -154,24 +154,10 @@ class Program
                     Console.WriteLine($"Found {cachedCount}/{totalCount} segments in cache!");
                 }
 
-                var audioSegments = new List<byte[]>();
-                var uncachedSegments = new List<TextSegment>();
+                var uncachedSegments = segments.Where(s => !s.IsCached).ToList();
 
-                // Collect cached segments and identify uncached ones
-                foreach (var segment in segments)
-                {
-                    if (segment.IsCached && segment.AudioData != null)
-                    {
-                        audioSegments.Add(segment.AudioData);
-                    }
-                    else
-                    {
-                        uncachedSegments.Add(segment);
-                        audioSegments.Add(Array.Empty<byte>()); // Placeholder
-                    }
-                }
-
-                // Generate uncached segments
+                // Start background generation for uncached segments
+                Task? generationTask = null;
                 if (uncachedSegments.Count > 0)
                 {
                     if (cacheOnly)
@@ -181,50 +167,14 @@ class Program
                         return;
                     }
 
-                    Console.WriteLine($"Generating {uncachedSegments.Count} segments...");
-                    using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
-                    await apiClient.InitializeSpeakerAsync(request.SpeakerId);
-
-                    for (int i = 0; i < segments.Count; i++)
-                    {
-                        if (!segments[i].IsCached)
-                        {
-                            var segmentRequest = new VoiceRequest
-                            {
-                                Text = segments[i].Text,
-                                SpeakerId = request.SpeakerId,
-                                Speed = request.Speed,
-                                Pitch = request.Pitch,
-                                Volume = request.Volume
-                            };
-
-                            var audioQuery = await apiClient.GenerateAudioQueryAsync(segmentRequest);
-                            var segmentAudio = await apiClient.SynthesizeAudioAsync(audioQuery, segmentRequest.SpeakerId);
-                            
-                            audioSegments[i] = segmentAudio;
-                            segments[i].AudioData = segmentAudio;
-
-                            // Cache the segment
-                            _ = Task.Run(async () =>
-                            {
-                                try
-                                {
-                                    await cacheManager.SaveAudioCacheAsync(segmentRequest, segmentAudio);
-                                }
-                                catch (Exception ex)
-                                {
-                                    Console.WriteLine($"Warning: Failed to cache segment: {ex.Message}");
-                                }
-                            });
-                        }
-                    }
+                    Console.WriteLine($"Generating {uncachedSegments.Count} segments in background...");
+                    generationTask = GenerateSegmentsAsync(settings, request, segments, cacheManager);
                 }
 
-                // Play segments sequentially
+                // Start playing immediately - cached segments play right away, uncached segments wait
                 Console.WriteLine("Playing audio...");
                 using var audioPlayer = new AudioPlayer(settings.Audio);
-                var validSegments = TextSegmentProcessor.GetSegmentAudioData(audioSegments);
-                await audioPlayer.PlayAudioSequentiallyAsync(validSegments);
+                await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, generationTask);
             }
             else
             {
@@ -273,6 +223,46 @@ class Program
         {
             Console.WriteLine($"Error: {ex.Message}");
             Environment.Exit(1);
+        }
+    }
+
+    private static async Task GenerateSegmentsAsync(AppSettings settings, VoiceRequest request, List<TextSegment> segments, AudioCacheManager cacheManager)
+    {
+        using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
+        await apiClient.InitializeSpeakerAsync(request.SpeakerId);
+
+        for (int i = 0; i < segments.Count; i++)
+        {
+            if (!segments[i].IsCached)
+            {
+                var segmentRequest = new VoiceRequest
+                {
+                    Text = segments[i].Text,
+                    SpeakerId = request.SpeakerId,
+                    Speed = request.Speed,
+                    Pitch = request.Pitch,
+                    Volume = request.Volume
+                };
+
+                var audioQuery = await apiClient.GenerateAudioQueryAsync(segmentRequest);
+                var segmentAudio = await apiClient.SynthesizeAudioAsync(audioQuery, segmentRequest.SpeakerId);
+                
+                segments[i].AudioData = segmentAudio;
+                segments[i].IsCached = true; // Mark as ready for playback
+
+                // Cache the segment
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await cacheManager.SaveAudioCacheAsync(segmentRequest, segmentAudio);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Warning: Failed to cache segment: {ex.Message}");
+                    }
+                });
+            }
         }
     }
 }
