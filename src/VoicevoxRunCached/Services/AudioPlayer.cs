@@ -16,6 +16,129 @@ public class AudioPlayer : IDisposable
         MediaFoundationApi.Startup();
     }
 
+    public async Task PlayAudioStreamingAsync(byte[] audioData, Func<byte[], Task>? cacheCallback = null)
+    {
+        if (_disposed)
+            throw new ObjectDisposedException(nameof(AudioPlayer));
+
+        try
+        {
+            StopAudio();
+
+            using var audioStream = new MemoryStream(audioData);
+            WaveStream reader;
+            
+            // Try to detect if it's MP3 or WAV by reading the header
+            audioStream.Position = 0;
+            var header = new byte[12];
+            var bytesRead = await audioStream.ReadAsync(header, 0, 12);
+            audioStream.Position = 0;
+            
+            // Check for WAV header (RIFF....WAVE)
+            bool isWav = bytesRead >= 12 && 
+                         header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F' &&
+                         header[8] == 'W' && header[9] == 'A' && header[10] == 'V' && header[11] == 'E';
+            
+            // Check for MP3 header (starts with 0xFF)
+            bool isMp3 = bytesRead >= 2 && header[0] == 0xFF && (header[1] & 0xE0) == 0xE0;
+            
+            if (isWav)
+            {
+                reader = new WaveFileReader(audioStream);
+            }
+            else if (isMp3)
+            {
+                reader = new Mp3FileReader(audioStream);
+            }
+            else
+            {
+                // Try MP3 first since we're primarily caching MP3 files now
+                try
+                {
+                    audioStream.Position = 0;
+                    reader = new Mp3FileReader(audioStream);
+                }
+                catch
+                {
+                    // Fall back to WAV if MP3 fails
+                    audioStream.Position = 0;
+                    reader = new WaveFileReader(audioStream);
+                }
+            }
+            
+            _wavePlayer = new WaveOutEvent();
+            
+            if (_settings.OutputDevice >= 0)
+            {
+                ((WaveOutEvent)_wavePlayer).DeviceNumber = _settings.OutputDevice;
+            }
+
+            // Optimized buffering settings for minimal latency with stability
+            ((WaveOutEvent)_wavePlayer).DesiredLatency = 80; // 80ms buffer
+            ((WaveOutEvent)_wavePlayer).NumberOfBuffers = 2;  // Use 2 buffers
+
+            _wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
+            
+            var tcs = new TaskCompletionSource<bool>();
+            
+            // Start cache saving in parallel if callback provided
+            Task? cacheTask = null;
+            if (cacheCallback != null)
+            {
+                cacheTask = Task.Run(async () =>
+                {
+                    try
+                    {
+                        await cacheCallback(audioData);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Warning: Failed to cache audio: {ex.Message}");
+                    }
+                });
+            }
+            
+            _wavePlayer.PlaybackStopped += (sender, e) =>
+            {
+                reader.Dispose();
+                if (e.Exception != null)
+                {
+                    tcs.TrySetException(e.Exception);
+                }
+                else
+                {
+                    tcs.TrySetResult(true);
+                }
+            };
+
+            _wavePlayer.Init(reader);
+            
+            // Minimal delay to ensure proper audio initialization
+            await Task.Delay(20);
+            
+            _wavePlayer.Play();
+
+            await tcs.Task;
+            
+            // Ensure all buffered audio is played before stopping
+            await Task.Delay(150); // Wait for buffer to flush
+            
+            // Wait for cache to complete if it's running
+            if (cacheTask != null)
+            {
+                await cacheTask;
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Failed to play audio: {ex.Message}", ex);
+        }
+        finally
+        {
+            StopAudio();
+        }
+    }
+
     public async Task PlayAudioAsync(byte[] audioData)
     {
         if (_disposed)
@@ -73,6 +196,10 @@ public class AudioPlayer : IDisposable
                 ((WaveOutEvent)_wavePlayer).DeviceNumber = _settings.OutputDevice;
             }
 
+            // Optimized buffering settings for minimal latency with stability
+            ((WaveOutEvent)_wavePlayer).DesiredLatency = 80; // 80ms buffer
+            ((WaveOutEvent)_wavePlayer).NumberOfBuffers = 2;  // Use 2 buffers
+
             _wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
             
             var tcs = new TaskCompletionSource<bool>();
@@ -91,9 +218,16 @@ public class AudioPlayer : IDisposable
             };
 
             _wavePlayer.Init(reader);
+            
+            // Minimal delay to ensure proper audio initialization
+            await Task.Delay(20);
+            
             _wavePlayer.Play();
 
             await tcs.Task;
+            
+            // Ensure all buffered audio is played before stopping
+            await Task.Delay(150); // Wait for buffer to flush
         }
         catch (Exception ex)
         {

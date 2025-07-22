@@ -168,16 +168,30 @@ class Program
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(request);
                 audioData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId);
 
+                Console.WriteLine("Playing audio...");
+                using var audioPlayer = new AudioPlayer(settings.Audio);
+                
                 if (!noCache)
                 {
-                    Console.WriteLine("Saving to cache...");
-                    await cacheManager.SaveAudioCacheAsync(request, audioData);
+                    // Play with streaming cache - audio plays immediately while caching happens in parallel
+                    await audioPlayer.PlayAudioStreamingAsync(audioData, async (data) =>
+                    {
+                        Console.WriteLine("Saving to cache...");
+                        await cacheManager.SaveAudioCacheAsync(request, data);
+                    });
+                }
+                else
+                {
+                    // Play without caching
+                    await audioPlayer.PlayAudioAsync(audioData);
                 }
             }
-
-            Console.WriteLine("Playing audio...");
-            using var audioPlayer = new AudioPlayer(settings.Audio);
-            await audioPlayer.PlayAudioAsync(audioData);
+            else
+            {
+                Console.WriteLine("Playing audio...");
+                using var audioPlayer = new AudioPlayer(settings.Audio);
+                await audioPlayer.PlayAudioAsync(audioData);
+            }
 
             Console.WriteLine("Done!");
         }
