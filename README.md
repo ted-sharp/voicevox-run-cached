@@ -106,6 +106,47 @@ VoicevoxRunCached.exe speakers
 - **Audio.OutputDevice**: 出力オーディオデバイス（-1で既定）
 - **Audio.Volume**: 全体音量レベル
 
+## VoicevoxRunCached vs curl比較
+
+### curlを直接使用する場合
+
+```bash
+# 1. スピーカー初期化
+curl -X POST "http://localhost:50021/initialize_speaker" -H "Content-Type: application/json" -d "{\"speaker\": 1}"
+
+# 2. 音声クエリ生成
+curl -X POST "http://localhost:50021/audio_query?speaker=1&text=こんにちは、世界！" -H "Content-Type: application/json" -o query.json
+
+# 3. 音声合成
+curl -X POST "http://localhost:50021/synthesis?speaker=1" -H "Content-Type: application/json" -d @query.json --output audio.wav
+
+# 4. 音声再生（別途プレイヤーが必要）
+# Windows Media Player や他のツールで audio.wav を再生
+```
+
+### VoicevoxRunCachedを使用する場合
+
+```bash
+# 1回のコマンドで完了！
+VoicevoxRunCached.exe "こんにちは、世界！"
+
+# 2回目の実行（キャッシュから即座再生）
+VoicevoxRunCached.exe "こんにちは、世界！"
+```
+
+### 比較表
+
+| 項目 | curl | VoicevoxRunCached |
+|------|------|-------------------|
+| **コマンド数** | 3〜4個のコマンド | 1個のコマンド |
+| **中間ファイル** | query.json, audio.wav | 不要（自動管理） |
+| **音声再生** | 別途プレイヤー必要 | 自動再生 |
+| **キャッシュ** | 手動管理 | 自動キャッシュ |
+| **2回目実行** | 同じ手順を繰り返し | 即座に再生 |
+| **エラーハンドリング** | 手動チェック | 自動エラー処理 |
+| **セグメント化** | 不可 | 自動文分割 |
+| **部分キャッシュ** | 不可 | 自動最適化 |
+
 ## セグメント処理とキャッシュ
 
 本アプリケーションは、入力テキストを文単位で分割してキャッシュ効率を最大化します：
