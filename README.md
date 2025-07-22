@@ -72,10 +72,32 @@ Set-Alias voice "C:\Program Files\VoicevoxRunCached\VoicevoxRunCached.exe"
 ```
 
 **バッチファイル作成**
+
+適切な保存場所：
+- `C:\Windows\System32\` （システム全体、管理者権限必要）
+- `C:\Windows\` （システム全体、管理者権限必要）  
+- `%USERPROFILE%\bin\` （ユーザー専用、推奨）
+- `C:\Tools\bin\` （カスタムツール用）
+
 ```batch
 @echo off
-rem voice.bat として PATH が通った場所に保存
+rem voice.bat として上記の場所に保存
 "C:\Program Files\VoicevoxRunCached\VoicevoxRunCached.exe" %*
+```
+
+**推奨手順（ユーザー専用bin作成）:**
+```powershell
+# 1. ユーザー専用binフォルダ作成
+mkdir "$env:USERPROFILE\bin"
+
+# 2. PATHに追加
+[Environment]::SetEnvironmentVariable("PATH", $env:PATH + ";$env:USERPROFILE\bin", [EnvironmentVariableTarget]::User)
+
+# 3. バッチファイル作成
+@'
+@echo off
+"C:\Program Files\VoicevoxRunCached\VoicevoxRunCached.exe" %*
+'@ | Out-File -FilePath "$env:USERPROFILE\bin\voice.bat" -Encoding ASCII
 ```
 
 #### 設定後の使用例
