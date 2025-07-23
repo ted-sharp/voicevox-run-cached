@@ -4,67 +4,108 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a C# Console application that serves as a VOICEVOX REST API wrapper with audio caching functionality. The project is currently in the requirements phase with detailed specifications documented but no actual code implementation yet.
-
-## Key Architecture Concepts
-
-Based on the requirements document (`doc/voicevox_wrapper_requirements.md`), the planned architecture includes:
-
-### Core Components
-- **VoiceVoxApiClient**: Handles REST API communication with VOICEVOX server
-- **AudioCacheManager**: File-based caching system using SHA256 hashing
-- **AudioPlayer**: NAudio-based audio playback functionality
-- **Configuration**: appsettings.json-based configuration management
-
-### Technology Stack
-- **.NET Core**: Primary framework
-- **NAudio**: Audio playback (MP3/WAV support)
-- **HttpClient**: REST API communication
-- **System.CommandLine**: Command-line argument parsing
-- **Microsoft.Extensions.Configuration**: Configuration management
-
-### Data Flow
-1. Command-line input parsing
-2. Cache lookup by SHA256 hash
-3. VOICEVOX API calls (/audio_query → /synthesis)
-4. Audio caching and playback via NAudio
+This is a completed C# Console application that serves as a VOICEVOX REST API wrapper with intelligent audio caching functionality. The application converts text to speech using VOICEVOX engine with MP3 caching and segment-based processing for optimal performance.
 
 ## Development Commands
 
-Since no code exists yet, standard .NET commands will apply once implementation begins:
-- `dotnet build` - Build the project
-- `dotnet run` - Run the application
-- `dotnet test` - Run tests (when implemented)
+Navigate to `src_dotnet/VoicevoxRunCached/` for all development operations:
 
-## Key Design Decisions
+```bash
+# Build the project
+dotnet build
 
-### Cache Strategy
-- File-based cache in `./cache/audio/` directory
-- SHA256 hash-based file naming
-- Metadata stored in `.meta.json` files
-- Configurable expiration and size limits
+# Run the application with test text
+dotnet run "こんにちは、世界！"
 
-### API Constraints
-- VOICEVOX requires serial processing (no parallel requests)
-- Speaker initialization needed for first use
-- Default speaker: Zundamon (ID: 1)
+# Run with specific speaker
+dotnet run "テストメッセージです。" --speaker 1
 
-### Command Interface
+# Build release version
+dotnet build -c Release
+
+# Publish standalone executable
+dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./publish
+
+# Use the publish script (Windows)
+src_dotnet/_publish.cmd
 ```
-VoicevoxRunCached.exe <text> [--speaker <id>] [--speed <value>] [--pitch <value>] [--volume <value>] [--no-cache] [--cache-only] [--speakers] [--help]
+
+## Architecture Overview
+
+### Core Components
+- **Program.cs**: Entry point with command-line parsing and orchestration
+- **VoiceVoxApiClient**: REST API communication with VOICEVOX server
+- **AudioCacheManager**: Intelligent file-based caching with SHA256 hashing and MP3 compression
+- **AudioPlayer**: NAudio-based audio playback with sequential segment playback
+- **TextSegmentProcessor**: Text segmentation for cache optimization
+- **Configuration/AppSettings.cs**: Strongly-typed configuration management
+
+### Technology Stack
+- **.NET 9.0**: Primary framework
+- **NAudio + NAudio.Lame**: Audio playback and MP3 encoding/decoding
+- **HttpClient**: REST API communication
+- **Microsoft.Extensions.Configuration**: JSON configuration management
+- **System.Text.Json**: JSON serialization
+
+### Data Flow Architecture
+1. **Text Segmentation**: Input text split into sentences for optimal caching
+2. **Cache Lookup**: SHA256-based cache key generation and lookup for each segment
+3. **Parallel Processing**: Cached segments play immediately while uncached generate in background
+4. **VOICEVOX API**: Serial API calls (/audio_query → /synthesis) with speaker initialization
+5. **MP3 Caching**: WAV-to-MP3 conversion for efficient storage
+6. **Sequential Playback**: Segments play in order with seamless transitions
+
+### Key Design Patterns
+- **Segment-based Caching**: Text split by sentences for partial cache hits
+- **Background Generation**: Uncached segments generate while cached segments play
+- **MP3 Compression**: Audio stored as MP3 files with .meta.json metadata
+- **Device Pre-warming**: Audio device initialization to prevent audio dropouts
+
+## Project Structure
+
+```
+src_dotnet/VoicevoxRunCached/
+├── Program.cs                    # Entry point and CLI handling
+├── Configuration/
+│   └── AppSettings.cs           # Configuration models
+├── Models/
+│   ├── VoiceRequest.cs         # Request parameters
+│   └── TextSegment.cs          # Segment processing model
+├── Services/
+│   ├── VoiceVoxApiClient.cs    # VOICEVOX API client
+│   ├── AudioCacheManager.cs    # Caching logic
+│   ├── AudioPlayer.cs          # NAudio playback
+│   └── TextSegmentProcessor.cs # Text segmentation
+└── appsettings.json            # Configuration file
 ```
 
-## Project Status
+## Configuration
 
-The application has been fully implemented and includes all core functionality:
-1. **Stage 1**: MVP with basic text-to-speech
-2. **Stage 2**: Full speaker support and caching
-3. **Stage 3**: Configuration and error handling
-4. **Stage 4**: Advanced features and optimizations
+The application uses `appsettings.json` with these sections:
+- **VoiceVox**: BaseUrl, DefaultSpeaker, ConnectionTimeout
+- **Cache**: Directory, ExpirationDays, MaxSizeGB
+- **Audio**: OutputDevice (-1 for default), Volume
 
-## Configuration Structure
+## Command Interface
 
-The application will use `appsettings.json` with sections for:
-- `VoiceVox`: API endpoint and connection settings
-- `Cache`: Directory, expiration, and size limits  
-- `Audio`: Output device and volume settings
+```bash
+VoicevoxRunCached <text> [options]
+VoicevoxRunCached speakers
+
+Options:
+--speaker, -s <id>    Speaker ID (default: 1)
+--speed <value>       Speech speed (default: 1.0)
+--pitch <value>       Speech pitch (default: 0.0)
+--volume <value>      Speech volume (default: 1.0)
+--no-cache           Skip cache usage
+--cache-only         Use cache only, don't call API
+--help, -h           Show help message
+```
+
+## Development Notes
+
+- All VOICEVOX API calls must be serial (no parallel requests)
+- Speaker initialization required before first use of each speaker
+- Cache files use SHA256 hashing for unique identification
+- Audio files stored as MP3 with accompanying .meta.json metadata
+- Text segmentation optimizes cache efficiency for partial text changes
