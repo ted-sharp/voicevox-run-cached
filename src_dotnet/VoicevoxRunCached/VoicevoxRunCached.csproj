@@ -5,6 +5,14 @@
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    
+    <!-- Version Information -->
+    <Version>1.1.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <Product>VoicevoxRunCached</Product>
+    <Description>VOICEVOX REST API wrapper with audio caching functionality</Description>
+    <Copyright>Copyright © 2025 ted-sharp</Copyright>
   </PropertyGroup>
 
   <ItemGroup>
