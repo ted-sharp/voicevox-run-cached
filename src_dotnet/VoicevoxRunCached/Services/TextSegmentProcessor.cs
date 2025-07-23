@@ -11,10 +11,11 @@ public static class TextSegmentProcessor
 
     public static List<TextSegment> SegmentText(string text, params string[] additionalTexts)
     {
-        var allTexts = new List<string> { text };
-        allTexts.AddRange(additionalTexts);
+        // C# 13 Collection expression with spread operator
+        List<string> allTexts = [text, .. additionalTexts];
         
-        var allSegments = new List<TextSegment>();
+        // C# 13 Collection expression initialization
+        List<TextSegment> allSegments = [];
         int globalPosition = 0;
         
         foreach (var currentText in allTexts)
@@ -80,7 +81,8 @@ public static class TextSegmentProcessor
     
     public static List<TextSegment> ProcessMultipleTexts(params string[] texts)
     {
-        var allSegments = new List<TextSegment>();
+        // C# 13 Collection expression initialization
+        List<TextSegment> allSegments = [];
         int globalPosition = 0;
         
         foreach (var text in texts)
@@ -99,7 +101,8 @@ public static class TextSegmentProcessor
     
     public static List<TextSegment> MergeSegments(params List<TextSegment>[] segmentCollections)
     {
-        var mergedSegments = new List<TextSegment>();
+        // C# 13 Collection expression initialization
+        List<TextSegment> mergedSegments = [];
         int position = 0;
         
         foreach (var collection in segmentCollections)

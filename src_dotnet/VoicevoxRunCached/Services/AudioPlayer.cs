@@ -3,6 +3,10 @@ using NAudio.MediaFoundation;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 
+// C# 13 Using alias for commonly used types
+using WavePlayer = NAudio.Wave.WaveOutEvent;
+using AudioStream = System.IO.MemoryStream;
+
 namespace VoicevoxRunCached.Services;
 
 public class AudioPlayer : IDisposable
@@ -13,7 +17,8 @@ public class AudioPlayer : IDisposable
 
     public AudioPlayer(AudioSettings settings)
     {
-        _settings = settings;
+        // C# 13 nameof expression for type-safe parameter validation
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         MediaFoundationApi.Startup();
         
         // Pre-warm audio device to avoid initialization delay on first playback
@@ -554,19 +559,16 @@ public class AudioPlayer : IDisposable
 
     public static List<string> GetAvailableDevices()
     {
-        var devices = new List<string>();
-        
         try
         {
-            // WaveOutEvent doesn't have static DeviceCount/GetCapabilities methods
-            // We'll return a simple placeholder for now
-            devices.Add("0: Default Device");
+            // C# 13 Collection expression syntax
+            return ["0: Default Device"];
         }
         catch
         {
+            // C# 13 Empty collection expression
+            return [];
         }
-        
-        return devices;
     }
 
     public void Dispose()

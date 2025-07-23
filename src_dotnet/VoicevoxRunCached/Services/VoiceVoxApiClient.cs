@@ -22,7 +22,8 @@ public class VoiceVoxApiClient : IDisposable
 
     public VoiceVoxApiClient(VoiceVoxSettings settings)
     {
-        _settings = settings;
+        // C# 13 nameof expression for type-safe parameter validation
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _httpClient = new HttpClient
         {
             BaseAddress = new Uri(_settings.BaseUrl),

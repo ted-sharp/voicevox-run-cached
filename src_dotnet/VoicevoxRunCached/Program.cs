@@ -27,7 +27,8 @@ class Program
         var request = ParseArguments(args, settings);
         if (request == null)
         {
-            Console.WriteLine("Error: Invalid arguments");
+            // C# 13 Escape character improvement: \e for ESCAPE
+            Console.WriteLine($"\e[31mError: Invalid arguments\e[0m"); // Red text
             ShowUsage();
             return 1;
         }
@@ -155,7 +156,8 @@ class Program
                 
                 if (cachedCount > 0)
                 {
-                    Console.WriteLine($"Found {cachedCount}/{totalCount} segments in cache!");
+                    // C# 13 Escape character for success message
+                    Console.WriteLine($"\e[32mFound {cachedCount}/{totalCount} segments in cache!\e[0m"); // Green text
                 }
 
                 var uncachedSegments = segments.Where(s => !s.IsCached).ToList();
@@ -166,24 +168,28 @@ class Program
                 {
                     if (cacheOnly)
                     {
-                        Console.WriteLine($"Error: {uncachedSegments.Count} segments not cached and --cache-only specified");
+                        // C# 13 Escape character for error message
+                        Console.WriteLine($"\e[31mError: {uncachedSegments.Count} segments not cached and --cache-only specified\e[0m"); // Red text
                         Environment.Exit(1);
                         return;
                     }
 
-                    Console.WriteLine($"Generating {uncachedSegments.Count} segments in background...");
+                    // C# 13 Escape character for info message
+                    Console.WriteLine($"\e[33mGenerating {uncachedSegments.Count} segments in background...\e[0m"); // Yellow text
                     generationTask = GenerateSegmentsAsync(settings, request, segments, cacheManager);
                 }
 
                 // Start playing immediately - cached segments play right away, uncached segments wait
-                Console.WriteLine("Playing audio...");
+                // C# 13 Escape character for status message
+                Console.WriteLine($"\\e[36mPlaying audio...\\e[0m"); // Cyan text
                 using var audioPlayer = new AudioPlayer(settings.Audio);
                 await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, generationTask);
             }
             else
             {
                 // Original non-cached behavior for --no-cache
-                Console.WriteLine("Generating speech...");
+                // C# 13 Escape character for generation status
+                Console.WriteLine($"\e[33mGenerating speech...\e[0m"); // Yellow text
                 using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
                 
                 await apiClient.InitializeSpeakerAsync(request.SpeakerId);
@@ -191,16 +197,19 @@ class Program
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(request);
                 audioData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId);
                 
-                Console.WriteLine("Playing audio...");
+                // C# 13 Escape character for playback status
+                Console.WriteLine($"\e[36mPlaying audio...\e[0m"); // Cyan text
                 using var audioPlayer = new AudioPlayer(settings.Audio);
                 await audioPlayer.PlayAudioAsync(audioData);
             }
 
-            Console.WriteLine("Done!");
+            // C# 13 Escape character for completion message
+            Console.WriteLine($"\e[32mDone!\e[0m"); // Green text
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error: {ex.Message}");
+            // C# 13 Escape character for error message
+            Console.WriteLine($"\\e[31mError: {ex.Message}\\e[0m"); // Red text
             Environment.Exit(1);
         }
     }
@@ -225,7 +234,8 @@ class Program
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error: {ex.Message}");
+            // C# 13 Escape character for error message
+            Console.WriteLine($"\\e[31mError: {ex.Message}\\e[0m"); // Red text
             Environment.Exit(1);
         }
     }

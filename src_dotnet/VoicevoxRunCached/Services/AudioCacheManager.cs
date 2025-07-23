@@ -15,7 +15,8 @@ public class AudioCacheManager
 
     public AudioCacheManager(CacheSettings settings)
     {
-        _settings = settings;
+        // C# 13 nameof expression for type-safe parameter validation
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         EnsureCacheDirectoryExists();
     }
 
