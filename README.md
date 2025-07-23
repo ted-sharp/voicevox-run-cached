@@ -13,6 +13,7 @@ VoicevoxRunCachedは、VOICEVOX REST APIを使用してテキストから音声�
 - **📝 セグメント化処理**: 文単位での分割によるキャッシュ効率向上
 - **🚀 即時再生**: キャッシュヒット済みセグメントの即座再生開始
 - **🔊 安定した音声再生**: 初回再生時の音声品質安定化
+- **🎵 デバイス準備機能**: オーディオデバイスの暖気運転で音切れ防止
 - **⚙️ カスタマイズ可能**: 音声パラメータ（速度、ピッチ、音量）の調整
 
 ## システム要件
@@ -27,7 +28,7 @@ VoicevoxRunCachedは、VOICEVOX REST APIを使用してテキストから音声�
 ### リリース版を使用（推奨）
 
 1. [Releases](https://github.com/ted-sharp/voicevox-run-cached/releases)から最新版をダウンロード
-2. `VoicevoxRunCached-v1.0.0-win-x64.zip`を任意のフォルダに展開
+2. `VoicevoxRunCached-v1.1.0-win-x64.zip`を任意のフォルダに展開
    - 推奨場所: `C:\Program Files\VoicevoxRunCached\` または `C:\Tools\VoicevoxRunCached\`
 3. `appsettings.json`でVOICEVOXエンジンの設定を確認・調整
 4. **オプション**: パス設定やエイリアス設定（詳細は下記参照）
@@ -113,8 +114,13 @@ voice "こんにちは！"
 
 ```bash
 git clone https://github.com/ted-sharp/voicevox-run-cached.git
-cd voicevox-run-cached/src/VoicevoxRunCached
-dotnet publish -c Release -r win-x64 --self-contained
+cd voicevox-run-cached/src_dotnet
+
+# 通常のビルド（開発用）
+_publish.cmd
+
+# ZIP付きビルド（リリース用）
+_publish_zip.cmd
 ```
 
 ## 使用方法
@@ -172,28 +178,41 @@ voice speakers
   "VoiceVox": {
     "BaseUrl": "http://localhost:50021",
     "DefaultSpeaker": 1,
-    "TimeoutSeconds": 30
+    "ConnectionTimeout": 30
   },
   "Cache": {
-    "Directory": "./cache",
-    "ExpirationDays": 30
+    "Directory": "./cache/audio/",
+    "ExpirationDays": 30,
+    "MaxSizeGB": 1.0
   },
   "Audio": {
     "OutputDevice": -1,
-    "Volume": 1.0
+    "Volume": 1.0,
+    "PrepareDevice": false,
+    "PreparationDurationMs": 200,
+    "PreparationVolume": 0.01
   }
 }
 ```
 
 ### 設定項目説明
 
-- **VoiceVox.BaseUrl**: VOICEVOX エンジンのURL
-- **VoiceVox.DefaultSpeaker**: デフォルトのスピーカーID
-- **VoiceVox.TimeoutSeconds**: API接続タイムアウト（秒）
-- **Cache.Directory**: キャッシュファイル保存ディレクトリ
-- **Cache.ExpirationDays**: キャッシュの有効期限（日数）
-- **Audio.OutputDevice**: 出力オーディオデバイス（-1で既定）
-- **Audio.Volume**: 全体音量レベル
+#### VoiceVox設定
+- **BaseUrl**: VOICEVOX エンジンのURL
+- **DefaultSpeaker**: デフォルトのスピーカーID
+- **ConnectionTimeout**: API接続タイムアウト（秒）
+
+#### Cache設定
+- **Directory**: キャッシュファイル保存ディレクトリ
+- **ExpirationDays**: キャッシュの有効期限（日数）
+- **MaxSizeGB**: キャッシュの最大サイズ（GB）
+
+#### Audio設定
+- **OutputDevice**: 出力オーディオデバイス（-1で既定）
+- **Volume**: 全体音量レベル
+- **PrepareDevice**: デバイス準備機能を有効にするか（音切れ防止）
+- **PreparationDurationMs**: デバイス準備時間（ミリ秒）
+- **PreparationVolume**: 準備時の音量（極小音量での暖気運転）
 
 ## VoicevoxRunCached vs curl比較
 
@@ -271,8 +290,10 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 - A: Windowsの音量設定と出力デバイスを確認してください
 - A: `appsettings.json`のAudio.OutputDeviceを-1に設定してください
 
-**Q: 音声の開始部分が途切れる**
-- A: アプリケーションを再起動してください（初回実行時に発生することがあります）
+**Q: 音声の開始部分が途切れる（特にUSBオーディオ・Bluetooth）**
+- A: `appsettings.json`で`"PrepareDevice": true`に設定してください
+- A: `PreparationDurationMs`を300-500に増やしてください
+- A: デバイスによっては初回実行時に発生することがあります
 
 **Q: キャッシュをクリアしたい**
 - A: `./cache`フォルダ（または設定したディレクトリ）を削除してください
@@ -282,22 +303,45 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 ### 開発環境
 
 - .NET 9.0
+- C# 13（最新言語機能）
 - NAudio（音声処理）
+- NAudio.Lame（MP3エンコード）
 - Microsoft.Extensions.Configuration（設定管理）
 
 ### ビルド方法
 
+#### 開発時のビルド
 ```bash
-cd src/VoicevoxRunCached
+cd src_dotnet/VoicevoxRunCached
 dotnet build
 dotnet run "テストメッセージ"
 ```
 
-### リリース用ビルド
-
+#### 配布用パッケージ作成
 ```bash
-dotnet publish -c Release -r win-x64 --self-contained -p:PublishSingleFile=true
+cd src_dotnet
+
+# 通常のビルド（./publish/VoicevoxRunCached/）
+_publish.cmd
+
+# ZIP付きビルド（./publish/VoicevoxRunCached-v{バージョン}-win-x64.zip）
+_publish_zip.cmd
 ```
+
+#### バージョン管理
+- `VoicevoxRunCached.csproj`の`<Version>`タグでバージョン指定
+- `_publish_zip.cmd`が自動的にバージョンを参照してZIPファイル名を決定
+
+#### 技術的特徴
+- **C# 13の最新機能を活用**:
+  - Primary constructors
+  - Collection expressions
+  - Enhanced pattern matching
+  - ref readonly parameters
+  - Escape character improvements
+- **MP3キャッシュ**: WAVからMP3への自動変換でストレージ効率化
+- **スレッドセーフ**: 新しいLock型による安全な並行処理
+- **デバイス準備**: 実際の極小音量再生による効果的な暖気運転
 
 ## ライセンス
 
