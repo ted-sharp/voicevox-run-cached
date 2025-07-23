@@ -72,7 +72,7 @@ public class AudioPlayer : IDisposable
 
     private byte[] CreateSilentWavData(int durationMs)
     {
-        // Create minimal WAV file with silence
+        // Create minimal WAV file with silence using efficient Span operations
         const int sampleRate = 22050;
         const int channels = 1;
         const int bitsPerSample = 16;
@@ -84,11 +84,16 @@ public class AudioPlayer : IDisposable
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
         
-        // WAV header
-        writer.Write("RIFF".ToCharArray());
+        // WAV header using ReadOnlySpan for string constants
+        ReadOnlySpan<char> riffChars = "RIFF";
+        ReadOnlySpan<char> waveChars = "WAVE";
+        ReadOnlySpan<char> fmtChars = "fmt ";
+        ReadOnlySpan<char> dataChars = "data";
+        
+        writer.Write(riffChars.ToArray());
         writer.Write(fileSize);
-        writer.Write("WAVE".ToCharArray());
-        writer.Write("fmt ".ToCharArray());
+        writer.Write(waveChars.ToArray());
+        writer.Write(fmtChars.ToArray());
         writer.Write(16); // PCM format chunk size
         writer.Write((short)1); // PCM format
         writer.Write((short)channels);
@@ -96,13 +101,17 @@ public class AudioPlayer : IDisposable
         writer.Write(sampleRate * channels * (bitsPerSample / 8)); // Byte rate
         writer.Write((short)(channels * (bitsPerSample / 8))); // Block align
         writer.Write((short)bitsPerSample);
-        writer.Write("data".ToCharArray());
+        writer.Write(dataChars.ToArray());
         writer.Write(dataSize);
         
-        // Silent audio data (all zeros)
-        for (int i = 0; i < samplesCount; i++)
+        // Silent audio data (all zeros) - use zero-filled span
+        Span<short> silentSamples = stackalloc short[samplesCount];
+        silentSamples.Clear(); // Initialize to zeros
+        
+        // Write samples efficiently
+        foreach (var sample in silentSamples)
         {
-            writer.Write((short)0);
+            writer.Write(sample);
         }
         
         return stream.ToArray();
@@ -120,19 +129,21 @@ public class AudioPlayer : IDisposable
             using var audioStream = new MemoryStream(audioData);
             WaveStream reader;
             
-            // Try to detect if it's MP3 or WAV by reading the header
+            // Try to detect if it's MP3 or WAV by reading the header using Memory for async operations
             audioStream.Position = 0;
-            var header = new byte[12];
-            var bytesRead = await audioStream.ReadAsync(header, 0, 12);
+            var headerBuffer = new byte[12];
+            var bytesRead = await audioStream.ReadAsync(headerBuffer, 0, 12);
+            ReadOnlySpan<byte> headerSpan = headerBuffer;
+            ref readonly var headerRef = ref headerSpan[0];
             audioStream.Position = 0;
             
-            // Check for WAV header (RIFF....WAVE)
+            // Check for WAV header (RIFF....WAVE) using ref for efficient access
             bool isWav = bytesRead >= 12 && 
-                         header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F' &&
-                         header[8] == 'W' && header[9] == 'A' && header[10] == 'V' && header[11] == 'E';
+                         headerRef == 'R' && headerSpan[1] == 'I' && headerSpan[2] == 'F' && headerSpan[3] == 'F' &&
+                         headerSpan[8] == 'W' && headerSpan[9] == 'A' && headerSpan[10] == 'V' && headerSpan[11] == 'E';
             
-            // Check for MP3 header (starts with 0xFF)
-            bool isMp3 = bytesRead >= 2 && header[0] == 0xFF && (header[1] & 0xE0) == 0xE0;
+            // Check for MP3 header (starts with 0xFF) using ref for efficient access
+            bool isMp3 = bytesRead >= 2 && headerRef == 0xFF && (headerSpan[1] & 0xE0) == 0xE0;
             
             if (isWav)
             {
@@ -337,19 +348,21 @@ public class AudioPlayer : IDisposable
             using var audioStream = new MemoryStream(audioData);
             WaveStream reader;
             
-            // Try to detect if it's MP3 or WAV by reading the header
+            // Try to detect if it's MP3 or WAV by reading the header using Memory for async operations
             audioStream.Position = 0;
-            var header = new byte[12];
-            var bytesRead = await audioStream.ReadAsync(header, 0, 12);
+            var headerBuffer = new byte[12];
+            var bytesRead = await audioStream.ReadAsync(headerBuffer, 0, 12);
+            ReadOnlySpan<byte> headerSpan = headerBuffer;
+            ref readonly var headerRef = ref headerSpan[0];
             audioStream.Position = 0;
             
-            // Check for WAV header (RIFF....WAVE)
+            // Check for WAV header (RIFF....WAVE) using ref for efficient access
             bool isWav = bytesRead >= 12 && 
-                         header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F' &&
-                         header[8] == 'W' && header[9] == 'A' && header[10] == 'V' && header[11] == 'E';
+                         headerRef == 'R' && headerSpan[1] == 'I' && headerSpan[2] == 'F' && headerSpan[3] == 'F' &&
+                         headerSpan[8] == 'W' && headerSpan[9] == 'A' && headerSpan[10] == 'V' && headerSpan[11] == 'E';
             
-            // Check for MP3 header (starts with 0xFF)
-            bool isMp3 = bytesRead >= 2 && header[0] == 0xFF && (header[1] & 0xE0) == 0xE0;
+            // Check for MP3 header (starts with 0xFF) using ref for efficient access
+            bool isMp3 = bytesRead >= 2 && headerRef == 0xFF && (headerSpan[1] & 0xE0) == 0xE0;
             
             if (isWav)
             {
@@ -433,19 +446,21 @@ public class AudioPlayer : IDisposable
             using var audioStream = new MemoryStream(audioData);
             WaveStream reader;
             
-            // Try to detect if it's MP3 or WAV by reading the header
+            // Try to detect if it's MP3 or WAV by reading the header using Memory for async operations
             audioStream.Position = 0;
-            var header = new byte[12];
-            var bytesRead = await audioStream.ReadAsync(header, 0, 12);
+            var headerBuffer = new byte[12];
+            var bytesRead = await audioStream.ReadAsync(headerBuffer, 0, 12);
+            ReadOnlySpan<byte> headerSpan = headerBuffer;
+            ref readonly var headerRef = ref headerSpan[0];
             audioStream.Position = 0;
             
-            // Check for WAV header (RIFF....WAVE)
+            // Check for WAV header (RIFF....WAVE) using ref for efficient access
             bool isWav = bytesRead >= 12 && 
-                         header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F' &&
-                         header[8] == 'W' && header[9] == 'A' && header[10] == 'V' && header[11] == 'E';
+                         headerRef == 'R' && headerSpan[1] == 'I' && headerSpan[2] == 'F' && headerSpan[3] == 'F' &&
+                         headerSpan[8] == 'W' && headerSpan[9] == 'A' && headerSpan[10] == 'V' && headerSpan[11] == 'E';
             
-            // Check for MP3 header (starts with 0xFF)
-            bool isMp3 = bytesRead >= 2 && header[0] == 0xFF && (header[1] & 0xE0) == 0xE0;
+            // Check for MP3 header (starts with 0xFF) using ref for efficient access
+            bool isMp3 = bytesRead >= 2 && headerRef == 0xFF && (headerSpan[1] & 0xE0) == 0xE0;
             
             if (isWav)
             {

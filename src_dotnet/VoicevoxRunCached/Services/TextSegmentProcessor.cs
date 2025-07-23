@@ -4,67 +4,124 @@ using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services;
 
-public class TextSegmentProcessor
+public static class TextSegmentProcessor
 {
     private static readonly Regex SentencePattern = new Regex(@"[。．！？\.\!\?]+", RegexOptions.Compiled);
     private static readonly Regex CleanupPattern = new Regex(@"\s+", RegexOptions.Compiled);
 
-    public static List<TextSegment> SegmentText(string text)
+    public static List<TextSegment> SegmentText(string text, params string[] additionalTexts)
     {
-        if (string.IsNullOrWhiteSpace(text))
+        var allTexts = new List<string> { text };
+        allTexts.AddRange(additionalTexts);
+        
+        var allSegments = new List<TextSegment>();
+        int globalPosition = 0;
+        
+        foreach (var currentText in allTexts)
         {
-            return new List<TextSegment>();
-        }
-
-        var segments = new List<TextSegment>();
-        var sentences = SentencePattern.Split(text);
-        var matches = SentencePattern.Matches(text);
-
-        int position = 0;
-        for (int i = 0; i < sentences.Length; i++)
-        {
-            var sentence = sentences[i].Trim();
-            if (string.IsNullOrEmpty(sentence))
+            if (string.IsNullOrWhiteSpace(currentText))
                 continue;
 
-            // Add punctuation back to the sentence
-            if (i < matches.Count)
+            var segments = new List<TextSegment>();
+            var sentences = SentencePattern.Split(currentText);
+            var matches = SentencePattern.Matches(currentText);
+
+            int position = 0;
+            for (int i = 0; i < sentences.Length; i++)
             {
-                sentence += matches[i].Value;
+                var sentence = sentences[i].Trim();
+                if (string.IsNullOrEmpty(sentence))
+                    continue;
+
+                // Add punctuation back to the sentence
+                if (i < matches.Count)
+                {
+                    sentence += matches[i].Value;
+                }
+
+                // Clean up extra whitespace
+                sentence = CleanupPattern.Replace(sentence, " ").Trim();
+
+                if (!string.IsNullOrEmpty(sentence))
+                {
+                    segments.Add(new TextSegment
+                    {
+                        Text = sentence,
+                        Position = globalPosition + position,
+                        Length = sentence.Length
+                    });
+                    position += sentence.Length;
+                }
             }
 
-            // Clean up extra whitespace
-            sentence = CleanupPattern.Replace(sentence, " ").Trim();
-
-            if (!string.IsNullOrEmpty(sentence))
+            // If no punctuation found, treat entire text as one segment
+            if (segments.Count == 0)
             {
                 segments.Add(new TextSegment
                 {
-                    Text = sentence,
-                    Position = position,
-                    Length = sentence.Length
+                    Text = currentText.Trim(),
+                    Position = globalPosition,
+                    Length = currentText.Length
                 });
-                position += sentence.Length;
             }
+            
+            allSegments.AddRange(segments);
+            globalPosition += currentText.Length;
         }
 
-        // If no punctuation found, treat entire text as one segment
-        if (segments.Count == 0)
-        {
-            segments.Add(new TextSegment
-            {
-                Text = text.Trim(),
-                Position = 0,
-                Length = text.Length
-            });
-        }
-
-        return segments;
+        return allSegments;
     }
 
-    public static List<byte[]> GetSegmentAudioData(List<byte[]> audioSegments)
+    public static List<byte[]> GetSegmentAudioData(params List<byte[]> audioSegments)
     {
-        // Return segments for sequential playback instead of concatenation
+        // Return segments for sequential playback instead of concatenation  
         return audioSegments.Where(segment => segment.Length > 0).ToList();
+    }
+    
+    public static List<TextSegment> ProcessMultipleTexts(params string[] texts)
+    {
+        var allSegments = new List<TextSegment>();
+        int globalPosition = 0;
+        
+        foreach (var text in texts)
+        {
+            var segments = SegmentText(text);
+            foreach (var segment in segments)
+            {
+                segment.Position = globalPosition;
+                globalPosition += segment.Length;
+                allSegments.Add(segment);
+            }
+        }
+        
+        return allSegments;
+    }
+    
+    public static List<TextSegment> MergeSegments(params List<TextSegment>[] segmentCollections)
+    {
+        var mergedSegments = new List<TextSegment>();
+        int position = 0;
+        
+        foreach (var collection in segmentCollections)
+        {
+            if (collection != null)
+            {
+                foreach (var segment in collection)
+                {
+                    var newSegment = new TextSegment
+                    {
+                        Text = segment.Text,
+                        Position = position,
+                        Length = segment.Length,
+                        IsCached = segment.IsCached,
+                        AudioData = segment.AudioData
+                    };
+                    mergedSegments.Add(newSegment);
+                    position += segment.Length;
+                }
+            }
+        }
+        
+        return mergedSegments;
     }
 }

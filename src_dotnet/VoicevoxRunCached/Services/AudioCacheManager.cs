@@ -11,6 +11,7 @@ namespace VoicevoxRunCached.Services;
 public class AudioCacheManager
 {
     private readonly CacheSettings _settings;
+    private readonly Lock _cacheLock = new();
 
     public AudioCacheManager(CacheSettings settings)
     {
@@ -24,9 +25,12 @@ public class AudioCacheManager
         var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
         var metaFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
 
-        if (!File.Exists(audioFilePath) || !File.Exists(metaFilePath))
+        lock (_cacheLock)
         {
-            return null;
+            if (!File.Exists(audioFilePath) || !File.Exists(metaFilePath))
+            {
+                return null;
+            }
         }
 
         try
@@ -49,7 +53,7 @@ public class AudioCacheManager
         }
     }
 
-    public async Task SaveAudioCacheAsync(VoiceRequest request, byte[] audioData)
+    public Task SaveAudioCacheAsync(VoiceRequest request, byte[] audioData)
     {
         var cacheKey = ComputeCacheKey(request);
         var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
@@ -59,28 +63,34 @@ public class AudioCacheManager
         {
             // Convert WAV to MP3
             var mp3Data = ConvertWavToMp3(audioData);
-            await File.WriteAllBytesAsync(audioFilePath, mp3Data);
-
-            var metadata = new CacheMetadata
+            
+            lock (_cacheLock)
             {
-                CreatedAt = DateTime.UtcNow,
-                Text = request.Text,
-                SpeakerId = request.SpeakerId,
-                Speed = request.Speed,
-                Pitch = request.Pitch,
-                Volume = request.Volume
-            };
+                File.WriteAllBytes(audioFilePath, mp3Data);
 
-            var metaJson = JsonSerializer.Serialize(metadata, new JsonSerializerOptions 
-            { 
-                WriteIndented = true 
-            });
-            await File.WriteAllTextAsync(metaFilePath, metaJson);
+                var metadata = new CacheMetadata
+                {
+                    CreatedAt = DateTime.UtcNow,
+                    Text = request.Text,
+                    SpeakerId = request.SpeakerId,
+                    Speed = request.Speed,
+                    Pitch = request.Pitch,
+                    Volume = request.Volume
+                };
+
+                var metaJson = JsonSerializer.Serialize(metadata, new JsonSerializerOptions 
+                { 
+                    WriteIndented = true 
+                });
+                File.WriteAllText(metaFilePath, metaJson);
+            }
         }
         catch (Exception ex)
         {
             throw new InvalidOperationException($"Failed to save audio cache: {ex.Message}", ex);
         }
+        
+        return Task.CompletedTask;
     }
 
     public async Task CleanupExpiredCacheAsync()
@@ -198,14 +208,17 @@ public class AudioCacheManager
             var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
             var metaFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
 
-            if (File.Exists(audioFilePath))
+            lock (_cacheLock)
             {
-                File.Delete(audioFilePath);
-            }
+                if (File.Exists(audioFilePath))
+                {
+                    File.Delete(audioFilePath);
+                }
 
-            if (File.Exists(metaFilePath))
-            {
-                File.Delete(metaFilePath);
+                if (File.Exists(metaFilePath))
+                {
+                    File.Delete(metaFilePath);
+                }
             }
         }
         catch
