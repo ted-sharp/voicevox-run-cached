@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "context7": {
+      "httpUrl": "https://mcp.context7.com/mcp",
+      "description": "Up-to-date code documentation and examples"
+    }
+  }
+}
