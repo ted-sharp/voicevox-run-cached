@@ -23,9 +23,14 @@ public class CacheSettings(string directory = "./cache/audio/", int expirationDa
     public double MaxSizeGB { get; set; } = maxSizeGB;
 }
 
-// C# 13 Primary constructor for AudioSettings
-public class AudioSettings(int outputDevice = -1, double volume = 1.0)
+// C# 13 Primary constructor for AudioSettings with device preparation
+public class AudioSettings(int outputDevice = -1, double volume = 1.0, bool prepareDevice = false, int preparationDurationMs = 200, double preparationVolume = 0.01)
 {
     public int OutputDevice { get; set; } = outputDevice;
     public double Volume { get; set; } = volume;
+    
+    // Device preparation settings to prevent audio dropouts
+    public bool PrepareDevice { get; set; } = prepareDevice;
+    public int PreparationDurationMs { get; set; } = preparationDurationMs;
+    public double PreparationVolume { get; set; } = preparationVolume; // Very low but audible volume for device warming
 }

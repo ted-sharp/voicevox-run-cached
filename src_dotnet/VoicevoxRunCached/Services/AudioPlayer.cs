@@ -14,6 +14,7 @@ public class AudioPlayer : IDisposable
     private readonly AudioSettings _settings;
     private IWavePlayer? _wavePlayer;
     private bool _disposed;
+    private Task? _devicePreparationTask;
 
     public AudioPlayer(AudioSettings settings)
     {
@@ -21,26 +22,29 @@ public class AudioPlayer : IDisposable
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         MediaFoundationApi.Startup();
         
-        // Pre-warm audio device to avoid initialization delay on first playback
-        _ = Task.Run(async () =>
+        // Start device preparation if enabled in settings
+        if (_settings.PrepareDevice)
         {
-            try
+            _devicePreparationTask = Task.Run(async () =>
             {
-                await PrewarmAudioDeviceAsync();
-            }
-            catch
-            {
-                // Ignore pre-warming errors - not critical
-            }
-        });
+                try
+                {
+                    await PrewarmAudioDeviceAsync(_settings.PreparationDurationMs);
+                }
+                catch
+                {
+                    // Ignore pre-warming errors - not critical
+                }
+            });
+        }
     }
 
-    private async Task PrewarmAudioDeviceAsync()
+    private async Task PrewarmAudioDeviceAsync(int durationMs = 100)
     {
         try
         {
-            // Create a very short silent audio to initialize the device
-            var silentWavData = CreateSilentWavData(100); // 100ms silence
+            // Create a silent audio to initialize the device with configurable duration
+            var silentWavData = CreateSilentWavData(durationMs);
             
             using var audioStream = new MemoryStream(silentWavData);
             using var reader = new WaveFileReader(audioStream);
@@ -54,7 +58,8 @@ public class AudioPlayer : IDisposable
             // Use same buffer settings as main playback
             wavePlayer.DesiredLatency = 100;
             wavePlayer.NumberOfBuffers = 3;
-            wavePlayer.Volume = 0.0f; // Silent pre-warming
+            // Use very low but audible volume for effective device warming
+            wavePlayer.Volume = (float)Math.Max(0.001, Math.Min(1.0, _settings.PreparationVolume));
             
             var tcs = new TaskCompletionSource<bool>();
             
@@ -77,7 +82,7 @@ public class AudioPlayer : IDisposable
 
     private byte[] CreateSilentWavData(int durationMs)
     {
-        // Create minimal WAV file with silence using efficient Span operations
+        // Create minimal WAV file with very low tone for device warming
         const int sampleRate = 22050;
         const int channels = 1;
         const int bitsPerSample = 16;
@@ -109,23 +114,44 @@ public class AudioPlayer : IDisposable
         writer.Write(dataChars.ToArray());
         writer.Write(dataSize);
         
-        // Silent audio data (all zeros) - use zero-filled span
-        Span<short> silentSamples = stackalloc short[samplesCount];
-        silentSamples.Clear(); // Initialize to zeros
+        // Generate very low amplitude sine wave for effective device warming
+        const double frequency = 440.0; // A4 note
+        const short amplitude = 32; // Very low amplitude (about 0.1% of max)
         
-        // Write samples efficiently
-        foreach (var sample in silentSamples)
+        for (int i = 0; i < samplesCount; i++)
         {
+            var time = (double)i / sampleRate;
+            var sineValue = Math.Sin(2 * Math.PI * frequency * time);
+            var sample = (short)(sineValue * amplitude);
             writer.Write(sample);
         }
         
         return stream.ToArray();
     }
 
+    // Ensure device preparation is complete before playback
+    private async Task EnsureDeviceReadyAsync()
+    {
+        if (_settings.PrepareDevice && _devicePreparationTask != null)
+        {
+            try
+            {
+                await _devicePreparationTask;
+            }
+            catch
+            {
+                // Device preparation failed, but continue with playback
+            }
+        }
+    }
+
     public async Task PlayAudioStreamingAsync(byte[] audioData, Func<byte[], Task>? cacheCallback = null)
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
+
+        // Ensure device is ready before starting playback
+        await EnsureDeviceReadyAsync();
 
         try
         {
@@ -252,6 +278,9 @@ public class AudioPlayer : IDisposable
         if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
+        // Ensure device is ready before starting playback
+        await EnsureDeviceReadyAsync();
+
         try
         {
             // Initialize single WavePlayer instance for all segments
@@ -285,6 +314,9 @@ public class AudioPlayer : IDisposable
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
+
+        // Ensure device is ready before starting playback
+        await EnsureDeviceReadyAsync();
 
         try
         {
@@ -444,6 +476,9 @@ public class AudioPlayer : IDisposable
         if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
+        // Ensure device is ready before starting playback
+        await EnsureDeviceReadyAsync();
+
         try
         {
             StopAudio();
@@ -576,6 +611,20 @@ public class AudioPlayer : IDisposable
         if (!_disposed)
         {
             StopAudio();
+            
+            // Clean up device preparation task
+            if (_devicePreparationTask != null)
+            {
+                try
+                {
+                    _devicePreparationTask.Wait(1000); // Wait up to 1 second
+                }
+                catch
+                {
+                    // Ignore cleanup errors
+                }
+            }
+            
             MediaFoundationApi.Shutdown();
             _disposed = true;
         }
