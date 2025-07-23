@@ -1,12 +1,13 @@
 namespace VoicevoxRunCached.Models;
 
-public class VoiceRequest
+// C# 13 Primary constructor for cleaner initialization
+public class VoiceRequest(string text = "", int speakerId = 0, double speed = 1.0, double pitch = 0.0, double volume = 1.0)
 {
-    public string Text { get; set; } = string.Empty;
-    public int SpeakerId { get; set; }
-    public double Speed { get; set; } = 1.0;
-    public double Pitch { get; set; } = 0.0;
-    public double Volume { get; set; } = 1.0;
+    public string Text { get; set; } = text;
+    public int SpeakerId { get; set; } = speakerId;
+    public double Speed { get; set; } = speed;
+    public double Pitch { get; set; } = pitch;
+    public double Volume { get; set; } = volume;
 }
 
 public class AudioQueryResponse
@@ -23,16 +24,18 @@ public class AudioQueryResponse
     public string? Kana { get; set; }
 }
 
-public class Speaker
+// C# 13 Primary constructor for Speaker model
+public class Speaker(string name = "", string speakerUuid = "", string version = "")
 {
-    public string Name { get; set; } = string.Empty;
-    public string SpeakerUuid { get; set; } = string.Empty;
-    public List<SpeakerStyle> Styles { get; set; } = new();
-    public string Version { get; set; } = string.Empty;
+    public string Name { get; set; } = name;
+    public string SpeakerUuid { get; set; } = speakerUuid;
+    public List<SpeakerStyle> Styles { get; set; } = [];
+    public string Version { get; set; } = version;
 }
 
-public class SpeakerStyle
+// C# 13 Primary constructor for SpeakerStyle model
+public class SpeakerStyle(string name = "", int id = 0)
 {
-    public string Name { get; set; } = string.Empty;
-    public int Id { get; set; }
+    public string Name { get; set; } = name;
+    public int Id { get; set; } = id;
 }

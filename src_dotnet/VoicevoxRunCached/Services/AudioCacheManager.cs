@@ -22,7 +22,7 @@ public class AudioCacheManager
 
     public async Task<byte[]?> GetCachedAudioAsync(VoiceRequest request)
     {
-        var cacheKey = ComputeCacheKey(request);
+        var cacheKey = ComputeCacheKey(ref request);
         var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
         var metaFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
 
@@ -56,7 +56,7 @@ public class AudioCacheManager
 
     public Task SaveAudioCacheAsync(VoiceRequest request, byte[] audioData)
     {
-        var cacheKey = ComputeCacheKey(request);
+        var cacheKey = ComputeCacheKey(ref request);
         var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
         var metaFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
 
@@ -164,7 +164,8 @@ public class AudioCacheManager
         return segments;
     }
 
-    public string ComputeCacheKey(VoiceRequest request)
+    // C# 13 ref readonly parameter for better performance with large structs
+    public string ComputeCacheKey(ref readonly VoiceRequest request)
     {
         var keyString = $"{request.Text}|{request.SpeakerId}|{request.Speed:F2}|{request.Pitch:F2}|{request.Volume:F2}";
         using var sha256 = SHA256.Create();

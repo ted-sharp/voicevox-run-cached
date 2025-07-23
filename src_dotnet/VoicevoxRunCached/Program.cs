@@ -87,43 +87,28 @@ class Program
             Volume = 1.0
         };
 
+        // C# 13 Enhanced pattern matching for cleaner argument parsing
         for (int i = 1; i < args.Length; i++)
         {
             switch (args[i])
             {
-                case "--speaker":
-                case "-s":
-                    if (i + 1 < args.Length && int.TryParse(args[i + 1], out int speaker))
-                    {
-                        request.SpeakerId = speaker;
-                        i++;
-                    }
+                case "--speaker" or "-s" when i + 1 < args.Length && int.TryParse(args[i + 1], out int speaker):
+                    request.SpeakerId = speaker;
+                    i++;
                     break;
-                case "--speed":
-                    if (i + 1 < args.Length && double.TryParse(args[i + 1], out double speed))
-                    {
-                        request.Speed = speed;
-                        i++;
-                    }
+                case "--speed" when i + 1 < args.Length && double.TryParse(args[i + 1], out double speed):
+                    request.Speed = speed;
+                    i++;
                     break;
-                case "--pitch":
-                    if (i + 1 < args.Length && double.TryParse(args[i + 1], out double pitch))
-                    {
-                        request.Pitch = pitch;
-                        i++;
-                    }
+                case "--pitch" when i + 1 < args.Length && double.TryParse(args[i + 1], out double pitch):
+                    request.Pitch = pitch;
+                    i++;
                     break;
-                case "--volume":
-                    if (i + 1 < args.Length && double.TryParse(args[i + 1], out double volume))
-                    {
-                        request.Volume = volume;
-                        i++;
-                    }
+                case "--volume" when i + 1 < args.Length && double.TryParse(args[i + 1], out double volume):
+                    request.Volume = volume;
+                    i++;
                     break;
-                case "--no-cache":
-                case "--cache-only":
-                case "--help":
-                case "-h":
+                case "--no-cache" or "--cache-only" or "--help" or "-h":
                     break;
                 default:
                     Console.WriteLine($"Warning: Unknown option '{args[i]}'");
