@@ -56,9 +56,9 @@ public class FillerSettings(bool enabled = false, string directory = "./cache/fi
     public string[] FillerTexts { get; set; } = fillerTexts ?? [
         "えーっと、",
         "あのー、",
+        "あのう、",
         "ええと、",
-        "えっと、えっと、",
-        "あのう、あのう、",
-        "ええと、ええと、"
+        "ええっと、",
+        "えとえと、"
     ];
 }

@@ -369,8 +369,8 @@ public class AudioPlayer : IDisposable
                     // Wait for this specific segment to be generated with safety checks
                     var waitStartTime = DateTime.UtcNow;
                     const int maxWaitTimeMs = 30000; // 30秒でタイムアウト
-                    
-                    while ((!segment.IsCached || segment.AudioData == null) && 
+
+                    while ((!segment.IsCached || segment.AudioData == null) &&
                            (DateTime.UtcNow - waitStartTime).TotalMilliseconds < maxWaitTimeMs)
                     {
                         // Check if generation task completed (all segments done)
@@ -378,7 +378,7 @@ public class AudioPlayer : IDisposable
                         {
                             break;
                         }
-                        
+
                         await Task.Delay(100); // Check every 100ms
                     }
 
