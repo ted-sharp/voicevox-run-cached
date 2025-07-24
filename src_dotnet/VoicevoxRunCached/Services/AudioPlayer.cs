@@ -346,29 +346,46 @@ public class AudioPlayer : IDisposable
                     Console.WriteLine($"Waiting for segment {i + 1} to be generated...");
 
                     bool fillerPlayed = false;
+                    var waitStartTime = DateTime.UtcNow;
+                    const int maxWaitTimeMs = 30000; // 30秒でタイムアウト
 
-                    // Wait until this segment is ready or generation task completes
-                    while (!segment.IsCached || segment.AudioData == null)
+                    // Play filler immediately when we start waiting (with timeout protection)
+                    if (fillerManager != null)
                     {
-                        if (generationTask?.IsCompleted == true)
-                        {
-                            break; // Generation is done, no point in waiting further
-                        }
-
-                        // Play filler immediately when we start waiting
-                        if (!fillerPlayed && fillerManager != null)
+                        try
                         {
                             var fillerAudio = await fillerManager.GetRandomFillerAudioAsync();
                             if (fillerAudio != null)
                             {
                                 Console.WriteLine("Playing filler...");
-                                await this.PlayAudioAsync(fillerAudio);
+                                // Use a separate audio player instance for filler to avoid conflicts
+                                using var fillerPlayer = new AudioPlayer(this._settings);
+                                await fillerPlayer.PlayAudioAsync(fillerAudio);
                                 isFirstSegment = false;
                                 fillerPlayed = true;
                             }
                         }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Warning: Filler playback failed: {ex.Message}");
+                        }
+                    }
 
-                        await Task.Delay(50); // Check every 50ms
+                    // Wait for generation task to complete instead of polling segment status
+                    if (generationTask != null)
+                    {
+                        try
+                        {
+                            await generationTask.WaitAsync(TimeSpan.FromMilliseconds(maxWaitTimeMs));
+                        }
+                        catch (TimeoutException)
+                        {
+                            Console.WriteLine($"Warning: Timeout waiting for segment generation");
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Warning: Generation task failed: {ex.Message}");
+                        }
                     }
 
                     if (segment.AudioData == null)

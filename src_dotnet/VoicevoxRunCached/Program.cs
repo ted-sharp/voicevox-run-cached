@@ -175,7 +175,7 @@ class Program
                 Environment.Exit(1);
                 return;
             }
-            
+
             if (verbose)
             {
                 Console.WriteLine($"Engine check completed in {(DateTime.UtcNow - engineStartTime).TotalMilliseconds:F1}ms");
@@ -190,7 +190,7 @@ class Program
                 var segmentStartTime = DateTime.UtcNow;
                 Console.WriteLine("Processing segments...");
                 var segments = await cacheManager.ProcessTextSegmentsAsync(request);
-                
+
                 if (verbose)
                 {
                     Console.WriteLine($"Segment processing completed in {(DateTime.UtcNow - segmentStartTime).TotalMilliseconds:F1}ms");
@@ -230,7 +230,7 @@ class Program
                 using var audioPlayer = new AudioPlayer(settings.Audio);
                 var fillerManager = settings.Filler.Enabled ? new FillerManager(settings.Filler, cacheManager) : null;
                 await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, generationTask, fillerManager);
-                
+
                 if (verbose)
                 {
                     Console.WriteLine($"Audio playback completed in {(DateTime.UtcNow - playbackStartTime).TotalMilliseconds:F1}ms");
@@ -257,7 +257,7 @@ class Program
 
             // C# 13 Escape character for completion message
             Console.WriteLine($"\e[32mDone!\e[0m"); // Green text
-            
+
             if (verbose)
             {
                 Console.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms");

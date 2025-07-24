@@ -54,22 +54,11 @@ public class FillerSettings(bool enabled = false, string directory = "./cache/fi
     public bool Enabled { get; set; } = enabled;
     public string Directory { get; set; } = directory;
     public string[] FillerTexts { get; set; } = fillerTexts ?? [
-        "えーっと",
-        "あのー",
-        "そのー",
-        "んー",
-        "まあ",
-        "えー",
-        "うーん",
-        "ええと",
-        "まー",
-        "ふむ",
-        "おー",
-        "んと",
-        "あー",
-        "うー",
-        "んーと",
-        "あのう",
-        "えーと"
+        "えーっと、",
+        "あのー、",
+        "ええと、",
+        "えっと、えっと、",
+        "あのう、あのう、",
+        "ええと、ええと、"
     ];
 }
