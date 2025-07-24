@@ -32,7 +32,7 @@ VoicevoxRunCachedは、VOICEVOX REST APIを使用してテキストから音声�
 ### リリース版を使用（推奨）
 
 1. [Releases](https://github.com/ted-sharp/voicevox-run-cached/releases)から最新版をダウンロード
-2. `VoicevoxRunCached-v1.1.0-win-x64.zip`を任意のフォルダに展開
+2. `VoicevoxRunCached-v1.3.0-win-x64.zip`を任意のフォルダに展開
    - 推奨場所: `C:\Program Files\VoicevoxRunCached\` または `C:\Tools\VoicevoxRunCached\`
 3. `appsettings.json`でVOICEVOXエンジンの設定を確認・調整
 4. **オプション**: パス設定やエイリアス設定（詳細は下記参照）
