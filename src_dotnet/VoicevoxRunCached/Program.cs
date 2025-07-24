@@ -54,7 +54,7 @@ class Program
             return 1;
         }
 
-        await HandleTextToSpeechAsync(settings, request, GetBoolOption(args, "--no-cache"), GetBoolOption(args, "--cache-only"));
+        await HandleTextToSpeechAsync(settings, request, GetBoolOption(args, "--no-cache"), GetBoolOption(args, "--cache-only"), GetBoolOption(args, "--verbose"));
         return 0;
     }
 
@@ -102,6 +102,7 @@ class Program
         Console.WriteLine("  --volume <value>          Speech volume (default: 1.0)");
         Console.WriteLine("  --no-cache               Skip cache usage");
         Console.WriteLine("  --cache-only             Use cache only, don't call API");
+        Console.WriteLine("  --verbose                Show detailed timing information");
         Console.WriteLine("  --help, -h               Show this help message");
         Console.WriteLine();
         Console.WriteLine("Commands:");
@@ -144,7 +145,7 @@ class Program
                     request.Volume = volume;
                     i++;
                     break;
-                case "--no-cache" or "--cache-only" or "--help" or "-h":
+                case "--no-cache" or "--cache-only" or "--verbose" or "--help" or "-h":
                     break;
                 default:
                     Console.WriteLine($"Warning: Unknown option '{args[i]}'");
@@ -160,17 +161,24 @@ class Program
         return args.Contains(option);
     }
 
-    private static async Task HandleTextToSpeechAsync(AppSettings settings, VoiceRequest request, bool noCache, bool cacheOnly)
+    private static async Task HandleTextToSpeechAsync(AppSettings settings, VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false)
     {
+        var totalStartTime = DateTime.UtcNow;
         try
         {
             // Ensure VOICEVOX engine is running
+            var engineStartTime = DateTime.UtcNow;
             using var engineManager = new VoiceVoxEngineManager(settings.VoiceVox);
             if (!await engineManager.EnsureEngineRunningAsync())
             {
                 Console.WriteLine("\e[31mError: VOICEVOX engine is not available\e[0m");
                 Environment.Exit(1);
                 return;
+            }
+            
+            if (verbose)
+            {
+                Console.WriteLine($"Engine check completed in {(DateTime.UtcNow - engineStartTime).TotalMilliseconds:F1}ms");
             }
 
             var cacheManager = new AudioCacheManager(settings.Cache);
@@ -179,8 +187,14 @@ class Program
             // Process text in segments for better cache efficiency
             if (!noCache)
             {
+                var segmentStartTime = DateTime.UtcNow;
                 Console.WriteLine("Processing segments...");
                 var segments = await cacheManager.ProcessTextSegmentsAsync(request);
+                
+                if (verbose)
+                {
+                    Console.WriteLine($"Segment processing completed in {(DateTime.UtcNow - segmentStartTime).TotalMilliseconds:F1}ms");
+                }
                 var cachedCount = segments.Count(s => s.IsCached);
                 var totalCount = segments.Count;
 
@@ -211,10 +225,16 @@ class Program
 
                 // Start playing immediately - cached segments play right away, uncached segments wait
                 // C# 13 Escape character for status message
+                var playbackStartTime = DateTime.UtcNow;
                 Console.WriteLine($"\e[36mPlaying audio...\e[0m"); // Cyan text
                 using var audioPlayer = new AudioPlayer(settings.Audio);
                 var fillerManager = settings.Filler.Enabled ? new FillerManager(settings.Filler, cacheManager) : null;
                 await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, generationTask, fillerManager);
+                
+                if (verbose)
+                {
+                    Console.WriteLine($"Audio playback completed in {(DateTime.UtcNow - playbackStartTime).TotalMilliseconds:F1}ms");
+                }
             }
             else
             {
@@ -237,6 +257,11 @@ class Program
 
             // C# 13 Escape character for completion message
             Console.WriteLine($"\e[32mDone!\e[0m"); // Green text
+            
+            if (verbose)
+            {
+                Console.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms");
+            }
         }
         catch (Exception ex)
         {
