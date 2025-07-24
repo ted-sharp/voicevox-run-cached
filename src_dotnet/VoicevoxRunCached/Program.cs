@@ -201,14 +201,15 @@ class Program
             else
             {
                 // Original non-cached behavior for --no-cache
-                // C# 13 Escape character for generation status
-                Console.WriteLine($"\e[33mGenerating speech...\e[0m"); // Yellow text
+                using var spinner = new ProgressSpinner("Generating speech...");
                 using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
                 
                 await apiClient.InitializeSpeakerAsync(request.SpeakerId);
                 
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(request);
                 audioData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId);
+                
+                spinner.Dispose();
                 
                 // C# 13 Escape character for playback status
                 Console.WriteLine($"\e[36mPlaying audio...\e[0m"); // Cyan text
@@ -255,13 +256,19 @@ class Program
 
     private static async Task GenerateSegmentsAsync(AppSettings settings, VoiceRequest request, List<TextSegment> segments, AudioCacheManager cacheManager)
     {
+        using var spinner = new ProgressSpinner($"Generating segment 1/{segments.Count(s => !s.IsCached)}");
         using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
         await apiClient.InitializeSpeakerAsync(request.SpeakerId);
+
+        int uncachedCount = 0;
+        int totalUncached = segments.Count(s => !s.IsCached);
 
         for (int i = 0; i < segments.Count; i++)
         {
             if (!segments[i].IsCached)
             {
+                uncachedCount++;
+                spinner.UpdateMessage($"Generating segment {uncachedCount}/{totalUncached}");
                 var segmentRequest = new VoiceRequest
                 {
                     Text = segments[i].Text,
