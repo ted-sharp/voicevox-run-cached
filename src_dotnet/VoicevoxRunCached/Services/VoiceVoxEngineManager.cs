@@ -128,8 +128,33 @@ public class VoiceVoxEngineManager
 
     private string FindDefaultEnginePath()
     {
-        // Common VOICEVOX installation paths
-        var possiblePaths = new[]
+        var possiblePaths = new List<string>();
+
+        // Add paths based on engine type
+        if (_settings.EngineType == EngineType.AivisSpeech)
+        {
+            possiblePaths.AddRange(GetAivisSpeechPaths());
+        }
+        else
+        {
+            possiblePaths.AddRange(GetVoiceVoxPaths());
+        }
+
+        foreach (var path in possiblePaths)
+        {
+            if (File.Exists(path))
+            {
+                Console.WriteLine($"Found {_settings.EngineType} engine at: {path}");
+                return path;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private string[] GetVoiceVoxPaths()
+    {
+        return new[]
         {
             // User installation (Microsoft Store or portable)
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "VOICEVOX", "VOICEVOX.exe"),
@@ -155,17 +180,36 @@ public class VoiceVoxEngineManager
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "VOICEVOX", "VOICEVOX.exe"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "VOICEVOX", "run.exe")
         };
+    }
 
-        foreach (var path in possiblePaths)
+    private string[] GetAivisSpeechPaths()
+    {
+        return new[]
         {
-            if (File.Exists(path))
-            {
-                Console.WriteLine($"Found VOICEVOX engine at: {path}");
-                return path;
-            }
-        }
-
-        return string.Empty;
+            // User installation
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "AivisSpeech", "AivisSpeech.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "AivisSpeech", "run.exe"),
+            
+            // User AppData
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AivisSpeech", "AivisSpeech.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AivisSpeech", "run.exe"),
+            
+            // Program Files
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "AivisSpeech", "AivisSpeech.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "AivisSpeech", "run.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "AivisSpeech", "AivisSpeech.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86), "AivisSpeech", "run.exe"),
+            
+            // Desktop (common for portable versions)
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "AivisSpeech", "AivisSpeech.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Desktop), "AivisSpeech", "run.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "AivisSpeech", "AivisSpeech.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory), "AivisSpeech", "run.exe"),
+            
+            // Common download locations
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AivisSpeech", "AivisSpeech.exe"),
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AivisSpeech", "run.exe")
+        };
     }
 
     public void Dispose()
