@@ -15,13 +15,17 @@ VoicevoxRunCachedは、VOICEVOX REST APIを使用してテキストから音声�
 - **🔊 安定した音声再生**: 初回再生時の音声品質安定化
 - **🎵 デバイス準備機能**: オーディオデバイスの暖気運転で音切れ防止
 - **⚙️ カスタマイズ可能**: 音声パラメータ（速度、ピッチ、音量）の調整
+- **🔧 エンジン自動起動**: VOICEVOXエンジンの自動起動とプロセス管理
+- **🎯 フィラー機能**: 音声生成待機中の自然な間つなぎ音声
+- **📊 詳細な実行時間測定**: `--verbose`オプションでパフォーマンス分析
 
 ## システム要件
 
 - **OS**: Windows x64
-- **前提条件**: VOICEVOX エンジンが実行されていること
-  - デフォルト: `http://localhost:50021`
+- **前提条件**: VOICEVOX エンジン（自動起動対応）
+  - デフォルト: `http://127.0.0.1:50021`
   - [VOICEVOX公式サイト](https://voicevox.hiroshiba.jp/)からダウンロード可能
+  - エンジン自動起動機能により手動での事前起動は不要
 
 ## インストール
 
@@ -157,6 +161,7 @@ voice "速度を変更します。" --speed 1.2
 | `--volume <value>` | 音声音量（0.0-2.0） | 1.0 |
 | `--no-cache` | キャッシュを使用しない | false |
 | `--cache-only` | キャッシュのみ使用（API呼び出し無し） | false |
+| `--verbose` | 詳細な実行時間情報を表示 | false |
 | `--help, -h` | ヘルプを表示 | - |
 
 ### 特別なコマンド
@@ -165,8 +170,16 @@ voice "速度を変更します。" --speed 1.2
 # 利用可能なスピーカー一覧を表示
 VoicevoxRunCached.exe speakers
 
+# フィラー音声キャッシュの初期化
+VoicevoxRunCached.exe --init
+
+# 詳細な実行時間を表示
+VoicevoxRunCached.exe "テストメッセージです。" --verbose
+
 # エイリアス使用時
 voice speakers
+voice --init
+voice "テストメッセージです。" --verbose
 ```
 
 ## 設定ファイル
@@ -176,9 +189,15 @@ voice speakers
 ```json
 {
   "VoiceVox": {
-    "BaseUrl": "http://localhost:50021",
+    "BaseUrl": "http://127.0.0.1:50021",
     "DefaultSpeaker": 1,
-    "ConnectionTimeout": 30
+    "ConnectionTimeout": 30,
+    "AutoStartEngine": true,
+    "EnginePath": "",
+    "EngineArguments": "--host 127.0.0.1 --port 50021",
+    "StartupTimeoutSeconds": 30,
+    "EngineType": "VOICEVOX",
+    "KeepEngineRunning": true
   },
   "Cache": {
     "Directory": "./cache/audio/",
@@ -191,6 +210,16 @@ voice speakers
     "PrepareDevice": false,
     "PreparationDurationMs": 200,
     "PreparationVolume": 0.01
+  },
+  "Filler": {
+    "Enabled": true,
+    "Directory": "./cache/filler/",
+    "FillerTexts": [
+      "えーっと", "あのー", "そのー", "んー", "まあ",
+      "えー", "うーん", "ええと", "まー", "ふむ",
+      "おー", "んと", "あー", "うー", "んーと",
+      "あのう", "えーと"
+    ]
   }
 }
 ```
@@ -198,9 +227,15 @@ voice speakers
 ### 設定項目説明
 
 #### VoiceVox設定
-- **BaseUrl**: VOICEVOX エンジンのURL
+- **BaseUrl**: VOICEVOX エンジンのURL（DNS解決最適化のため127.0.0.1推奨）
 - **DefaultSpeaker**: デフォルトのスピーカーID
 - **ConnectionTimeout**: API接続タイムアウト（秒）
+- **AutoStartEngine**: エンジンの自動起動を有効にするか
+- **EnginePath**: エンジンの実行ファイルパス（空文字で自動検出）
+- **EngineArguments**: エンジン起動時の引数
+- **StartupTimeoutSeconds**: エンジン起動待機タイムアウト（秒）
+- **EngineType**: エンジンタイプ（VOICEVOX/AivisSpeech）
+- **KeepEngineRunning**: アプリ終了後もエンジンを起動したままにするか
 
 #### Cache設定
 - **Directory**: キャッシュファイル保存ディレクトリ
@@ -214,19 +249,24 @@ voice speakers
 - **PreparationDurationMs**: デバイス準備時間（ミリ秒）
 - **PreparationVolume**: 準備時の音量（極小音量での暖気運転）
 
+#### Filler設定
+- **Enabled**: フィラー機能を有効にするか
+- **Directory**: フィラー音声キャッシュ保存ディレクトリ
+- **FillerTexts**: 使用するフィラー音声のテキスト一覧
+
 ## VoicevoxRunCached vs curl比較
 
 ### curlを直接使用する場合
 
 ```bash
 # 1. スピーカー初期化
-curl -X POST "http://localhost:50021/initialize_speaker" -H "Content-Type: application/json" -d "{\"speaker\": 1}"
+curl -X POST "http://127.0.0.1:50021/initialize_speaker" -H "Content-Type: application/json" -d "{\"speaker\": 1}"
 
 # 2. 音声クエリ生成
-curl -X POST "http://localhost:50021/audio_query?speaker=1&text=こんにちは、世界！" -H "Content-Type: application/json" -o query.json
+curl -X POST "http://127.0.0.1:50021/audio_query?speaker=1&text=こんにちは、世界！" -H "Content-Type: application/json" -o query.json
 
 # 3. 音声合成
-curl -X POST "http://localhost:50021/synthesis?speaker=1" -H "Content-Type: application/json" -d @query.json --output audio.wav
+curl -X POST "http://127.0.0.1:50021/synthesis?speaker=1" -H "Content-Type: application/json" -d @query.json --output audio.wav
 
 # 4. 音声再生（別途プレイヤーが必要）
 # Windows Media Player や他のツールで audio.wav を再生
@@ -277,6 +317,39 @@ VoicevoxRunCached.exe "おはようございます。今日は良い天気です
 # 部分変更（1セグメントだけ生成、残りは即座再生）
 VoicevoxRunCached.exe "おはようございます。今日は雨が降っています。"
 ```
+
+## パフォーマンス分析
+
+`--verbose`オプションを使用すると、詳細な実行時間情報が表示されます：
+
+```bash
+VoicevoxRunCached.exe "テストメッセージです。" --verbose
+```
+
+**出力例:**
+```
+Engine check completed in 38.7ms
+Processing segments...
+Segment processing completed in 25.6ms
+Found 1/1 segments in cache!
+Playing audio...
+Audio playback completed in 2376.1ms
+Done!
+Total execution time: 2445.4ms
+```
+
+### 実行時間の内訳
+
+- **Engine check**: VOICEVOXエンジンの動作確認（初回起動時は長くなります）
+- **Segment processing**: テキストの分割とキャッシュ確認
+- **Audio playback**: 実際の音声再生時間
+- **Total execution time**: アプリケーション全体の実行時間
+
+### パフォーマンス最適化のポイント
+
+1. **DNS解決最適化**: `127.0.0.1`使用により`localhost`のDNS解決遅延を回避
+2. **エンジン再利用**: `KeepEngineRunning: true`により2回目以降のEngine checkが高速化
+3. **セグメントキャッシュ**: 部分的な変更でも未変更部分は即座再生
 
 ## トラブルシューティング
 
