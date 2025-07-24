@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using System.Runtime.InteropServices;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services;
@@ -7,8 +8,22 @@ namespace VoicevoxRunCached;
 
 class Program
 {
+    [DllImport("kernel32.dll")]
+    private static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+
+    [DllImport("kernel32.dll")]
+    private static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GetStdHandle(int nStdHandle);
+
+    private const int STD_OUTPUT_HANDLE = -11;
+    private const uint ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004;
+
     static async Task<int> Main(string[] args)
     {
+        EnableAnsiColors();
+        
         var configuration = BuildConfiguration();
         var settings = configuration.Get<AppSettings>() ?? new AppSettings();
 
@@ -35,6 +50,19 @@ class Program
 
         await HandleTextToSpeechAsync(settings, request, GetBoolOption(args, "--no-cache"), GetBoolOption(args, "--cache-only"));
         return 0;
+    }
+
+    private static void EnableAnsiColors()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var handle = GetStdHandle(STD_OUTPUT_HANDLE);
+            if (GetConsoleMode(handle, out uint mode))
+            {
+                mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+                SetConsoleMode(handle, mode);
+            }
+        }
     }
 
     private static IConfiguration BuildConfiguration()
