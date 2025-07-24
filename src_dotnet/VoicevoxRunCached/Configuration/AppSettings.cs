@@ -5,6 +5,7 @@ public class AppSettings
     public VoiceVoxSettings VoiceVox { get; set; } = new();
     public CacheSettings Cache { get; set; } = new();
     public AudioSettings Audio { get; set; } = new();
+    public FillerSettings Filler { get; set; } = new();
 }
 
 // C# 13 Primary constructor for VoiceVoxSettings
@@ -33,4 +34,33 @@ public class AudioSettings(int outputDevice = -1, double volume = 1.0, bool prep
     public bool PrepareDevice { get; set; } = prepareDevice;
     public int PreparationDurationMs { get; set; } = preparationDurationMs;
     public double PreparationVolume { get; set; } = preparationVolume; // Very low but audible volume for device warming
+}
+
+// C# 13 Primary constructor for FillerSettings
+public class FillerSettings(bool enabled = false, string directory = "./cache/filler/", int minDelayMs = 2000, string[] fillerTexts = null)
+{
+    public bool Enabled { get; set; } = enabled;
+    public string Directory { get; set; } = directory;
+    public int MinDelayMs { get; set; } = minDelayMs; // Minimum delay before playing filler
+    public string[] FillerTexts { get; set; } = fillerTexts ?? [
+        "えーっと",
+        "あのー",
+        "そのー",
+        "んー",
+        "そうですね",
+        "まあ",
+        "えー",
+        "うーん",
+        "ええと",
+        "まー",
+        "はい",
+        "ふむ",
+        "おー",
+        "んと",
+        "あー",
+        "うー",
+        "んーと",
+        "あのう",
+        "えーと"
+    ];
 }

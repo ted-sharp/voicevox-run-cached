@@ -39,6 +39,12 @@ class Program
             return 0;
         }
 
+        if (args[0] == "--init")
+        {
+            await HandleInitializeFillerAsync(settings);
+            return 0;
+        }
+
         var request = ParseArguments(args, settings);
         if (request == null)
         {
@@ -84,6 +90,7 @@ class Program
         Console.WriteLine("Usage:");
         Console.WriteLine("  VoicevoxRunCached <text> [options]");
         Console.WriteLine("  VoicevoxRunCached speakers");
+        Console.WriteLine("  VoicevoxRunCached --init");
         Console.WriteLine();
         Console.WriteLine("Arguments:");
         Console.WriteLine("  <text>                    The text to convert to speech");
@@ -99,6 +106,7 @@ class Program
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine("  speakers                 List available speakers");
+        Console.WriteLine("  --init                   Initialize filler audio cache");
     }
 
     private static VoiceRequest? ParseArguments(string[] args, AppSettings settings)
@@ -196,7 +204,8 @@ class Program
                 // C# 13 Escape character for status message
                 Console.WriteLine($"\\e[36mPlaying audio...\\e[0m"); // Cyan text
                 using var audioPlayer = new AudioPlayer(settings.Audio);
-                await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, generationTask);
+                var fillerManager = settings.Filler.Enabled ? new FillerManager(settings.Filler, cacheManager) : null;
+                await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, generationTask, fillerManager);
             }
             else
             {
@@ -297,6 +306,22 @@ class Program
                     }
                 });
             }
+        }
+    }
+
+    private static async Task HandleInitializeFillerAsync(AppSettings settings)
+    {
+        try
+        {
+            var cacheManager = new AudioCacheManager(settings.Cache);
+            var fillerManager = new FillerManager(settings.Filler, cacheManager);
+            
+            await fillerManager.InitializeFillerCacheAsync(settings);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"\e[31mError initializing filler cache: {ex.Message}\e[0m");
+            Environment.Exit(1);
         }
     }
 }

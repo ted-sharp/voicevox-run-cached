@@ -310,7 +310,7 @@ public class AudioPlayer : IDisposable
         }
     }
 
-    public async Task PlayAudioSequentiallyWithGenerationAsync(List<TextSegment> segments, Task? generationTask)
+    public async Task PlayAudioSequentiallyWithGenerationAsync(List<TextSegment> segments, Task? generationTask, FillerManager? fillerManager = null)
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
@@ -345,6 +345,8 @@ public class AudioPlayer : IDisposable
                 {
                     Console.WriteLine($"Waiting for segment {i + 1} to be generated...");
                     
+                    bool fillerPlayed = false;
+                    
                     // Wait until this segment is ready or generation task completes
                     while (!segment.IsCached || segment.AudioData == null)
                     {
@@ -352,6 +354,20 @@ public class AudioPlayer : IDisposable
                         {
                             break; // Generation is done, no point in waiting further
                         }
+                        
+                        // Play filler immediately when we start waiting
+                        if (!fillerPlayed && fillerManager != null)
+                        {
+                            var fillerAudio = await fillerManager.GetRandomFillerAudioAsync();
+                            if (fillerAudio != null)
+                            {
+                                Console.WriteLine("Playing filler...");
+                                await PlayAudioInternal(fillerAudio, isFirstSegment);
+                                isFirstSegment = false;
+                                fillerPlayed = true;
+                            }
+                        }
+                        
                         await Task.Delay(50); // Check every 50ms
                     }
                     
