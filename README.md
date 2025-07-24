@@ -215,10 +215,12 @@ voice "テストメッセージです。" --verbose
     "Enabled": true,
     "Directory": "./cache/filler/",
     "FillerTexts": [
-      "えーっと", "あのー", "そのー", "んー", "まあ",
-      "えー", "うーん", "ええと", "まー", "ふむ",
-      "おー", "んと", "あー", "うー", "んーと",
-      "あのう", "えーと"
+      "えーっと、",
+      "あのー、",
+      "あのう、",
+      "ええと、",
+      "ええっと、",
+      "えとえと、"
     ]
   }
 }
@@ -250,9 +252,9 @@ voice "テストメッセージです。" --verbose
 - **PreparationVolume**: 準備時の音量（極小音量での暖気運転）
 
 #### Filler設定
-- **Enabled**: フィラー機能を有効にするか
+- **Enabled**: フィラー機能を有効にするか（音声生成待機中の自然な間つなぎ）
 - **Directory**: フィラー音声キャッシュ保存ディレクトリ
-- **FillerTexts**: 使用するフィラー音声のテキスト一覧
+- **FillerTexts**: 話の始めに適したフィラー音声のテキスト一覧（読点付きで自然な語調）
 
 ## VoicevoxRunCached vs curl比較
 
@@ -331,8 +333,10 @@ VoicevoxRunCached.exe "テストメッセージです。" --verbose
 Engine check completed in 38.7ms
 Processing segments...
 Segment processing completed in 25.6ms
-Found 1/1 segments in cache!
+Generating 1 segments in background...
 Playing audio...
+Waiting for segment 1 to be generated...
+Playing filler...
 Audio playback completed in 2376.1ms
 Done!
 Total execution time: 2445.4ms
@@ -342,7 +346,9 @@ Total execution time: 2445.4ms
 
 - **Engine check**: VOICEVOXエンジンの動作確認（初回起動時は長くなります）
 - **Segment processing**: テキストの分割とキャッシュ確認
-- **Audio playback**: 実際の音声再生時間
+- **Generating segments**: 未キャッシュセグメントのバックグラウンド生成
+- **Playing filler**: 未生成セグメント待機中のフィラー音声再生
+- **Audio playback**: 実際の音声再生時間（フィラー含む）
 - **Total execution time**: アプリケーション全体の実行時間
 
 ### パフォーマンス最適化のポイント
@@ -350,6 +356,34 @@ Total execution time: 2445.4ms
 1. **DNS解決最適化**: `127.0.0.1`使用により`localhost`のDNS解決遅延を回避
 2. **エンジン再利用**: `KeepEngineRunning: true`により2回目以降のEngine checkが高速化
 3. **セグメントキャッシュ**: 部分的な変更でも未変更部分は即座再生
+
+## フィラー機能
+
+音声生成の待機時間中に、自然な間つなぎ音声（フィラー）を自動再生する機能です。
+
+### フィラーの特徴
+
+- **自然な語調**: 読点（、）付きで語尾が自然に下がる
+- **話の始めに最適**: 「えーっと、」「あのー、」など導入に適した表現
+- **セグメント別対応**: 未生成セグメントがある場合のみ再生
+- **ランダム選択**: 6種類のフィラーからランダムに選択
+
+### フィラーの種類
+
+現在のフィラーセット：
+- `えーっと、` - 基本的な思考フィラー
+- `あのー、` - 丁寧な切り出し  
+- `あのう、` - より丁寧なバリエーション
+- `ええと、` - 考えながらの始まり
+- `ええっと、` - より強調された思考
+- `えとえと、` - 迷いながらの繰り返し
+
+### フィラー初期化
+
+```bash
+# フィラーキャッシュの初期化（初回実行時に推奨）
+VoicevoxRunCached.exe --init
+```
 
 ## トラブルシューティング
 
@@ -415,6 +449,8 @@ _publish_zip.cmd
 - **MP3キャッシュ**: WAVからMP3への自動変換でストレージ効率化
 - **スレッドセーフ**: 新しいLock型による安全な並行処理
 - **デバイス準備**: 実際の極小音量再生による効果的な暖気運転
+- **インテリジェントフィラー**: セグメント別音声生成待機時の自然な間つなぎ機能
+- **エンジン自動管理**: VOICEVOXエンジンの自動起動・プロセス管理・永続化
 
 ## ライセンス
 
