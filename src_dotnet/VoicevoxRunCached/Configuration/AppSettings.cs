@@ -9,7 +9,7 @@ public class AppSettings
 }
 
 // C# 13 Primary constructor for VoiceVoxSettings
-public class VoiceVoxSettings(string baseUrl = "http://localhost:50021", int defaultSpeaker = 1, int connectionTimeout = 30, bool autoStartEngine = false, string enginePath = "", int startupTimeoutSeconds = 30, string engineArguments = "", EngineType engineType = EngineType.VOICEVOX)
+public class VoiceVoxSettings(string baseUrl = "http://localhost:50021", int defaultSpeaker = 1, int connectionTimeout = 30, bool autoStartEngine = false, string enginePath = "", int startupTimeoutSeconds = 30, string engineArguments = "", EngineType engineType = EngineType.VOICEVOX, bool keepEngineRunning = true)
 {
     public string BaseUrl { get; set; } = baseUrl;
     public int DefaultSpeaker { get; set; } = defaultSpeaker;
@@ -19,6 +19,7 @@ public class VoiceVoxSettings(string baseUrl = "http://localhost:50021", int def
     public int StartupTimeoutSeconds { get; set; } = startupTimeoutSeconds;
     public string EngineArguments { get; set; } = engineArguments;
     public EngineType EngineType { get; set; } = engineType;
+    public bool KeepEngineRunning { get; set; } = keepEngineRunning;
 }
 
 public enum EngineType

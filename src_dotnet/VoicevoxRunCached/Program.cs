@@ -211,7 +211,7 @@ class Program
 
                 // Start playing immediately - cached segments play right away, uncached segments wait
                 // C# 13 Escape character for status message
-                Console.WriteLine($"\\e[36mPlaying audio...\\e[0m"); // Cyan text
+                Console.WriteLine($"\e[36mPlaying audio...\e[0m"); // Cyan text
                 using var audioPlayer = new AudioPlayer(settings.Audio);
                 var fillerManager = settings.Filler.Enabled ? new FillerManager(settings.Filler, cacheManager) : null;
                 await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, generationTask, fillerManager);
@@ -241,7 +241,7 @@ class Program
         catch (Exception ex)
         {
             // C# 13 Escape character for error message
-            Console.WriteLine($"\\e[31mError: {ex.Message}\\e[0m"); // Red text
+            Console.WriteLine($"\e[31mError: {ex.Message}\e[0m"); // Red text
             Environment.Exit(1);
         }
     }
@@ -276,7 +276,7 @@ class Program
         catch (Exception ex)
         {
             // C# 13 Escape character for error message
-            Console.WriteLine($"\\e[31mError: {ex.Message}\\e[0m"); // Red text
+            Console.WriteLine($"\e[31mError: {ex.Message}\e[0m"); // Red text
             Environment.Exit(1);
         }
     }

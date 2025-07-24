@@ -72,8 +72,8 @@ public class VoiceVoxEngineManager : IDisposable
                 Arguments = this._settings.EngineArguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
+                RedirectStandardOutput = false,
+                RedirectStandardError = false
             };
 
             this._engineProcess = Process.Start(startInfo);
@@ -214,7 +214,10 @@ public class VoiceVoxEngineManager : IDisposable
 
     public void Dispose()
     {
-        this.StopEngine();
+        if (!this._settings.KeepEngineRunning)
+        {
+            this.StopEngine();
+        }
         this._engineProcess?.Dispose();
     }
 }
