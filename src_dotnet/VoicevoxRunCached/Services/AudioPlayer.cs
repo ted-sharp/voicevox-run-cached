@@ -362,7 +362,7 @@ public class AudioPlayer : IDisposable
                             if (fillerAudio != null)
                             {
                                 Console.WriteLine("Playing filler...");
-                                await PlayAudioInternal(fillerAudio, isFirstSegment);
+                                await PlayAudioAsync(fillerAudio);
                                 isFirstSegment = false;
                                 fillerPlayed = true;
                             }
@@ -445,7 +445,7 @@ public class AudioPlayer : IDisposable
             
             _wavePlayer.PlaybackStopped += (sender, e) =>
             {
-                reader.Dispose();
+                reader?.Dispose();
                 if (e.Exception != null)
                 {
                     tcs.TrySetException(e.Exception);

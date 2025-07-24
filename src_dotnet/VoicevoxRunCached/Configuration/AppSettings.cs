@@ -48,7 +48,7 @@ public class AudioSettings(int outputDevice = -1, double volume = 1.0, bool prep
 }
 
 // C# 13 Primary constructor for FillerSettings
-public class FillerSettings(bool enabled = false, string directory = "./cache/filler/", int minDelayMs = 2000, string[] fillerTexts = null)
+public class FillerSettings(bool enabled = false, string directory = "./cache/filler/", int minDelayMs = 2000, string[]? fillerTexts = null)
 {
     public bool Enabled { get; set; } = enabled;
     public string Directory { get; set; } = directory;

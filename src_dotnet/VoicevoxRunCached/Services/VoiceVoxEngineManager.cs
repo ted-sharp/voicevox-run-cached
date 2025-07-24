@@ -4,7 +4,7 @@ using VoicevoxRunCached.Configuration;
 
 namespace VoicevoxRunCached.Services;
 
-public class VoiceVoxEngineManager
+public class VoiceVoxEngineManager : IDisposable
 {
     private readonly VoiceVoxSettings _settings;
     private Process? _engineProcess;

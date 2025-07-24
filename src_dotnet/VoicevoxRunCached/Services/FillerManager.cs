@@ -44,7 +44,7 @@ public class FillerManager
             };
 
             // Check if already cached
-            var cacheKey = _cacheManager.GenerateCacheKey(fillerRequest);
+            var cacheKey = _cacheManager.ComputeCacheKey(ref fillerRequest);
             var fillerCachePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
             
             if (!File.Exists(fillerCachePath))
@@ -85,7 +85,7 @@ public class FillerManager
             Volume = 1.0
         };
 
-        var cacheKey = _cacheManager.GenerateCacheKey(fillerRequest);
+        var cacheKey = _cacheManager.ComputeCacheKey(ref fillerRequest);
         var fillerCachePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
 
         if (File.Exists(fillerCachePath))
