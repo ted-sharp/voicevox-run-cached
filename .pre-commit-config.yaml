@@ -1,0 +1,34 @@
+# Pre-commit configuration for VOICEVOX Run Cached project
+repos:
+  - repo: local
+    hooks:
+      - id: dotnet-build
+        name: Build C# project
+        entry: bash -c "cd src_dotnet/VoicevoxRunCached && dotnet build --verbosity quiet"
+        language: system
+        pass_filenames: false
+        always_run: true
+        
+      - id: dotnet-format
+        name: Format C# code
+        entry: bash -c "cd src_dotnet/VoicevoxRunCached && dotnet format --verbosity quiet"
+        language: system
+        files: '\.cs$'
+        
+      - id: dotnet-test
+        name: Run C# tests
+        entry: bash -c "cd src_dotnet/VoicevoxRunCached && if find . -name '*.Tests.csproj' -o -name '*Test*.csproj' | grep -q .; then dotnet test --verbosity quiet; else echo 'No test projects found'; fi"
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  # Standard hooks for general file maintenance
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.4.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
