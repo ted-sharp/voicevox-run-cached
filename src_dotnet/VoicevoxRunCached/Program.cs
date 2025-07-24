@@ -164,6 +164,15 @@ class Program
     {
         try
         {
+            // Ensure VOICEVOX engine is running
+            using var engineManager = new VoiceVoxEngineManager(settings.VoiceVox);
+            if (!await engineManager.EnsureEngineRunningAsync())
+            {
+                Console.WriteLine("\e[31mError: VOICEVOX engine is not available\e[0m");
+                Environment.Exit(1);
+                return;
+            }
+
             var cacheManager = new AudioCacheManager(settings.Cache);
             byte[]? audioData = null;
 
@@ -241,6 +250,15 @@ class Program
     {
         try
         {
+            // Ensure VOICEVOX engine is running
+            using var engineManager = new VoiceVoxEngineManager(settings.VoiceVox);
+            if (!await engineManager.EnsureEngineRunningAsync())
+            {
+                Console.WriteLine("\e[31mError: VOICEVOX engine is not available\e[0m");
+                Environment.Exit(1);
+                return;
+            }
+
             using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
             var speakers = await apiClient.GetSpeakersAsync();
 
@@ -313,6 +331,15 @@ class Program
     {
         try
         {
+            // Ensure VOICEVOX engine is running
+            using var engineManager = new VoiceVoxEngineManager(settings.VoiceVox);
+            if (!await engineManager.EnsureEngineRunningAsync())
+            {
+                Console.WriteLine("\e[31mError: VOICEVOX engine is not available\e[0m");
+                Environment.Exit(1);
+                return;
+            }
+
             var cacheManager = new AudioCacheManager(settings.Cache);
             var fillerManager = new FillerManager(settings.Filler, cacheManager);
             

@@ -9,11 +9,15 @@ public class AppSettings
 }
 
 // C# 13 Primary constructor for VoiceVoxSettings
-public class VoiceVoxSettings(string baseUrl = "http://localhost:50021", int defaultSpeaker = 1, int connectionTimeout = 30)
+public class VoiceVoxSettings(string baseUrl = "http://localhost:50021", int defaultSpeaker = 1, int connectionTimeout = 30, bool autoStartEngine = false, string enginePath = "", int startupTimeoutSeconds = 30, string engineArguments = "")
 {
     public string BaseUrl { get; set; } = baseUrl;
     public int DefaultSpeaker { get; set; } = defaultSpeaker;
     public int ConnectionTimeout { get; set; } = connectionTimeout;
+    public bool AutoStartEngine { get; set; } = autoStartEngine;
+    public string EnginePath { get; set; } = enginePath;
+    public int StartupTimeoutSeconds { get; set; } = startupTimeoutSeconds;
+    public string EngineArguments { get; set; } = engineArguments;
 }
 
 // C# 13 Primary constructor for CacheSettings
