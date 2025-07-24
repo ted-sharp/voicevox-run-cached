@@ -10,16 +10,16 @@ public class FillerManager
 
     public FillerManager(FillerSettings settings, AudioCacheManager cacheManager)
     {
-        _settings = settings;
-        _cacheManager = cacheManager;
+        this._settings = settings;
+        this._cacheManager = cacheManager;
     }
 
     public async Task InitializeFillerCacheAsync(AppSettings appSettings)
     {
-        if (!_settings.Enabled)
+        if (!this._settings.Enabled)
             return;
 
-        Directory.CreateDirectory(_settings.Directory);
+        Directory.CreateDirectory(this._settings.Directory);
 
         using var spinner = new ProgressSpinner("Initializing filler cache...");
         using var apiClient = new VoiceVoxApiClient(appSettings.VoiceVox);
@@ -27,9 +27,9 @@ public class FillerManager
         await apiClient.InitializeSpeakerAsync(appSettings.VoiceVox.DefaultSpeaker);
 
         int processed = 0;
-        int total = _settings.FillerTexts.Length;
+        int total = this._settings.FillerTexts.Length;
 
-        foreach (var fillerText in _settings.FillerTexts)
+        foreach (var fillerText in this._settings.FillerTexts)
         {
             processed++;
             spinner.UpdateMessage($"Generating filler {processed}/{total}: \"{fillerText}\"");
@@ -44,18 +44,18 @@ public class FillerManager
             };
 
             // Check if already cached
-            var cacheKey = _cacheManager.ComputeCacheKey(ref fillerRequest);
-            var fillerCachePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
-            
+            var cacheKey = this._cacheManager.ComputeCacheKey(ref fillerRequest);
+            var fillerCachePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
+
             if (!File.Exists(fillerCachePath))
             {
                 try
                 {
                     var audioQuery = await apiClient.GenerateAudioQueryAsync(fillerRequest);
                     var audioData = await apiClient.SynthesizeAudioAsync(audioQuery, fillerRequest.SpeakerId);
-                    
+
                     // Save directly to filler directory
-                    await SaveFillerAudioAsync(fillerCachePath, audioData);
+                    await this.SaveFillerAudioAsync(fillerCachePath, audioData);
                 }
                 catch (Exception ex)
                 {
@@ -65,17 +65,17 @@ public class FillerManager
         }
 
         spinner.Dispose();
-        Console.WriteLine($"\e[32mFiller cache initialized with {_settings.FillerTexts.Length} items\e[0m");
+        Console.WriteLine($"\e[32mFiller cache initialized with {this._settings.FillerTexts.Length} items\e[0m");
     }
 
     public async Task<byte[]?> GetRandomFillerAudioAsync()
     {
-        if (!_settings.Enabled || _settings.FillerTexts.Length == 0)
+        if (!this._settings.Enabled || this._settings.FillerTexts.Length == 0)
             return null;
 
         var random = new Random();
-        var randomFiller = _settings.FillerTexts[random.Next(_settings.FillerTexts.Length)];
-        
+        var randomFiller = this._settings.FillerTexts[random.Next(this._settings.FillerTexts.Length)];
+
         var fillerRequest = new VoiceRequest
         {
             Text = randomFiller,
@@ -85,8 +85,8 @@ public class FillerManager
             Volume = 1.0
         };
 
-        var cacheKey = _cacheManager.ComputeCacheKey(ref fillerRequest);
-        var fillerCachePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
+        var cacheKey = this._cacheManager.ComputeCacheKey(ref fillerRequest);
+        var fillerCachePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
 
         if (File.Exists(fillerCachePath))
         {
@@ -106,7 +106,7 @@ public class FillerManager
     private async Task SaveFillerAudioAsync(string filePath, byte[] audioData)
     {
         // Convert WAV to MP3 and save (similar to AudioCacheManager)
-        var mp3Data = await ConvertWavToMp3Async(audioData);
+        var mp3Data = await this.ConvertWavToMp3Async(audioData);
         await File.WriteAllBytesAsync(filePath, mp3Data);
     }
 

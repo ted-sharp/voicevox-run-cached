@@ -23,7 +23,7 @@ class Program
     static async Task<int> Main(string[] args)
     {
         EnableAnsiColors();
-        
+
         var configuration = BuildConfiguration();
         var settings = configuration.Get<AppSettings>() ?? new AppSettings();
 
@@ -76,7 +76,7 @@ class Program
         // Use the directory where the executable is located, not the current working directory
         var executablePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
         var executableDirectory = Path.GetDirectoryName(executablePath) ?? Directory.GetCurrentDirectory();
-        
+
         return new ConfigurationBuilder()
             .SetBasePath(executableDirectory)
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
@@ -128,19 +128,19 @@ class Program
         {
             switch (args[i])
             {
-                case "--speaker" or "-s" when i + 1 < args.Length && int.TryParse(args[i + 1], out int speaker):
+                case "--speaker" or "-s" when i + 1 < args.Length && Int32.TryParse(args[i + 1], out int speaker):
                     request.SpeakerId = speaker;
                     i++;
                     break;
-                case "--speed" when i + 1 < args.Length && double.TryParse(args[i + 1], out double speed):
+                case "--speed" when i + 1 < args.Length && Double.TryParse(args[i + 1], out double speed):
                     request.Speed = speed;
                     i++;
                     break;
-                case "--pitch" when i + 1 < args.Length && double.TryParse(args[i + 1], out double pitch):
+                case "--pitch" when i + 1 < args.Length && Double.TryParse(args[i + 1], out double pitch):
                     request.Pitch = pitch;
                     i++;
                     break;
-                case "--volume" when i + 1 < args.Length && double.TryParse(args[i + 1], out double volume):
+                case "--volume" when i + 1 < args.Length && Double.TryParse(args[i + 1], out double volume):
                     request.Volume = volume;
                     i++;
                     break;
@@ -183,7 +183,7 @@ class Program
                 var segments = await cacheManager.ProcessTextSegmentsAsync(request);
                 var cachedCount = segments.Count(s => s.IsCached);
                 var totalCount = segments.Count;
-                
+
                 if (cachedCount > 0)
                 {
                     // C# 13 Escape character for success message
@@ -221,14 +221,14 @@ class Program
                 // Original non-cached behavior for --no-cache
                 using var spinner = new ProgressSpinner("Generating speech...");
                 using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
-                
+
                 await apiClient.InitializeSpeakerAsync(request.SpeakerId);
-                
+
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(request);
                 audioData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId);
-                
+
                 spinner.Dispose();
-                
+
                 // C# 13 Escape character for playback status
                 Console.WriteLine($"\e[36mPlaying audio...\e[0m"); // Cyan text
                 using var audioPlayer = new AudioPlayer(settings.Audio);
@@ -307,7 +307,7 @@ class Program
 
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(segmentRequest);
                 var segmentAudio = await apiClient.SynthesizeAudioAsync(audioQuery, segmentRequest.SpeakerId);
-                
+
                 segments[i].AudioData = segmentAudio;
                 segments[i].IsCached = true; // Mark as ready for playback
 
@@ -342,7 +342,7 @@ class Program
 
             var cacheManager = new AudioCacheManager(settings.Cache);
             var fillerManager = new FillerManager(settings.Filler, cacheManager);
-            
+
             await fillerManager.InitializeFillerCacheAsync(settings);
         }
         catch (Exception ex)

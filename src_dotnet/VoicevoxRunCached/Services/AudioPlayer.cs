@@ -19,17 +19,17 @@ public class AudioPlayer : IDisposable
     public AudioPlayer(AudioSettings settings)
     {
         // C# 13 nameof expression for type-safe parameter validation
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
         MediaFoundationApi.Startup();
-        
+
         // Start device preparation if enabled in settings
-        if (_settings.PrepareDevice)
+        if (this._settings.PrepareDevice)
         {
-            _devicePreparationTask = Task.Run(async () =>
+            this._devicePreparationTask = Task.Run(async () =>
             {
                 try
                 {
-                    await PrewarmAudioDeviceAsync(_settings.PreparationDurationMs);
+                    await this.PrewarmAudioDeviceAsync(this._settings.PreparationDurationMs);
                 }
                 catch
                 {
@@ -44,33 +44,33 @@ public class AudioPlayer : IDisposable
         try
         {
             // Create a silent audio to initialize the device with configurable duration
-            var silentWavData = CreateSilentWavData(durationMs);
-            
+            var silentWavData = this.CreateSilentWavData(durationMs);
+
             using var audioStream = new MemoryStream(silentWavData);
             using var reader = new WaveFileReader(audioStream);
             using var wavePlayer = new WaveOutEvent();
-            
-            if (_settings.OutputDevice >= 0)
+
+            if (this._settings.OutputDevice >= 0)
             {
-                wavePlayer.DeviceNumber = _settings.OutputDevice;
+                wavePlayer.DeviceNumber = this._settings.OutputDevice;
             }
-            
+
             // Use same buffer settings as main playback
             wavePlayer.DesiredLatency = 100;
             wavePlayer.NumberOfBuffers = 3;
             // Use very low but audible volume for effective device warming
-            wavePlayer.Volume = (float)Math.Max(0.001, Math.Min(1.0, _settings.PreparationVolume));
-            
+            wavePlayer.Volume = (float)Math.Max(0.001, Math.Min(1.0, this._settings.PreparationVolume));
+
             var tcs = new TaskCompletionSource<bool>();
-            
+
             wavePlayer.PlaybackStopped += (sender, e) =>
             {
                 tcs.TrySetResult(true);
             };
-            
+
             wavePlayer.Init(reader);
             wavePlayer.Play();
-            
+
             // Wait for pre-warming to complete or timeout after 2 seconds
             await tcs.Task.WaitAsync(TimeSpan.FromSeconds(2));
         }
@@ -86,20 +86,20 @@ public class AudioPlayer : IDisposable
         const int sampleRate = 22050;
         const int channels = 1;
         const int bitsPerSample = 16;
-        
+
         var samplesCount = (sampleRate * durationMs) / 1000;
         var dataSize = samplesCount * channels * (bitsPerSample / 8);
         var fileSize = 44 + dataSize - 8;
-        
+
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
-        
+
         // WAV header using ReadOnlySpan for string constants
         ReadOnlySpan<char> riffChars = "RIFF";
         ReadOnlySpan<char> waveChars = "WAVE";
         ReadOnlySpan<char> fmtChars = "fmt ";
         ReadOnlySpan<char> dataChars = "data";
-        
+
         writer.Write(riffChars.ToArray());
         writer.Write(fileSize);
         writer.Write(waveChars.ToArray());
@@ -113,11 +113,11 @@ public class AudioPlayer : IDisposable
         writer.Write((short)bitsPerSample);
         writer.Write(dataChars.ToArray());
         writer.Write(dataSize);
-        
+
         // Generate very low amplitude sine wave for effective device warming
         const double frequency = 440.0; // A4 note
         const short amplitude = 32; // Very low amplitude (about 0.1% of max)
-        
+
         for (int i = 0; i < samplesCount; i++)
         {
             var time = (double)i / sampleRate;
@@ -125,18 +125,18 @@ public class AudioPlayer : IDisposable
             var sample = (short)(sineValue * amplitude);
             writer.Write(sample);
         }
-        
+
         return stream.ToArray();
     }
 
     // Ensure device preparation is complete before playback
     private async Task EnsureDeviceReadyAsync()
     {
-        if (_settings.PrepareDevice && _devicePreparationTask != null)
+        if (this._settings.PrepareDevice && this._devicePreparationTask != null)
         {
             try
             {
-                await _devicePreparationTask;
+                await this._devicePreparationTask;
             }
             catch
             {
@@ -147,19 +147,19 @@ public class AudioPlayer : IDisposable
 
     public async Task PlayAudioStreamingAsync(byte[] audioData, Func<byte[], Task>? cacheCallback = null)
     {
-        if (_disposed)
+        if (this._disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
         // Ensure device is ready before starting playback
-        await EnsureDeviceReadyAsync();
+        await this.EnsureDeviceReadyAsync();
 
         try
         {
-            StopAudio();
+            this.StopAudio();
 
             using var audioStream = new MemoryStream(audioData);
             WaveStream reader;
-            
+
             // Try to detect if it's MP3 or WAV by reading the header using Memory for async operations
             audioStream.Position = 0;
             var headerBuffer = new byte[12];
@@ -167,15 +167,15 @@ public class AudioPlayer : IDisposable
             ReadOnlySpan<byte> headerSpan = headerBuffer;
             ref readonly var headerRef = ref headerSpan[0];
             audioStream.Position = 0;
-            
+
             // Check for WAV header (RIFF....WAVE) using ref for efficient access
-            bool isWav = bytesRead >= 12 && 
+            bool isWav = bytesRead >= 12 &&
                          headerRef == 'R' && headerSpan[1] == 'I' && headerSpan[2] == 'F' && headerSpan[3] == 'F' &&
                          headerSpan[8] == 'W' && headerSpan[9] == 'A' && headerSpan[10] == 'V' && headerSpan[11] == 'E';
-            
+
             // Check for MP3 header (starts with 0xFF) using ref for efficient access
             bool isMp3 = bytesRead >= 2 && headerRef == 0xFF && (headerSpan[1] & 0xE0) == 0xE0;
-            
+
             if (isWav)
             {
                 reader = new WaveFileReader(audioStream);
@@ -199,22 +199,22 @@ public class AudioPlayer : IDisposable
                     reader = new WaveFileReader(audioStream);
                 }
             }
-            
-            _wavePlayer = new WaveOutEvent();
-            
-            if (_settings.OutputDevice >= 0)
+
+            this._wavePlayer = new WaveOutEvent();
+
+            if (this._settings.OutputDevice >= 0)
             {
-                ((WaveOutEvent)_wavePlayer).DeviceNumber = _settings.OutputDevice;
+                ((WaveOutEvent)this._wavePlayer).DeviceNumber = this._settings.OutputDevice;
             }
 
             // Optimized buffering settings for minimal latency with stability
-            ((WaveOutEvent)_wavePlayer).DesiredLatency = 80; // 80ms buffer
-            ((WaveOutEvent)_wavePlayer).NumberOfBuffers = 2;  // Use 2 buffers
+            ((WaveOutEvent)this._wavePlayer).DesiredLatency = 80; // 80ms buffer
+            ((WaveOutEvent)this._wavePlayer).NumberOfBuffers = 2;  // Use 2 buffers
 
-            _wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
-            
+            this._wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
+
             var tcs = new TaskCompletionSource<bool>();
-            
+
             // Start cache saving in parallel if callback provided
             Task? cacheTask = null;
             if (cacheCallback != null)
@@ -231,8 +231,8 @@ public class AudioPlayer : IDisposable
                     }
                 });
             }
-            
-            _wavePlayer.PlaybackStopped += (sender, e) =>
+
+            this._wavePlayer.PlaybackStopped += (sender, e) =>
             {
                 reader.Dispose();
                 if (e.Exception != null)
@@ -245,18 +245,18 @@ public class AudioPlayer : IDisposable
                 }
             };
 
-            _wavePlayer.Init(reader);
-            
+            this._wavePlayer.Init(reader);
+
             // Minimal delay to ensure proper audio initialization
             await Task.Delay(20);
-            
-            _wavePlayer.Play();
+
+            this._wavePlayer.Play();
 
             await tcs.Task;
-            
+
             // Ensure all buffered audio is played before stopping
             await Task.Delay(150); // Wait for buffer to flush
-            
+
             // Wait for cache to complete if it's running
             if (cacheTask != null)
             {
@@ -269,84 +269,84 @@ public class AudioPlayer : IDisposable
         }
         finally
         {
-            StopAudio();
+            this.StopAudio();
         }
     }
 
     public async Task PlayAudioSequentiallyAsync(List<byte[]> audioSegments)
     {
-        if (_disposed)
+        if (this._disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
         // Ensure device is ready before starting playback
-        await EnsureDeviceReadyAsync();
+        await this.EnsureDeviceReadyAsync();
 
         try
         {
             // Initialize single WavePlayer instance for all segments
-            _wavePlayer = new WaveOutEvent();
-            
-            if (_settings.OutputDevice >= 0)
+            this._wavePlayer = new WaveOutEvent();
+
+            if (this._settings.OutputDevice >= 0)
             {
-                ((WaveOutEvent)_wavePlayer).DeviceNumber = _settings.OutputDevice;
+                ((WaveOutEvent)this._wavePlayer).DeviceNumber = this._settings.OutputDevice;
             }
 
             // Optimized buffering settings for stability - slightly higher latency for reliability
-            ((WaveOutEvent)_wavePlayer).DesiredLatency = 100; // 100ms for stable initialization
-            ((WaveOutEvent)_wavePlayer).NumberOfBuffers = 3;   // 3 buffers for seamless transitions
+            ((WaveOutEvent)this._wavePlayer).DesiredLatency = 100; // 100ms for stable initialization
+            ((WaveOutEvent)this._wavePlayer).NumberOfBuffers = 3;   // 3 buffers for seamless transitions
 
-            _wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
+            this._wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
 
             foreach (var segment in audioSegments)
             {
                 if (segment.Length == 0) continue;
-                
-                await PlaySegmentAsync(segment);
+
+                await this.PlaySegmentAsync(segment);
             }
         }
         finally
         {
-            StopAudio();
+            this.StopAudio();
         }
     }
 
     public async Task PlayAudioSequentiallyWithGenerationAsync(List<TextSegment> segments, Task? generationTask, FillerManager? fillerManager = null)
     {
-        if (_disposed)
+        if (this._disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
         // Ensure device is ready before starting playback
-        await EnsureDeviceReadyAsync();
+        await this.EnsureDeviceReadyAsync();
 
         try
         {
             // Initialize single WavePlayer instance for all segments
-            _wavePlayer = new WaveOutEvent();
-            
-            if (_settings.OutputDevice >= 0)
+            this._wavePlayer = new WaveOutEvent();
+
+            if (this._settings.OutputDevice >= 0)
             {
-                ((WaveOutEvent)_wavePlayer).DeviceNumber = _settings.OutputDevice;
+                ((WaveOutEvent)this._wavePlayer).DeviceNumber = this._settings.OutputDevice;
             }
 
             // Optimized buffering settings for stability - slightly higher latency for reliability
-            ((WaveOutEvent)_wavePlayer).DesiredLatency = 100; // 100ms for stable initialization
-            ((WaveOutEvent)_wavePlayer).NumberOfBuffers = 3;   // 3 buffers for seamless transitions
+            ((WaveOutEvent)this._wavePlayer).DesiredLatency = 100; // 100ms for stable initialization
+            ((WaveOutEvent)this._wavePlayer).NumberOfBuffers = 3;   // 3 buffers for seamless transitions
 
-            _wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
+            this._wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
 
             bool isFirstSegment = true;
-            
+
             for (int i = 0; i < segments.Count; i++)
             {
                 var segment = segments[i];
-                
+
                 // If segment is not cached, wait for generation to complete up to this point
                 if (!segment.IsCached || segment.AudioData == null)
                 {
                     Console.WriteLine($"Waiting for segment {i + 1} to be generated...");
-                    
+
                     bool fillerPlayed = false;
-                    
+
                     // Wait until this segment is ready or generation task completes
                     while (!segment.IsCached || segment.AudioData == null)
                     {
@@ -354,7 +354,7 @@ public class AudioPlayer : IDisposable
                         {
                             break; // Generation is done, no point in waiting further
                         }
-                        
+
                         // Play filler immediately when we start waiting
                         if (!fillerPlayed && fillerManager != null)
                         {
@@ -362,23 +362,23 @@ public class AudioPlayer : IDisposable
                             if (fillerAudio != null)
                             {
                                 Console.WriteLine("Playing filler...");
-                                await PlayAudioAsync(fillerAudio);
+                                await this.PlayAudioAsync(fillerAudio);
                                 isFirstSegment = false;
                                 fillerPlayed = true;
                             }
                         }
-                        
+
                         await Task.Delay(50); // Check every 50ms
                     }
-                    
+
                     if (segment.AudioData == null)
                     {
                         Console.WriteLine($"Warning: Segment {i + 1} could not be generated, skipping...");
                         continue;
                     }
                 }
-                
-                await PlaySegmentAsync(segment.AudioData, isFirstSegment);
+
+                await this.PlaySegmentAsync(segment.AudioData, isFirstSegment);
                 isFirstSegment = false;
             }
 
@@ -390,7 +390,7 @@ public class AudioPlayer : IDisposable
         }
         finally
         {
-            StopAudio();
+            this.StopAudio();
         }
     }
 
@@ -400,7 +400,7 @@ public class AudioPlayer : IDisposable
         {
             using var audioStream = new MemoryStream(audioData);
             WaveStream reader;
-            
+
             // Try to detect if it's MP3 or WAV by reading the header using Memory for async operations
             audioStream.Position = 0;
             var headerBuffer = new byte[12];
@@ -408,15 +408,15 @@ public class AudioPlayer : IDisposable
             ReadOnlySpan<byte> headerSpan = headerBuffer;
             ref readonly var headerRef = ref headerSpan[0];
             audioStream.Position = 0;
-            
+
             // Check for WAV header (RIFF....WAVE) using ref for efficient access
-            bool isWav = bytesRead >= 12 && 
+            bool isWav = bytesRead >= 12 &&
                          headerRef == 'R' && headerSpan[1] == 'I' && headerSpan[2] == 'F' && headerSpan[3] == 'F' &&
                          headerSpan[8] == 'W' && headerSpan[9] == 'A' && headerSpan[10] == 'V' && headerSpan[11] == 'E';
-            
+
             // Check for MP3 header (starts with 0xFF) using ref for efficient access
             bool isMp3 = bytesRead >= 2 && headerRef == 0xFF && (headerSpan[1] & 0xE0) == 0xE0;
-            
+
             if (isWav)
             {
                 reader = new WaveFileReader(audioStream);
@@ -440,24 +440,27 @@ public class AudioPlayer : IDisposable
                     reader = new WaveFileReader(audioStream);
                 }
             }
-            
-            var tcs = new TaskCompletionSource<bool>();
-            
-            _wavePlayer.PlaybackStopped += (sender, e) =>
-            {
-                reader?.Dispose();
-                if (e.Exception != null)
-                {
-                    tcs.TrySetException(e.Exception);
-                }
-                else
-                {
-                    tcs.TrySetResult(true);
-                }
-            };
 
-            _wavePlayer.Init(reader);
-            
+            var tcs = new TaskCompletionSource<bool>();
+
+            if (this._wavePlayer != null)
+            {
+                this._wavePlayer.PlaybackStopped += (sender, e) =>
+                {
+                    reader?.Dispose();
+                    if (e.Exception != null)
+                    {
+                        tcs.TrySetException(e.Exception);
+                    }
+                    else
+                    {
+                        tcs.TrySetResult(true);
+                    }
+                };
+            }
+
+            this._wavePlayer?.Init(reader);
+
             // First segment needs longer initialization for audio device setup
             if (isFirstSegment)
             {
@@ -470,16 +473,16 @@ public class AudioPlayer : IDisposable
                 // Minimal delay for subsequent segments
                 await Task.Delay(10);
             }
-            
-            _wavePlayer.Play();
+
+            this._wavePlayer?.Play();
 
             await tcs.Task;
-            
+
             // Ensure complete audio playback - increased delay for proper segment completion
             await Task.Delay(120);
-            
+
             // Stop but don't dispose the WavePlayer - reuse for next segment
-            _wavePlayer.Stop();
+            this._wavePlayer?.Stop();
         }
         catch (Exception ex)
         {
@@ -489,19 +492,19 @@ public class AudioPlayer : IDisposable
 
     public async Task PlayAudioAsync(byte[] audioData)
     {
-        if (_disposed)
+        if (this._disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
         // Ensure device is ready before starting playback
-        await EnsureDeviceReadyAsync();
+        await this.EnsureDeviceReadyAsync();
 
         try
         {
-            StopAudio();
+            this.StopAudio();
 
             using var audioStream = new MemoryStream(audioData);
             WaveStream reader;
-            
+
             // Try to detect if it's MP3 or WAV by reading the header using Memory for async operations
             audioStream.Position = 0;
             var headerBuffer = new byte[12];
@@ -509,15 +512,15 @@ public class AudioPlayer : IDisposable
             ReadOnlySpan<byte> headerSpan = headerBuffer;
             ref readonly var headerRef = ref headerSpan[0];
             audioStream.Position = 0;
-            
+
             // Check for WAV header (RIFF....WAVE) using ref for efficient access
-            bool isWav = bytesRead >= 12 && 
+            bool isWav = bytesRead >= 12 &&
                          headerRef == 'R' && headerSpan[1] == 'I' && headerSpan[2] == 'F' && headerSpan[3] == 'F' &&
                          headerSpan[8] == 'W' && headerSpan[9] == 'A' && headerSpan[10] == 'V' && headerSpan[11] == 'E';
-            
+
             // Check for MP3 header (starts with 0xFF) using ref for efficient access
             bool isMp3 = bytesRead >= 2 && headerRef == 0xFF && (headerSpan[1] & 0xE0) == 0xE0;
-            
+
             if (isWav)
             {
                 reader = new WaveFileReader(audioStream);
@@ -541,23 +544,23 @@ public class AudioPlayer : IDisposable
                     reader = new WaveFileReader(audioStream);
                 }
             }
-            
-            _wavePlayer = new WaveOutEvent();
-            
-            if (_settings.OutputDevice >= 0)
+
+            this._wavePlayer = new WaveOutEvent();
+
+            if (this._settings.OutputDevice >= 0)
             {
-                ((WaveOutEvent)_wavePlayer).DeviceNumber = _settings.OutputDevice;
+                ((WaveOutEvent)this._wavePlayer).DeviceNumber = this._settings.OutputDevice;
             }
 
             // Optimized buffering settings for minimal latency with stability
-            ((WaveOutEvent)_wavePlayer).DesiredLatency = 80; // 80ms buffer
-            ((WaveOutEvent)_wavePlayer).NumberOfBuffers = 2;  // Use 2 buffers
+            ((WaveOutEvent)this._wavePlayer).DesiredLatency = 80; // 80ms buffer
+            ((WaveOutEvent)this._wavePlayer).NumberOfBuffers = 2;  // Use 2 buffers
 
-            _wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
-            
+            this._wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
+
             var tcs = new TaskCompletionSource<bool>();
-            
-            _wavePlayer.PlaybackStopped += (sender, e) =>
+
+            this._wavePlayer.PlaybackStopped += (sender, e) =>
             {
                 reader.Dispose();
                 if (e.Exception != null)
@@ -570,15 +573,15 @@ public class AudioPlayer : IDisposable
                 }
             };
 
-            _wavePlayer.Init(reader);
-            
+            this._wavePlayer.Init(reader);
+
             // Minimal delay to ensure proper audio initialization
             await Task.Delay(20);
-            
-            _wavePlayer.Play();
+
+            this._wavePlayer.Play();
 
             await tcs.Task;
-            
+
             // Ensure all buffered audio is played before stopping
             await Task.Delay(150); // Wait for buffer to flush
         }
@@ -588,7 +591,7 @@ public class AudioPlayer : IDisposable
         }
         finally
         {
-            StopAudio();
+            this.StopAudio();
         }
     }
 
@@ -596,11 +599,11 @@ public class AudioPlayer : IDisposable
     {
         try
         {
-            if (_wavePlayer != null)
+            if (this._wavePlayer != null)
             {
-                _wavePlayer.Stop();
-                _wavePlayer.Dispose();
-                _wavePlayer = null;
+                this._wavePlayer.Stop();
+                this._wavePlayer.Dispose();
+                this._wavePlayer = null;
             }
         }
         catch
@@ -624,25 +627,25 @@ public class AudioPlayer : IDisposable
 
     public void Dispose()
     {
-        if (!_disposed)
+        if (!this._disposed)
         {
-            StopAudio();
-            
+            this.StopAudio();
+
             // Clean up device preparation task
-            if (_devicePreparationTask != null)
+            if (this._devicePreparationTask != null)
             {
                 try
                 {
-                    _devicePreparationTask.Wait(1000); // Wait up to 1 second
+                    this._devicePreparationTask.Wait(1000); // Wait up to 1 second
                 }
                 catch
                 {
                     // Ignore cleanup errors
                 }
             }
-            
+
             MediaFoundationApi.Shutdown();
-            _disposed = true;
+            this._disposed = true;
         }
         GC.SuppressFinalize(this);
     }

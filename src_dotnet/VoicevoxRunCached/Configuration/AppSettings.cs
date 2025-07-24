@@ -40,7 +40,7 @@ public class AudioSettings(int outputDevice = -1, double volume = 1.0, bool prep
 {
     public int OutputDevice { get; set; } = outputDevice;
     public double Volume { get; set; } = volume;
-    
+
     // Device preparation settings to prevent audio dropouts
     public bool PrepareDevice { get; set; } = prepareDevice;
     public int PreparationDurationMs { get; set; } = preparationDurationMs;

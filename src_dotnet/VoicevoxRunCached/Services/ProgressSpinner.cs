@@ -15,15 +15,15 @@ public class ProgressSpinner : IDisposable
 
     public ProgressSpinner(string message = "")
     {
-        _message = message;
-        _animationTask = Task.Run(AnimateAsync);
+        this._message = message;
+        this._animationTask = Task.Run(this.AnimateAsync);
     }
 
     public void UpdateMessage(string message)
     {
-        lock (_lock)
+        lock (this._lock)
         {
-            _message = message;
+            this._message = message;
         }
     }
 
@@ -32,33 +32,33 @@ public class ProgressSpinner : IDisposable
         int frameIndex = 0;
         var originalCursorLeft = Console.CursorLeft;
         var originalCursorTop = Console.CursorTop;
-        
+
         try
         {
             Console.CursorVisible = false;
-            
-            while (!_cancellationTokenSource.Token.IsCancellationRequested)
+
+            while (!this._cancellationTokenSource.Token.IsCancellationRequested)
             {
                 string currentMessage;
-                lock (_lock)
+                lock (this._lock)
                 {
-                    currentMessage = _message;
+                    currentMessage = this._message;
                 }
 
                 Console.SetCursorPosition(originalCursorLeft, originalCursorTop);
-                Console.Write($"\e[33m{_frames[frameIndex]}\e[0m {currentMessage}");
-                
+                Console.Write($"\e[33m{this._frames[frameIndex]}\e[0m {currentMessage}");
+
                 // Clear any remaining characters from previous longer messages
-                var currentLength = _frames[frameIndex].Length + 1 + currentMessage.Length;
+                var currentLength = this._frames[frameIndex].Length + 1 + currentMessage.Length;
                 var consoleWidth = Console.WindowWidth;
                 if (currentLength < consoleWidth)
                 {
                     Console.Write(new string(' ', Math.Min(20, consoleWidth - currentLength - 1)));
                 }
 
-                frameIndex = (frameIndex + 1) % _frames.Length;
-                
-                await Task.Delay(100, _cancellationTokenSource.Token);
+                frameIndex = (frameIndex + 1) % this._frames.Length;
+
+                await Task.Delay(100, this._cancellationTokenSource.Token);
             }
         }
         catch (OperationCanceledException)
@@ -77,19 +77,19 @@ public class ProgressSpinner : IDisposable
 
     public void Dispose()
     {
-        if (!_isDisposed)
+        if (!this._isDisposed)
         {
-            _cancellationTokenSource.Cancel();
+            this._cancellationTokenSource.Cancel();
             try
             {
-                _animationTask.Wait(1000); // Wait up to 1 second for cleanup
+                this._animationTask.Wait(1000); // Wait up to 1 second for cleanup
             }
             catch (AggregateException)
             {
                 // Ignore cleanup timeout
             }
-            _cancellationTokenSource.Dispose();
-            _isDisposed = true;
+            this._cancellationTokenSource.Dispose();
+            this._isDisposed = true;
         }
     }
 }

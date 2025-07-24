@@ -13,14 +13,14 @@ public static class TextSegmentProcessor
     {
         // C# 13 Collection expression with spread operator
         List<string> allTexts = [text, .. additionalTexts];
-        
+
         // C# 13 Collection expression initialization
         List<TextSegment> allSegments = [];
         int globalPosition = 0;
-        
+
         foreach (var currentText in allTexts)
         {
-            if (string.IsNullOrWhiteSpace(currentText))
+            if (String.IsNullOrWhiteSpace(currentText))
                 continue;
 
             var segments = new List<TextSegment>();
@@ -31,7 +31,7 @@ public static class TextSegmentProcessor
             for (int i = 0; i < sentences.Length; i++)
             {
                 var sentence = sentences[i].Trim();
-                if (string.IsNullOrEmpty(sentence))
+                if (String.IsNullOrEmpty(sentence))
                     continue;
 
                 // Add punctuation back to the sentence
@@ -43,7 +43,7 @@ public static class TextSegmentProcessor
                 // Clean up extra whitespace
                 sentence = CleanupPattern.Replace(sentence, " ").Trim();
 
-                if (!string.IsNullOrEmpty(sentence))
+                if (!String.IsNullOrEmpty(sentence))
                 {
                     segments.Add(new TextSegment
                     {
@@ -65,7 +65,7 @@ public static class TextSegmentProcessor
                     Length = currentText.Length
                 });
             }
-            
+
             allSegments.AddRange(segments);
             globalPosition += currentText.Length;
         }
@@ -78,13 +78,13 @@ public static class TextSegmentProcessor
         // Return segments for sequential playback instead of concatenation  
         return audioSegments.Where(segment => segment.Length > 0).ToList();
     }
-    
+
     public static List<TextSegment> ProcessMultipleTexts(params string[] texts)
     {
         // C# 13 Collection expression initialization
         List<TextSegment> allSegments = [];
         int globalPosition = 0;
-        
+
         foreach (var text in texts)
         {
             var segments = SegmentText(text);
@@ -95,16 +95,16 @@ public static class TextSegmentProcessor
                 allSegments.Add(segment);
             }
         }
-        
+
         return allSegments;
     }
-    
+
     public static List<TextSegment> MergeSegments(params List<TextSegment>[] segmentCollections)
     {
         // C# 13 Collection expression initialization
         List<TextSegment> mergedSegments = [];
         int position = 0;
-        
+
         foreach (var collection in segmentCollections)
         {
             if (collection != null)
@@ -124,7 +124,7 @@ public static class TextSegmentProcessor
                 }
             }
         }
-        
+
         return mergedSegments;
     }
 }

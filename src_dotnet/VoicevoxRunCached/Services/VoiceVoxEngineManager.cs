@@ -11,19 +11,19 @@ public class VoiceVoxEngineManager : IDisposable
 
     public VoiceVoxEngineManager(VoiceVoxSettings settings)
     {
-        _settings = settings;
+        this._settings = settings;
     }
 
     public async Task<bool> EnsureEngineRunningAsync()
     {
-        if (!_settings.AutoStartEngine)
-            return await IsEngineRunningAsync();
+        if (!this._settings.AutoStartEngine)
+            return await this.IsEngineRunningAsync();
 
-        if (await IsEngineRunningAsync())
+        if (await this.IsEngineRunningAsync())
             return true;
 
         Console.WriteLine("VOICEVOX engine not detected, attempting to start...");
-        return await StartEngineAsync();
+        return await this.StartEngineAsync();
     }
 
     private async Task<bool> IsEngineRunningAsync()
@@ -32,7 +32,7 @@ public class VoiceVoxEngineManager : IDisposable
         {
             using var client = new HttpClient();
             client.Timeout = TimeSpan.FromSeconds(5);
-            var response = await client.GetAsync($"{_settings.BaseUrl}/version");
+            var response = await client.GetAsync($"{this._settings.BaseUrl}/version");
             return response.IsSuccessStatusCode;
         }
         catch
@@ -43,13 +43,13 @@ public class VoiceVoxEngineManager : IDisposable
 
     private async Task<bool> StartEngineAsync()
     {
-        string enginePath = _settings.EnginePath;
-        
+        string enginePath = this._settings.EnginePath;
+
         // If no path specified, try to find default installation
-        if (string.IsNullOrEmpty(enginePath))
+        if (String.IsNullOrEmpty(enginePath))
         {
-            enginePath = FindDefaultEnginePath();
-            if (string.IsNullOrEmpty(enginePath))
+            enginePath = this.FindDefaultEnginePath();
+            if (String.IsNullOrEmpty(enginePath))
             {
                 Console.WriteLine("\e[31mError: VOICEVOX engine not found. Please set EnginePath in appsettings.json\e[0m");
                 return false;
@@ -65,31 +65,31 @@ public class VoiceVoxEngineManager : IDisposable
         try
         {
             using var spinner = new ProgressSpinner("Starting VOICEVOX engine...");
-            
+
             var startInfo = new ProcessStartInfo
             {
                 FileName = enginePath,
-                Arguments = _settings.EngineArguments,
+                Arguments = this._settings.EngineArguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true
             };
 
-            _engineProcess = Process.Start(startInfo);
-            if (_engineProcess == null)
+            this._engineProcess = Process.Start(startInfo);
+            if (this._engineProcess == null)
             {
                 Console.WriteLine("\e[31mError: Failed to start VOICEVOX engine process\e[0m");
                 return false;
             }
 
             // Wait for engine to be ready
-            var timeout = TimeSpan.FromSeconds(_settings.StartupTimeoutSeconds);
+            var timeout = TimeSpan.FromSeconds(this._settings.StartupTimeoutSeconds);
             var startTime = DateTime.UtcNow;
 
             while (DateTime.UtcNow - startTime < timeout)
             {
-                if (await IsEngineRunningAsync())
+                if (await this.IsEngineRunningAsync())
                 {
                     spinner.Dispose();
                     Console.WriteLine("\e[32mVOICEVOX engine started successfully\e[0m");
@@ -112,12 +112,12 @@ public class VoiceVoxEngineManager : IDisposable
 
     public void StopEngine()
     {
-        if (_engineProcess != null && !_engineProcess.HasExited)
+        if (this._engineProcess != null && !this._engineProcess.HasExited)
         {
             try
             {
-                _engineProcess.Kill();
-                _engineProcess.WaitForExit(5000);
+                this._engineProcess.Kill();
+                this._engineProcess.WaitForExit(5000);
             }
             catch (Exception ex)
             {
@@ -131,25 +131,25 @@ public class VoiceVoxEngineManager : IDisposable
         var possiblePaths = new List<string>();
 
         // Add paths based on engine type
-        if (_settings.EngineType == EngineType.AivisSpeech)
+        if (this._settings.EngineType == EngineType.AivisSpeech)
         {
-            possiblePaths.AddRange(GetAivisSpeechPaths());
+            possiblePaths.AddRange(this.GetAivisSpeechPaths());
         }
         else
         {
-            possiblePaths.AddRange(GetVoiceVoxPaths());
+            possiblePaths.AddRange(this.GetVoiceVoxPaths());
         }
 
         foreach (var path in possiblePaths)
         {
             if (File.Exists(path))
             {
-                Console.WriteLine($"Found {_settings.EngineType} engine at: {path}");
+                Console.WriteLine($"Found {this._settings.EngineType} engine at: {path}");
                 return path;
             }
         }
 
-        return string.Empty;
+        return String.Empty;
     }
 
     private string[] GetVoiceVoxPaths()
@@ -214,7 +214,7 @@ public class VoiceVoxEngineManager : IDisposable
 
     public void Dispose()
     {
-        StopEngine();
-        _engineProcess?.Dispose();
+        this.StopEngine();
+        this._engineProcess?.Dispose();
     }
 }

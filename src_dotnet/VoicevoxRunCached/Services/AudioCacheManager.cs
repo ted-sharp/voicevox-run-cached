@@ -16,17 +16,17 @@ public class AudioCacheManager
     public AudioCacheManager(CacheSettings settings)
     {
         // C# 13 nameof expression for type-safe parameter validation
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        EnsureCacheDirectoryExists();
+        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        this.EnsureCacheDirectoryExists();
     }
 
     public async Task<byte[]?> GetCachedAudioAsync(VoiceRequest request)
     {
-        var cacheKey = ComputeCacheKey(ref request);
-        var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
-        var metaFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
+        var cacheKey = this.ComputeCacheKey(ref request);
+        var audioFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
+        var metaFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.meta.json");
 
-        lock (_cacheLock)
+        lock (this._cacheLock)
         {
             if (!File.Exists(audioFilePath) || !File.Exists(metaFilePath))
             {
@@ -39,9 +39,9 @@ public class AudioCacheManager
             var metaJson = await File.ReadAllTextAsync(metaFilePath);
             var metadata = JsonSerializer.Deserialize<CacheMetadata>(metaJson);
 
-            if (metadata == null || IsExpired(metadata.CreatedAt))
+            if (metadata == null || this.IsExpired(metadata.CreatedAt))
             {
-                await DeleteCacheFileAsync(cacheKey);
+                await this.DeleteCacheFileAsync(cacheKey);
                 return null;
             }
 
@@ -49,23 +49,23 @@ public class AudioCacheManager
         }
         catch (Exception)
         {
-            await DeleteCacheFileAsync(cacheKey);
+            await this.DeleteCacheFileAsync(cacheKey);
             return null;
         }
     }
 
     public Task SaveAudioCacheAsync(VoiceRequest request, byte[] audioData)
     {
-        var cacheKey = ComputeCacheKey(ref request);
-        var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
-        var metaFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
+        var cacheKey = this.ComputeCacheKey(ref request);
+        var audioFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
+        var metaFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.meta.json");
 
         try
         {
             // Convert WAV to MP3
-            var mp3Data = ConvertWavToMp3(audioData);
-            
-            lock (_cacheLock)
+            var mp3Data = this.ConvertWavToMp3(audioData);
+
+            lock (this._cacheLock)
             {
                 File.WriteAllBytes(audioFilePath, mp3Data);
 
@@ -79,9 +79,9 @@ public class AudioCacheManager
                     Volume = request.Volume
                 };
 
-                var metaJson = JsonSerializer.Serialize(metadata, new JsonSerializerOptions 
-                { 
-                    WriteIndented = true 
+                var metaJson = JsonSerializer.Serialize(metadata, new JsonSerializerOptions
+                {
+                    WriteIndented = true
                 });
                 File.WriteAllText(metaFilePath, metaJson);
             }
@@ -90,20 +90,20 @@ public class AudioCacheManager
         {
             throw new InvalidOperationException($"Failed to save audio cache: {ex.Message}", ex);
         }
-        
+
         return Task.CompletedTask;
     }
 
     public async Task CleanupExpiredCacheAsync()
     {
-        if (!Directory.Exists(_settings.Directory))
+        if (!Directory.Exists(this._settings.Directory))
         {
             return;
         }
 
         try
         {
-            var metaFiles = Directory.GetFiles(_settings.Directory, "*.meta.json");
+            var metaFiles = Directory.GetFiles(this._settings.Directory, "*.meta.json");
             var expiredFiles = new List<string>();
 
             foreach (var metaFile in metaFiles)
@@ -113,7 +113,7 @@ public class AudioCacheManager
                     var metaJson = await File.ReadAllTextAsync(metaFile);
                     var metadata = JsonSerializer.Deserialize<CacheMetadata>(metaJson);
 
-                    if (metadata == null || IsExpired(metadata.CreatedAt))
+                    if (metadata == null || this.IsExpired(metadata.CreatedAt))
                     {
                         var cacheKey = Path.GetFileNameWithoutExtension(metaFile).Replace(".meta", "");
                         expiredFiles.Add(cacheKey);
@@ -128,7 +128,7 @@ public class AudioCacheManager
 
             foreach (var cacheKey in expiredFiles)
             {
-                await DeleteCacheFileAsync(cacheKey);
+                await this.DeleteCacheFileAsync(cacheKey);
             }
         }
         catch (Exception ex)
@@ -140,7 +140,7 @@ public class AudioCacheManager
     public async Task<List<TextSegment>> ProcessTextSegmentsAsync(VoiceRequest request)
     {
         var segments = TextSegmentProcessor.SegmentText(request.Text);
-        
+
         // Check cache for each segment
         foreach (var segment in segments)
         {
@@ -152,15 +152,15 @@ public class AudioCacheManager
                 Pitch = request.Pitch,
                 Volume = request.Volume
             };
-            
-            var cachedData = await GetCachedAudioAsync(segmentRequest);
+
+            var cachedData = await this.GetCachedAudioAsync(segmentRequest);
             if (cachedData != null)
             {
                 segment.IsCached = true;
                 segment.AudioData = cachedData;
             }
         }
-        
+
         return segments;
     }
 
@@ -175,15 +175,15 @@ public class AudioCacheManager
 
     private void EnsureCacheDirectoryExists()
     {
-        if (!Directory.Exists(_settings.Directory))
+        if (!Directory.Exists(this._settings.Directory))
         {
-            Directory.CreateDirectory(_settings.Directory);
+            Directory.CreateDirectory(this._settings.Directory);
         }
     }
 
     private bool IsExpired(DateTime createdAt)
     {
-        return DateTime.UtcNow - createdAt > TimeSpan.FromDays(_settings.ExpirationDays);
+        return DateTime.UtcNow - createdAt > TimeSpan.FromDays(this._settings.ExpirationDays);
     }
 
     private byte[] ConvertWavToMp3(byte[] wavData)
@@ -193,7 +193,7 @@ public class AudioCacheManager
             using var wavStream = new MemoryStream(wavData);
             using var waveReader = new WaveFileReader(wavStream);
             using var outputStream = new MemoryStream();
-            
+
             MediaFoundationEncoder.EncodeToMp3(waveReader, outputStream, 128000);
             return outputStream.ToArray();
         }
@@ -207,10 +207,10 @@ public class AudioCacheManager
     {
         try
         {
-            var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
-            var metaFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
+            var audioFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
+            var metaFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.meta.json");
 
-            lock (_cacheLock)
+            lock (this._cacheLock)
             {
                 if (File.Exists(audioFilePath))
                 {
@@ -226,7 +226,7 @@ public class AudioCacheManager
         catch
         {
         }
-        
+
         return Task.CompletedTask;
     }
 }
@@ -234,7 +234,7 @@ public class AudioCacheManager
 public class CacheMetadata
 {
     public DateTime CreatedAt { get; set; }
-    public string Text { get; set; } = string.Empty;
+    public string Text { get; set; } = String.Empty;
     public int SpeakerId { get; set; }
     public double Speed { get; set; }
     public double Pitch { get; set; }
