@@ -84,8 +84,19 @@ Set-Alias voice "C:\Program Files\VoicevoxRunCached\VoicevoxRunCached.exe"
 
 ```batch
 @echo off
-rem voice.bat として上記の場所に保存
-"C:\Program Files\VoicevoxRunCached\VoicevoxRunCached.exe" %*
+rem パスが通っている場所に voice.bat として保存
+
+rem バッチファイル自身のパスを取得
+set "SCRIPT_DIR=%~dp0"
+
+rem voice.bat の場所に移動（末尾の \ があるため、ダブルクォートはそのまま使える）
+pushd "%SCRIPT_DIR%"
+
+rem exe を実行（引数もすべて渡す）
+"C:\my\tools\VoicevoxRunCached\VoicevoxRunCached.exe" %*
+
+rem 元のカレントディレクトリに戻す
+popd
 ```
 
 **推奨手順（ユーザー専用bin作成）:**
@@ -189,14 +200,22 @@ voice "テストメッセージです。" --verbose
 ```json
 {
   "VoiceVox": {
+    // VOICEVOX settings (default)
+    "EngineType": "VOICEVOX",
     "BaseUrl": "http://127.0.0.1:50021",
+    "EngineArguments": "--host 127.0.0.1 --port 50021",
     "DefaultSpeaker": 1,
+
+    // To use AIVIS Speech instead, change to:
+    // "EngineType": "AivisSpeech",
+    // "BaseUrl": "http://127.0.0.1:10101",
+    // "EngineArguments": "--host 127.0.0.1 --port 10101",
+    // "DefaultSpeaker": 888753760,
+
+    "EnginePath": "",
     "ConnectionTimeout": 30,
     "AutoStartEngine": true,
-    "EnginePath": "",
-    "EngineArguments": "--host 127.0.0.1 --port 50021",
     "StartupTimeoutSeconds": 30,
-    "EngineType": "VOICEVOX",
     "KeepEngineRunning": true
   },
   "Cache": {
@@ -224,6 +243,7 @@ voice "テストメッセージです。" --verbose
     ]
   }
 }
+
 ```
 
 ### 設定項目説明
@@ -372,7 +392,7 @@ Total execution time: 2445.4ms
 
 現在のフィラーセット：
 - `えーっと、` - 基本的な思考フィラー
-- `あのー、` - 丁寧な切り出し  
+- `あのー、` - 丁寧な切り出し
 - `あのう、` - より丁寧なバリエーション
 - `ええと、` - 考えながらの始まり
 - `ええっと、` - より強調された思考
