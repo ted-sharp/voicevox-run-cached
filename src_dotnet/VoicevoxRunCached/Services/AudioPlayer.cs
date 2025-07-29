@@ -340,12 +340,19 @@ public class AudioPlayer : IDisposable
             {
                 var segment = segments[i];
 
-                // If segment is not cached, play filler and wait for this specific segment
-                if (!segment.IsCached || segment.AudioData == null)
+                // Handle both cached and uncached segments
+                if (segment.IsCached && segment.AudioData != null)
                 {
+                    // Play cached segments immediately
+                    await this.PlaySegmentAsync(segment.AudioData, isFirstSegment);
+                    isFirstSegment = false;
+                }
+                else
+                {
+                    // Segment not cached - play filler while waiting for generation
                     Console.WriteLine($"Waiting for segment {i + 1} to be generated...");
 
-                    // Play filler for this specific uncached segment
+                    // Play filler while waiting for uncached segment
                     if (fillerManager != null)
                     {
                         try
@@ -353,10 +360,8 @@ public class AudioPlayer : IDisposable
                             var fillerAudio = await fillerManager.GetRandomFillerAudioAsync();
                             if (fillerAudio != null)
                             {
-                                Console.WriteLine("Playing filler...");
-                                // Use a separate audio player instance for filler to avoid conflicts
-                                using var fillerPlayer = new AudioPlayer(this._settings);
-                                await fillerPlayer.PlayAudioAsync(fillerAudio);
+                                Console.WriteLine("Playing filler while waiting for segment generation...");
+                                await this.PlaySegmentAsync(fillerAudio, isFirstSegment);
                                 isFirstSegment = false;
                             }
                         }
@@ -388,10 +393,33 @@ public class AudioPlayer : IDisposable
                         Console.WriteLine($"Warning: Segment {i + 1} could not be generated, skipping...");
                         continue;
                     }
+
+                    // Play the generated segment
+                    await this.PlaySegmentAsync(segment.AudioData, isFirstSegment);
+                    isFirstSegment = false;
                 }
 
-                await this.PlaySegmentAsync(segment.AudioData, isFirstSegment);
-                isFirstSegment = false;
+                // After playing current segment, check if next segment needs filler
+                if (i < segments.Count - 1) // Not the last segment
+                {
+                    var nextSegment = segments[i + 1];
+                    if ((!nextSegment.IsCached || nextSegment.AudioData == null) && fillerManager != null)
+                    {
+                        try
+                        {
+                            var fillerAudio = await fillerManager.GetRandomFillerAudioAsync();
+                            if (fillerAudio != null)
+                            {
+                                Console.WriteLine("Playing filler while waiting for next segment...");
+                                await this.PlaySegmentAsync(fillerAudio, false);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Console.WriteLine($"Warning: Filler playback failed: {ex.Message}");
+                        }
+                    }
+                }
             }
 
             // Ensure background generation is complete
