@@ -22,17 +22,17 @@ VoicevoxRunCachedは、VOICEVOX REST APIを使用してテキストから音声�
 ## システム要件
 
 - **OS**: Windows x64
-- **前提条件**: VOICEVOX エンジン（自動起動対応）
+- **前提条件**: VOICEVOX エンジン
   - デフォルト: `http://127.0.0.1:50021`
   - [VOICEVOX公式サイト](https://voicevox.hiroshiba.jp/)からダウンロード可能
-  - エンジン自動起動機能により手動での事前起動は不要
+  - **重要**: 使用前にVOICEVOXエンジンを起動しておく必要があります
 
 ## インストール
 
 ### リリース版を使用（推奨）
 
 1. [Releases](https://github.com/ted-sharp/voicevox-run-cached/releases)から最新版をダウンロード
-2. `VoicevoxRunCached-v1.3.0-win-x64.zip`を任意のフォルダに展開
+2. `VoicevoxRunCached-v1.4.0-win-x64.zip`を任意のフォルダに展開
    - 推奨場所: `C:\Program Files\VoicevoxRunCached\` または `C:\Tools\VoicevoxRunCached\`
 3. `appsettings.json`でVOICEVOXエンジンの設定を確認・調整
 4. **オプション**: パス設定やエイリアス設定（詳細は下記参照）
@@ -225,7 +225,7 @@ voice "テストメッセージです。" --verbose
   },
   "Audio": {
     "OutputDevice": -1,
-    "Volume": 1.0,
+    "Volume": 1.2,
     "PrepareDevice": false,
     "PreparationDurationMs": 200,
     "PreparationVolume": 0.01
@@ -266,7 +266,7 @@ voice "テストメッセージです。" --verbose
 
 #### Audio設定
 - **OutputDevice**: 出力オーディオデバイス（-1で既定）
-- **Volume**: 全体音量レベル
+- **Volume**: 全体音量レベル（コードデフォルト: 1.0、設定ファイルでは1.2）
 - **PrepareDevice**: デバイス準備機能を有効にするか（音切れ防止）
 - **PreparationDurationMs**: デバイス準備時間（ミリ秒）
 - **PreparationVolume**: 準備時の音量（極小音量での暖気運転）
@@ -379,14 +379,21 @@ Total execution time: 2445.4ms
 
 ## フィラー機能
 
-音声生成の待機時間中に、自然な間つなぎ音声（フィラー）を自動再生する機能です。
+音声生成の待機時間中に、自然な間つなぎ音声（フィラー）を自動再生する機能です。音声セグメントの間の無音状態を避け、より自然で人間らしい音声体験を提供します。
 
 ### フィラーの特徴
 
 - **自然な語調**: 読点（、）付きで語尾が自然に下がる
 - **話の始めに最適**: 「えーっと、」「あのー、」など導入に適した表現
-- **セグメント別対応**: 未生成セグメントがある場合のみ再生
+- **インテリジェント再生**: 本当に必要な時のみ自動判定して再生
+- **シームレス統合**: 同一オーディオストリームでの統合再生
 - **ランダム選択**: 6種類のフィラーからランダムに選択
+
+### フィラー再生のタイミング
+
+1. **未キャッシュセグメント生成待ち**: セグメントの生成処理中にフィラーを再生
+2. **セグメント間の待機**: 次のセグメントが未生成の場合のみフィラーを挿入
+3. **即時再生優先**: キャッシュ済みセグメントは待機なしで即座に開始
 
 ### フィラーの種類
 
