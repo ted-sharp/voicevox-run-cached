@@ -484,6 +484,133 @@ _publish_zip.cmd
 - **インテリジェントフィラー**: セグメント別音声生成待機時の自然な間つなぎ機能
 - **エンジン自動管理**: VOICEVOXエンジンの自動起動・プロセス管理・永続化
 
+## Claude Code Hooksとの連携
+
+VoicevoxRunCachedは[Claude Code](https://claude.ai/code)のHooks機能と連携して、開発作業中に音声でお知らせする機能を提供できます。
+
+### 設定方法
+
+Claude Code Hooksの設定ファイル（`~/.claude/settings.json`）に以下の設定を追加してください：
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\path\\to\\VoicevoxRunCached.exe\" \"タスクを開始します。\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\path\\to\\VoicevoxRunCached.exe\" \"ファイルが更新されました。\""
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\path\\to\\VoicevoxRunCached.exe\" \"コマンドが実行されました。\""
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\path\\to\\VoicevoxRunCached.exe\" \"通知があります。\""
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"C:\\path\\to\\VoicevoxRunCached.exe\" \"作業が完了しました。\""
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 設定ファイルの場所
+
+**Windows:**
+```
+C:\Users\ユーザー名\.claude\settings.json
+```
+
+**Linux/macOS:**
+```
+~/.claude/settings.json
+```
+
+### パスの設定
+
+上記の `C:\\path\\to\\VoicevoxRunCached.exe` を実際のVoicevoxRunCached.exeのパスに置き換えてください：
+
+**ビルド済みプロジェクトの場合:**
+```
+C:\\git\\git-vo\\voicevox-run-cached\\src_dotnet\\VoicevoxRunCached\\bin\\Release\\net9.0\\VoicevoxRunCached.exe
+```
+
+**配布版を使用する場合:**
+```
+C:\\Program Files\\VoicevoxRunCached\\VoicevoxRunCached.exe
+```
+
+### 音声通知のタイミング
+
+設定後、以下のタイミングで音声通知が流れます：
+
+- **UserPromptSubmit**: プロンプト送信時 → 「タスクを開始します。」
+- **PostToolUse (Edit/Write)**: ファイル編集完了時 → 「ファイルが更新されました。」
+- **PostToolUse (Bash)**: コマンド実行完了時 → 「コマンドが実行されました。」
+- **Notification**: 通知発生時 → 「通知があります。」
+- **Stop**: 作業完了時 → 「作業が完了しました。」
+
+### カスタマイズ
+
+音声メッセージは自由にカスタマイズできます：
+
+```json
+{
+  "type": "command",
+  "command": "\"C:\\path\\to\\VoicevoxRunCached.exe\" \"お好みのメッセージ\" --speaker 3 --speed 1.2"
+}
+```
+
+利用可能なオプション：
+- `--speaker <id>`: スピーカーID
+- `--speed <value>`: 音声速度
+- `--pitch <value>`: 音声ピッチ  
+- `--volume <value>`: 音声音量
+
+### 注意事項
+
+- Claude Code Hooksの設定変更は即座に反映されます（再起動不要）
+- 事前にVOICEVOXエンジンが起動している必要があります
+- パスにスペースが含まれる場合は必ずダブルクォートで囲んでください
+
 ## ライセンス
 
 このプロジェクトはMITライセンスの下で公開されています。
@@ -491,6 +618,7 @@ _publish_zip.cmd
 ## 関連リンク
 
 - [VOICEVOX公式サイト](https://voicevox.hiroshiba.jp/)
+- [Claude Code公式サイト](https://claude.ai/code)
 
 ---
 
