@@ -36,8 +36,11 @@ src_dotnet/_publish.cmd
 - **Program.cs**: Entry point with command-line parsing and orchestration
 - **VoiceVoxApiClient**: REST API communication with VOICEVOX server
 - **AudioCacheManager**: Intelligent file-based caching with SHA256 hashing and MP3 compression
-- **AudioPlayer**: NAudio-based audio playback with sequential segment playback
+- **AudioPlayer**: NAudio-based audio playbook with sequential segment playback
 - **TextSegmentProcessor**: Text segmentation for cache optimization
+- **VoiceVoxEngineManager**: VOICEVOX engine lifecycle management and auto-start functionality
+- **FillerManager**: Intelligent filler audio management for natural speech gaps
+- **ProgressSpinner**: Console progress indication during operations
 - **Configuration/AppSettings.cs**: Strongly-typed configuration management
 
 ### Technology Stack
@@ -65,18 +68,21 @@ src_dotnet/_publish.cmd
 
 ```
 src_dotnet/VoicevoxRunCached/
-├── Program.cs                    # Entry point and CLI handling
+├── Program.cs                      # Entry point and CLI handling
 ├── Configuration/
-│   └── AppSettings.cs           # Configuration models
+│   └── AppSettings.cs             # Configuration models
 ├── Models/
-│   ├── VoiceRequest.cs         # Request parameters
-│   └── TextSegment.cs          # Segment processing model
+│   ├── VoiceRequest.cs           # Request parameters
+│   └── TextSegment.cs            # Segment processing model
 ├── Services/
-│   ├── VoiceVoxApiClient.cs    # VOICEVOX API client
-│   ├── AudioCacheManager.cs    # Caching logic
-│   ├── AudioPlayer.cs          # NAudio playback
-│   └── TextSegmentProcessor.cs # Text segmentation
-└── appsettings.json            # Configuration file
+│   ├── VoiceVoxApiClient.cs      # VOICEVOX API client
+│   ├── AudioCacheManager.cs      # Caching logic
+│   ├── AudioPlayer.cs            # NAudio playback
+│   ├── TextSegmentProcessor.cs   # Text segmentation
+│   ├── VoiceVoxEngineManager.cs  # Engine lifecycle management
+│   ├── FillerManager.cs          # Filler audio management
+│   └── ProgressSpinner.cs        # Console progress indication
+└── appsettings.json              # Configuration file
 ```
 
 ## Configuration
@@ -105,7 +111,11 @@ Options:
 ## Development Notes
 
 - All VOICEVOX API calls must be serial (no parallel requests)
-- Speaker initialization required before first use of each speaker
+- Speaker initialization required before first use of each speaker  
 - Cache files use SHA256 hashing for unique identification
 - Audio files stored as MP3 with accompanying .meta.json metadata
 - Text segmentation optimizes cache efficiency for partial text changes
+- Engine auto-start functionality checks for existing processes before launching
+- Filler audio uses separate cache directory for interval management
+- ProgressSpinner provides non-blocking console feedback during operations
+- All services use primary constructors and modern C# 13 patterns
