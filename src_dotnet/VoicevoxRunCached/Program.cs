@@ -45,6 +45,12 @@ class Program
             return 0;
         }
 
+        if (args[0] == "--clear")
+        {
+            await HandleClearCacheAsync(settings);
+            return 0;
+        }
+
         var request = ParseArguments(args, settings);
         if (request == null)
         {
@@ -91,6 +97,7 @@ class Program
         Console.WriteLine("  VoicevoxRunCached <text> [options]");
         Console.WriteLine("  VoicevoxRunCached speakers");
         Console.WriteLine("  VoicevoxRunCached --init");
+        Console.WriteLine("  VoicevoxRunCached --clear");
         Console.WriteLine();
         Console.WriteLine("Arguments:");
         Console.WriteLine("  <text>                    The text to convert to speech");
@@ -108,6 +115,7 @@ class Program
         Console.WriteLine("Commands:");
         Console.WriteLine("  speakers                 List available speakers");
         Console.WriteLine("  --init                   Initialize filler audio cache");
+        Console.WriteLine("  --clear                  Clear all audio cache files");
     }
 
     private static VoiceRequest? ParseArguments(string[] args, AppSettings settings)
@@ -373,6 +381,25 @@ class Program
         catch (Exception ex)
         {
             Console.WriteLine($"\e[31mError initializing filler cache: {ex.Message}\e[0m");
+            Environment.Exit(1);
+        }
+    }
+
+    private static async Task HandleClearCacheAsync(AppSettings settings)
+    {
+        try
+        {
+            using var spinner = new ProgressSpinner("Clearing audio cache...");
+            var cacheManager = new AudioCacheManager(settings.Cache);
+            
+            await cacheManager.ClearAllCacheAsync();
+            
+            spinner.Dispose();
+            Console.WriteLine("\e[32mCache cleared successfully!\e[0m"); // Green text
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"\e[31mError clearing cache: {ex.Message}\e[0m"); // Red text
             Environment.Exit(1);
         }
     }

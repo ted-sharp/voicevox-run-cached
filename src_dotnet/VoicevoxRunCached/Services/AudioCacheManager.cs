@@ -229,6 +229,60 @@ public class AudioCacheManager
 
         return Task.CompletedTask;
     }
+
+    public async Task ClearAllCacheAsync()
+    {
+        try
+        {
+            if (!Directory.Exists(this._settings.Directory))
+            {
+                return;
+            }
+
+            var audioFiles = Directory.GetFiles(this._settings.Directory, "*.mp3");
+            var metaFiles = Directory.GetFiles(this._settings.Directory, "*.meta.json");
+
+            lock (this._cacheLock)
+            {
+                foreach (var file in audioFiles.Concat(metaFiles))
+                {
+                    try
+                    {
+                        File.Delete(file);
+                    }
+                    catch
+                    {
+                        // Ignore individual file deletion errors
+                    }
+                }
+            }
+
+            // Also clear filler cache directory if it exists
+            var fillerDirectory = Path.Combine(Path.GetDirectoryName(this._settings.Directory) ?? ".", "filler");
+            if (Directory.Exists(fillerDirectory))
+            {
+                var fillerFiles = Directory.GetFiles(fillerDirectory, "*.mp3");
+                lock (this._cacheLock)
+                {
+                    foreach (var file in fillerFiles)
+                    {
+                        try
+                        {
+                            File.Delete(file);
+                        }
+                        catch
+                        {
+                            // Ignore individual file deletion errors
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Failed to clear cache: {ex.Message}", ex);
+        }
+    }
 }
 
 public class CacheMetadata

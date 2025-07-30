@@ -184,12 +184,16 @@ VoicevoxRunCached.exe speakers
 # フィラー音声キャッシュの初期化
 VoicevoxRunCached.exe --init
 
+# 音声キャッシュをクリア
+VoicevoxRunCached.exe --clear
+
 # 詳細な実行時間を表示
 VoicevoxRunCached.exe "テストメッセージです。" --verbose
 
 # エイリアス使用時
 voice speakers
 voice --init
+voice --clear
 voice "テストメッセージです。" --verbose
 ```
 
@@ -430,7 +434,8 @@ VoicevoxRunCached.exe --init
 - A: デバイスによっては初回実行時に発生することがあります
 
 **Q: キャッシュをクリアしたい**
-- A: `./cache`フォルダ（または設定したディレクトリ）を削除してください
+- A: `VoicevoxRunCached.exe --clear` コマンドを使用してください
+- A: または手動で `./cache`フォルダ（または設定したディレクトリ）を削除してください
 
 ## 開発・貢献
 

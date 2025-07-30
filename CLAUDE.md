@@ -97,6 +97,8 @@ The application uses `appsettings.json` with these sections:
 ```bash
 VoicevoxRunCached <text> [options]
 VoicevoxRunCached speakers
+VoicevoxRunCached --init
+VoicevoxRunCached --clear
 
 Options:
 --speaker, -s <id>    Speaker ID (default: 1)
@@ -105,7 +107,13 @@ Options:
 --volume <value>      Speech volume (default: 1.0)
 --no-cache           Skip cache usage
 --cache-only         Use cache only, don't call API
+--verbose            Show detailed timing information
 --help, -h           Show help message
+
+Commands:
+speakers             List available speakers
+--init               Initialize filler audio cache
+--clear              Clear all audio cache files
 ```
 
 ## Development Notes
