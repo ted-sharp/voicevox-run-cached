@@ -322,13 +322,13 @@ public class AudioCacheManager
         return Task.CompletedTask;
     }
 
-    public async Task ClearAllCacheAsync()
+    public Task ClearAllCacheAsync()
     {
         try
         {
             if (!Directory.Exists(this._settings.Directory))
             {
-                return;
+                return Task.CompletedTask;
             }
 
             var audioFiles = Directory.GetFiles(this._settings.Directory, "*.mp3");
@@ -374,6 +374,7 @@ public class AudioCacheManager
         {
             throw new InvalidOperationException($"Failed to clear cache: {ex.Message}", ex);
         }
+        return Task.CompletedTask;
     }
 }
 

@@ -235,7 +235,7 @@ public class AudioPlayer : IDisposable
             EventHandler<StoppedEventArgs>? handler = null;
             handler = (sender, e) =>
             {
-                try { reader.Dispose(); } catch {}
+                try { reader.Dispose(); } catch { }
                 if (e.Exception != null)
                 {
                     tcs.TrySetException(e.Exception);
@@ -494,7 +494,7 @@ public class AudioPlayer : IDisposable
                 EventHandler<StoppedEventArgs>? handler = null;
                 handler = (sender, e) =>
                 {
-                    try { reader?.Dispose(); } catch {}
+                    try { reader?.Dispose(); } catch { }
                     if (e.Exception != null)
                     {
                         tcs.TrySetException(e.Exception);
