@@ -6,6 +6,16 @@ VOICEVOX REST APIラッパーアプリケーション - インテリジェント
 
 VoicevoxRunCachedは、VOICEVOX REST APIを使用してテキストから音声を生成するコマンドラインツールです。MP3形式でのキャッシュ機能により、一度生成した音声の高速再生を実現し、文単位でのセグメント処理によってキャッシュ効率を最大化します。
 
+## セグメント処理とキャッシュ
+
+本アプリケーションは、入力テキストを文単位で分割してキャッシュ効率を最大化します：
+
+### セグメント化の利点
+
+- **部分的キャッシュヒット**: 一部だけ変更されたテキストでも、変更されていない部分はキャッシュを利用
+- **即時再生開始**: キャッシュ済みセグメントは待機なしで再生開始
+- **バックグラウンド生成**: 未キャッシュセグメントは再生と並行して生成
+
 ## 主な機能
 
 - **🎤 音声合成**: VOICEVOX REST APIを使用した高品質なテキスト音声変換
@@ -224,6 +234,7 @@ voice "テストメッセージです。" --verbose
   },
   "Cache": {
     "Directory": "./cache/audio/",
+    "UseExecutableBaseDirectory": true,
     "ExpirationDays": 30,
     "MaxSizeGB": 1.0
   },
@@ -602,7 +613,7 @@ C:\\Program Files\\VoicevoxRunCached\\VoicevoxRunCached.exe
 利用可能なオプション：
 - `--speaker <id>`: スピーカーID
 - `--speed <value>`: 音声速度
-- `--pitch <value>`: 音声ピッチ  
+- `--pitch <value>`: 音声ピッチ
 - `--volume <value>`: 音声音量
 
 ### 注意事項
@@ -610,6 +621,39 @@ C:\\Program Files\\VoicevoxRunCached\\VoicevoxRunCached.exe
 - Claude Code Hooksの設定変更は即座に反映されます（再起動不要）
 - 事前にVOICEVOXエンジンが起動している必要があります
 - パスにスペースが含まれる場合は必ずダブルクォートで囲んでください
+
+#### パスとバッチ実行に関する注意
+
+- Hooks環境では `PATH` が十分に設定されていない場合があり、`.bat` を直接指定すると解決できず失敗しがちです。**`.exe` のフルパスを直接指定する**のが確実です。
+- JSON内の `command` では、パスをダブルクォートで囲み、Windowsパスのバックスラッシュは `\\` でエスケープしてください。
+- どうしても `.bat` を使う場合は、`cmd /c "<バッチのフルパス>"` とし、バッチ内でも `.exe` をフルパス指定してください（相対パスや `PATH` 依存は避けてください）。
+
+推奨（`.exe` フルパス指定）:
+
+```json
+{
+  "type": "command",
+  "command": "\"C:\\Program Files\\VoicevoxRunCached\\VoicevoxRunCached.exe\" \"通知があります。\""
+}
+```
+
+非推奨（失敗しがちな例）:
+
+```json
+{
+  "type": "command",
+  "command": "voice.bat \"通知があります。\""
+}
+```
+
+`.bat` を使う場合の例（自己責任・環境依存）:
+
+```json
+{
+  "type": "command",
+  "command": "cmd /c \"C:\\Users\\you\\bin\\voice.bat\""
+}
+```
 
 ## ライセンス
 
