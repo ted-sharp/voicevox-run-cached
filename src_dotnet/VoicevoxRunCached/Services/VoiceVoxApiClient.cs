@@ -10,13 +10,6 @@ public class VoiceVoxApiClient : IDisposable
     private readonly HttpClient _httpClient;
     private readonly VoiceVoxSettings _settings;
 
-    // C# 13 Enhanced auto-properties with connection checking
-    private bool _isConnected;
-    public bool IsConnected
-    {
-        get => this._isConnected;
-        private set => this._isConnected = this.CheckConnection();
-    }
     public string BaseUrl => this._settings.BaseUrl;
     public int ConnectionTimeout => this._settings.ConnectionTimeout;
 
@@ -31,25 +24,27 @@ public class VoiceVoxApiClient : IDisposable
         };
     }
 
-    private bool CheckConnection()
+    private static async Task<T> WithSimpleRetryAsync<T>(Func<Task<T>> action, int maxAttempts = 2, int delayMs = 250)
     {
-        try
+        Exception? last = null;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-            var response = this._httpClient.GetAsync("/speakers", cts.Token).Result;
-            return response.IsSuccessStatusCode;
+            try { return await action(); }
+            catch (Exception ex)
+            {
+                last = ex;
+                if (attempt == maxAttempts) break;
+                await Task.Delay(delayMs);
+            }
         }
-        catch
-        {
-            return false;
-        }
+        throw last ?? new InvalidOperationException("Unknown error in retry block");
     }
 
     public async Task<List<Speaker>> GetSpeakersAsync()
     {
         return await this.ExecuteApiCallAsync(async () =>
         {
-            var response = await this._httpClient.GetAsync("/speakers");
+            var response = await WithSimpleRetryAsync(async () => await this._httpClient.GetAsync("/speakers"));
             response.EnsureSuccessStatusCode();
 
             var json = await response.Content.ReadAsStringAsync();
@@ -69,7 +64,7 @@ public class VoiceVoxApiClient : IDisposable
     {
         await this.ExecuteApiCallAsync(async () =>
         {
-            var response = await this._httpClient.PostAsync($"/initialize_speaker?speaker={speakerId}", null);
+            var response = await WithSimpleRetryAsync(async () => await this._httpClient.PostAsync($"/initialize_speaker?speaker={speakerId}", null));
             response.EnsureSuccessStatusCode();
             return true; // Return value for generic method
         }, $"Failed to initialize speaker {speakerId}");
@@ -82,7 +77,7 @@ public class VoiceVoxApiClient : IDisposable
             var encodedText = Uri.EscapeDataString(request.Text);
             var url = $"/audio_query?text={encodedText}&speaker={request.SpeakerId}";
 
-            var response = await this._httpClient.PostAsync(url, null);
+            var response = await WithSimpleRetryAsync(async () => await this._httpClient.PostAsync(url, null));
             response.EnsureSuccessStatusCode();
 
             return await response.Content.ReadAsStringAsync();
@@ -96,7 +91,7 @@ public class VoiceVoxApiClient : IDisposable
             var content = new StringContent(audioQuery, Encoding.UTF8, "application/json");
             var url = $"/synthesis?speaker={speakerId}";
 
-            var response = await this._httpClient.PostAsync(url, content);
+            var response = await WithSimpleRetryAsync(async () => await this._httpClient.PostAsync(url, content));
             response.EnsureSuccessStatusCode();
 
             return await response.Content.ReadAsByteArrayAsync();

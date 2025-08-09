@@ -255,7 +255,7 @@ class Program
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(request);
                 audioData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId);
 
-                spinner.Dispose();
+                // disposed by using
 
                 // C# 13 Escape character for playback status
                 Console.WriteLine($"\e[36mPlaying audio...\e[0m"); // Cyan text
@@ -394,7 +394,7 @@ class Program
 
             await cacheManager.ClearAllCacheAsync();
 
-            spinner.Dispose();
+            // disposed by using
             Console.WriteLine("\e[32mCache cleared successfully!\e[0m"); // Green text
         }
         catch (Exception ex)

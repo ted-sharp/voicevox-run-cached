@@ -1,8 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 using NAudio.Wave;
 using NAudio.Lame;
+using NAudio.MediaFoundation;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 
@@ -23,11 +25,11 @@ public class AudioCacheManager
 
     public async Task<byte[]?> GetCachedAudioAsync(VoiceRequest request)
     {
-        var cacheKey = this.ComputeCacheKey(ref request);
+        var cacheKey = this.ComputeCacheKey(request);
         var audioFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
         var metaFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.meta.json");
 
-        lock (this._cacheLock)
+        using (this._cacheLock.EnterScope())
         {
             if (!File.Exists(audioFilePath) || !File.Exists(metaFilePath))
             {
@@ -57,7 +59,7 @@ public class AudioCacheManager
 
     public Task SaveAudioCacheAsync(VoiceRequest request, byte[] audioData)
     {
-        var cacheKey = this.ComputeCacheKey(ref request);
+        var cacheKey = this.ComputeCacheKey(request);
         var audioFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
         var metaFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.meta.json");
 
@@ -66,7 +68,7 @@ public class AudioCacheManager
             // Convert WAV to MP3
             var mp3Data = this.ConvertWavToMp3(audioData);
 
-            lock (this._cacheLock)
+            using (this._cacheLock.EnterScope())
             {
                 File.WriteAllBytes(audioFilePath, mp3Data);
 
@@ -239,7 +241,7 @@ public class AudioCacheManager
     }
 
     // C# 13 ref readonly parameter for better performance with large structs
-    public string ComputeCacheKey(ref readonly VoiceRequest request)
+    public string ComputeCacheKey(VoiceRequest request)
     {
         var keyString = $"{request.Text}|{request.SpeakerId}|{request.Speed:F2}|{request.Pitch:F2}|{request.Volume:F2}";
         using var sha256 = SHA256.Create();
@@ -286,7 +288,10 @@ public class AudioCacheManager
             using var waveReader = new WaveFileReader(wavStream);
             using var outputStream = new MemoryStream();
 
+            // Ensure Media Foundation is initialized for encoding
+            MediaFoundationApi.Startup();
             MediaFoundationEncoder.EncodeToMp3(waveReader, outputStream, 128000);
+            MediaFoundationApi.Shutdown();
             return outputStream.ToArray();
         }
         catch (Exception ex)
@@ -302,7 +307,7 @@ public class AudioCacheManager
             var audioFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
             var metaFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.meta.json");
 
-            lock (this._cacheLock)
+            using (this._cacheLock.EnterScope())
             {
                 if (File.Exists(audioFilePath))
                 {
@@ -334,7 +339,7 @@ public class AudioCacheManager
             var audioFiles = Directory.GetFiles(this._settings.Directory, "*.mp3");
             var metaFiles = Directory.GetFiles(this._settings.Directory, "*.meta.json");
 
-            lock (this._cacheLock)
+            using (this._cacheLock.EnterScope())
             {
                 foreach (var file in audioFiles.Concat(metaFiles))
                 {
@@ -354,7 +359,7 @@ public class AudioCacheManager
             if (Directory.Exists(fillerDirectory))
             {
                 var fillerFiles = Directory.GetFiles(fillerDirectory, "*.mp3");
-                lock (this._cacheLock)
+                using (this._cacheLock.EnterScope())
                 {
                     foreach (var file in fillerFiles)
                     {

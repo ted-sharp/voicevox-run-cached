@@ -667,12 +667,11 @@ public class AudioPlayer : IDisposable
     {
         try
         {
-            // C# 13 Collection expression syntax
-            return ["0: Default Device"];
+            // Keep simple default device listing to avoid platform-specific enumeration issues
+            return ["-1: Default Device"];
         }
         catch
         {
-            // C# 13 Empty collection expression
             return [];
         }
     }
