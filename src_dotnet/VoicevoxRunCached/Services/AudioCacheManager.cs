@@ -17,6 +17,7 @@ public class AudioCacheManager
     {
         // C# 13 nameof expression for type-safe parameter validation
         this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        this.ResolveCacheBaseDirectory();
         this.EnsureCacheDirectoryExists();
     }
 
@@ -178,6 +179,24 @@ public class AudioCacheManager
         if (!Directory.Exists(this._settings.Directory))
         {
             Directory.CreateDirectory(this._settings.Directory);
+        }
+    }
+
+    private void ResolveCacheBaseDirectory()
+    {
+        try
+        {
+            if (this._settings.UseExecutableBaseDirectory && !Path.IsPathRooted(this._settings.Directory))
+            {
+                var executablePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
+                var executableDirectory = Path.GetDirectoryName(executablePath) ?? Directory.GetCurrentDirectory();
+                var combined = Path.Combine(executableDirectory, this._settings.Directory);
+                this._settings.Directory = Path.GetFullPath(combined);
+            }
+        }
+        catch
+        {
+            // If resolution fails, keep original setting
         }
     }
 

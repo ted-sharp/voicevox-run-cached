@@ -29,11 +29,14 @@ public enum EngineType
 }
 
 // C# 13 Primary constructor for CacheSettings
-public class CacheSettings(string directory = "./cache/audio/", int expirationDays = 30, double maxSizeGB = 1.0)
+public class CacheSettings(string directory = "./cache/audio/", int expirationDays = 30, double maxSizeGB = 1.0, bool useExecutableBaseDirectory = false)
 {
     public string Directory { get; set; } = directory;
     public int ExpirationDays { get; set; } = expirationDays;
     public double MaxSizeGB { get; set; } = maxSizeGB;
+
+    // When true and Directory is relative, resolve it under the executable directory
+    public bool UseExecutableBaseDirectory { get; set; } = useExecutableBaseDirectory;
 }
 
 // C# 13 Primary constructor for AudioSettings with device preparation
