@@ -92,6 +92,12 @@ public class AudioCacheManager
             throw new InvalidOperationException($"Failed to save audio cache: {ex.Message}", ex);
         }
 
+        // After saving, enforce max size policy in background
+        _ = Task.Run(async () =>
+        {
+            try { await this.CleanupByMaxSizeAsync(); } catch { }
+        });
+
         return Task.CompletedTask;
     }
 
@@ -135,6 +141,73 @@ public class AudioCacheManager
         catch (Exception ex)
         {
             throw new InvalidOperationException($"Failed to cleanup expired cache: {ex.Message}", ex);
+        }
+    }
+
+    public async Task CleanupByMaxSizeAsync()
+    {
+        try
+        {
+            if (!Directory.Exists(this._settings.Directory))
+            {
+                return;
+            }
+
+            var dirInfo = new DirectoryInfo(this._settings.Directory);
+            var files = dirInfo.GetFiles("*.mp3", SearchOption.TopDirectoryOnly)
+                .Select(f => new
+                {
+                    File = f,
+                    Meta = new FileInfo(Path.Combine(this._settings.Directory, Path.GetFileNameWithoutExtension(f.Name) + ".meta.json"))
+                })
+                .ToList();
+
+            long totalBytes = files.Sum(x => x.File.Length);
+            long maxBytes = (long)(Math.Max(0.0, this._settings.MaxSizeGB) * 1024 * 1024 * 1024);
+
+            if (maxBytes <= 0 || totalBytes <= maxBytes)
+            {
+                return;
+            }
+
+            // 並べ替え: メタの作成日時（なければファイルの最終更新）で古い順
+            var ordered = files.OrderBy(x =>
+            {
+                try
+                {
+                    if (x.Meta.Exists)
+                    {
+                        var metaJson = File.ReadAllText(x.Meta.FullName);
+                        var meta = JsonSerializer.Deserialize<CacheMetadata>(metaJson);
+                        if (meta != null)
+                        {
+                            return meta.CreatedAt;
+                        }
+                    }
+                }
+                catch { }
+                return x.File.LastWriteTimeUtc;
+            }).ToList();
+
+            foreach (var entry in ordered)
+            {
+                if (totalBytes <= maxBytes)
+                {
+                    break;
+                }
+
+                try
+                {
+                    var cacheKey = Path.GetFileNameWithoutExtension(entry.File.Name);
+                    await this.DeleteCacheFileAsync(cacheKey);
+                    totalBytes -= entry.File.Length;
+                }
+                catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"Failed to cleanup by max size: {ex.Message}", ex);
         }
     }
 

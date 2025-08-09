@@ -232,9 +232,10 @@ public class AudioPlayer : IDisposable
                 });
             }
 
-            this._wavePlayer.PlaybackStopped += (sender, e) =>
+            EventHandler<StoppedEventArgs>? handler = null;
+            handler = (sender, e) =>
             {
-                reader.Dispose();
+                try { reader.Dispose(); } catch {}
                 if (e.Exception != null)
                 {
                     tcs.TrySetException(e.Exception);
@@ -243,7 +244,12 @@ public class AudioPlayer : IDisposable
                 {
                     tcs.TrySetResult(true);
                 }
+                if (this._wavePlayer != null && handler != null)
+                {
+                    this._wavePlayer.PlaybackStopped -= handler;
+                }
             };
+            this._wavePlayer.PlaybackStopped += handler;
 
             this._wavePlayer.Init(reader);
 
@@ -485,9 +491,10 @@ public class AudioPlayer : IDisposable
 
             if (this._wavePlayer != null)
             {
-                this._wavePlayer.PlaybackStopped += (sender, e) =>
+                EventHandler<StoppedEventArgs>? handler = null;
+                handler = (sender, e) =>
                 {
-                    reader?.Dispose();
+                    try { reader?.Dispose(); } catch {}
                     if (e.Exception != null)
                     {
                         tcs.TrySetException(e.Exception);
@@ -496,7 +503,12 @@ public class AudioPlayer : IDisposable
                     {
                         tcs.TrySetResult(true);
                     }
+                    if (this._wavePlayer != null && handler != null)
+                    {
+                        this._wavePlayer.PlaybackStopped -= handler;
+                    }
                 };
+                this._wavePlayer.PlaybackStopped += handler;
             }
 
             this._wavePlayer?.Init(reader);

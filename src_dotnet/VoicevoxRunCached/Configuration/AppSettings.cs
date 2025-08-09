@@ -52,7 +52,7 @@ public class AudioSettings(int outputDevice = -1, double volume = 1.0, bool prep
 }
 
 // C# 13 Primary constructor for FillerSettings
-public class FillerSettings(bool enabled = false, string directory = "./cache/filler/", string[]? fillerTexts = null)
+public class FillerSettings(bool enabled = false, string directory = "./cache/filler/", string[]? fillerTexts = null, bool useExecutableBaseDirectory = false)
 {
     public bool Enabled { get; set; } = enabled;
     public string Directory { get; set; } = directory;
@@ -64,4 +64,5 @@ public class FillerSettings(bool enabled = false, string directory = "./cache/fi
         "ええっと、",
         "えとえと、"
     ];
+    public bool UseExecutableBaseDirectory { get; set; } = useExecutableBaseDirectory;
 }

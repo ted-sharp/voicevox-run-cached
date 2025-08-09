@@ -1,3 +1,5 @@
+using NAudio.MediaFoundation;
+using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 
@@ -7,11 +9,14 @@ public class FillerManager
 {
     private readonly FillerSettings _settings;
     private readonly AudioCacheManager _cacheManager;
+    private readonly int _defaultSpeaker;
 
-    public FillerManager(FillerSettings settings, AudioCacheManager cacheManager)
+    public FillerManager(FillerSettings settings, AudioCacheManager cacheManager, int defaultSpeakerId)
     {
         this._settings = settings;
         this._cacheManager = cacheManager;
+        this._defaultSpeaker = defaultSpeakerId;
+        this.ResolveFillerBaseDirectory();
     }
 
     public async Task InitializeFillerCacheAsync(AppSettings appSettings)
@@ -24,7 +29,7 @@ public class FillerManager
         using var spinner = new ProgressSpinner("Initializing filler cache...");
         using var apiClient = new VoiceVoxApiClient(appSettings.VoiceVox);
 
-        await apiClient.InitializeSpeakerAsync(appSettings.VoiceVox.DefaultSpeaker);
+        await apiClient.InitializeSpeakerAsync(this._defaultSpeaker);
 
         int processed = 0;
         int total = this._settings.FillerTexts.Length;
@@ -37,7 +42,7 @@ public class FillerManager
             var fillerRequest = new VoiceRequest
             {
                 Text = fillerText,
-                SpeakerId = appSettings.VoiceVox.DefaultSpeaker,
+                SpeakerId = this._defaultSpeaker,
                 Speed = 1.0,
                 Pitch = 0.0,
                 Volume = 1.0
@@ -79,7 +84,7 @@ public class FillerManager
         var fillerRequest = new VoiceRequest
         {
             Text = randomFiller,
-            SpeakerId = 1, // Use default speaker for filler
+            SpeakerId = this._defaultSpeaker,
             Speed = 1.0,
             Pitch = 0.0,
             Volume = 1.0
@@ -105,15 +110,43 @@ public class FillerManager
 
     private async Task SaveFillerAudioAsync(string filePath, byte[] audioData)
     {
-        // Convert WAV to MP3 and save (similar to AudioCacheManager)
         var mp3Data = await this.ConvertWavToMp3Async(audioData);
         await File.WriteAllBytesAsync(filePath, mp3Data);
     }
 
     private async Task<byte[]> ConvertWavToMp3Async(byte[] wavData)
     {
-        // Simple MP3 conversion - in a real implementation, you'd use NAudio.Lame
-        // For now, we'll save as-is (assuming it's already in a suitable format)
-        return await Task.FromResult(wavData);
+        try
+        {
+            using var wavStream = new MemoryStream(wavData);
+            using var waveReader = new WaveFileReader(wavStream);
+            using var outputStream = new MemoryStream();
+            MediaFoundationApi.Startup();
+            MediaFoundationEncoder.EncodeToMp3(waveReader, outputStream, 128000);
+            MediaFoundationApi.Shutdown();
+            return await Task.FromResult(outputStream.ToArray());
+        }
+        catch
+        {
+            // フォーマット判定に失敗した場合はそのまま返す（再生側でフォールバック）
+            return await Task.FromResult(wavData);
+        }
+    }
+
+    private void ResolveFillerBaseDirectory()
+    {
+        try
+        {
+            if (this._settings.UseExecutableBaseDirectory && !Path.IsPathRooted(this._settings.Directory))
+            {
+                var executablePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
+                var executableDirectory = Path.GetDirectoryName(executablePath) ?? Directory.GetCurrentDirectory();
+                var combined = Path.Combine(executableDirectory, this._settings.Directory);
+                this._settings.Directory = Path.GetFullPath(combined);
+            }
+        }
+        catch
+        {
+        }
     }
 }

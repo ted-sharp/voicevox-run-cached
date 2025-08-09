@@ -236,7 +236,7 @@ class Program
                 var playbackStartTime = DateTime.UtcNow;
                 Console.WriteLine($"\e[36mPlaying audio...\e[0m"); // Cyan text
                 using var audioPlayer = new AudioPlayer(settings.Audio);
-                var fillerManager = settings.Filler.Enabled ? new FillerManager(settings.Filler, cacheManager) : null;
+                var fillerManager = settings.Filler.Enabled ? new FillerManager(settings.Filler, cacheManager, settings.VoiceVox.DefaultSpeaker) : null;
                 await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, generationTask, fillerManager);
 
                 if (verbose)
@@ -374,7 +374,7 @@ class Program
             }
 
             var cacheManager = new AudioCacheManager(settings.Cache);
-            var fillerManager = new FillerManager(settings.Filler, cacheManager);
+            var fillerManager = new FillerManager(settings.Filler, cacheManager, settings.VoiceVox.DefaultSpeaker);
 
             await fillerManager.InitializeFillerCacheAsync(settings);
         }
@@ -391,9 +391,9 @@ class Program
         {
             using var spinner = new ProgressSpinner("Clearing audio cache...");
             var cacheManager = new AudioCacheManager(settings.Cache);
-            
+
             await cacheManager.ClearAllCacheAsync();
-            
+
             spinner.Dispose();
             Console.WriteLine("\e[32mCache cleared successfully!\e[0m"); // Green text
         }
