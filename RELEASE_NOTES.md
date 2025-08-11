@@ -1,5 +1,22 @@
 # VoicevoxRunCached リリースノート
 
+## v1.6.0 - 2025-08-11
+
+- CLI/コマンド:
+  - `devices` コマンドを追加（`--full`/`--json` オプション対応）
+  - `--out`/`--no-play` を追加し、WAV/MP3への保存と再生抑止をサポート
+  - `--log-level`/`--log-format` を追加してログ出力を制御
+- 設定/構成:
+  - `Audio.OutputDeviceId` を追加（WASAPIエンドポイントIDの優先指定）
+  - ログ設定（`Logging.Level`/`Logging.Format`）を追加
+- オーディオ/変換:
+  - `MediaFoundationManager` を導入し、MP3変換を改善
+  - MP3変換失敗時のWAVフォールバックを追加
+- 安定性/UX:
+  - 待機中のキャンセル処理およびキャンセル時の後処理を追加
+  - キャッシュ関連のロック処理を改善
+  - ロガーを追加し、出力設定を拡充
+
 ## v1.5.0 - 2025-08-09
 
 - キャッシュ: `Lock.EnterScope` を用いたスレッド安全化とI/O安定性向上
