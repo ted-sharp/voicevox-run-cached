@@ -1,5 +1,6 @@
 using NAudio.Wave;
 using NAudio.MediaFoundation;
+using NAudio.CoreAudioApi;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 
@@ -13,6 +14,7 @@ public class AudioPlayer : IDisposable
 {
     private readonly AudioSettings _settings;
     private IWavePlayer? _wavePlayer;
+    private MMDevice? _wasapiDevice;
     private bool _disposed;
     private Task? _devicePreparationTask;
 
@@ -37,6 +39,35 @@ public class AudioPlayer : IDisposable
                 }
             });
         }
+    }
+
+    private IWavePlayer CreateWavePlayer()
+    {
+        // Prefer WASAPI endpoint ID when provided; fallback to WaveOutEvent
+        if (!String.IsNullOrWhiteSpace(this._settings.OutputDeviceId))
+        {
+            try
+            {
+                var enumerator = new MMDeviceEnumerator();
+                this._wasapiDevice = enumerator.GetDevice(this._settings.OutputDeviceId);
+                return new WasapiOut(this._wasapiDevice, AudioClientShareMode.Shared, false, 100);
+            }
+            catch
+            {
+                // Fallback silently to WaveOutEvent
+            }
+        }
+
+        var waveOut = new WaveOutEvent
+        {
+            DesiredLatency = 100,
+            NumberOfBuffers = 3
+        };
+        if (this._settings.OutputDevice >= 0)
+        {
+            waveOut.DeviceNumber = this._settings.OutputDevice;
+        }
+        return waveOut;
     }
 
     private async Task PrewarmAudioDeviceAsync(int durationMs = 100)
@@ -200,16 +231,7 @@ public class AudioPlayer : IDisposable
                 }
             }
 
-            this._wavePlayer = new WaveOutEvent();
-
-            if (this._settings.OutputDevice >= 0)
-            {
-                ((WaveOutEvent)this._wavePlayer).DeviceNumber = this._settings.OutputDevice;
-            }
-
-            // Optimized buffering settings for minimal latency with stability
-            ((WaveOutEvent)this._wavePlayer).DesiredLatency = 80; // 80ms buffer
-            ((WaveOutEvent)this._wavePlayer).NumberOfBuffers = 2;  // Use 2 buffers
+            this._wavePlayer = this.CreateWavePlayer();
 
             this._wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
 
@@ -294,16 +316,7 @@ public class AudioPlayer : IDisposable
         try
         {
             // Initialize single WavePlayer instance for all segments
-            this._wavePlayer = new WaveOutEvent();
-
-            if (this._settings.OutputDevice >= 0)
-            {
-                ((WaveOutEvent)this._wavePlayer).DeviceNumber = this._settings.OutputDevice;
-            }
-
-            // Optimized buffering settings for stability - slightly higher latency for reliability
-            ((WaveOutEvent)this._wavePlayer).DesiredLatency = 100; // 100ms for stable initialization
-            ((WaveOutEvent)this._wavePlayer).NumberOfBuffers = 3;   // 3 buffers for seamless transitions
+            this._wavePlayer = this.CreateWavePlayer();
 
             this._wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
 
@@ -331,16 +344,7 @@ public class AudioPlayer : IDisposable
         try
         {
             // Initialize single WavePlayer instance for all segments
-            this._wavePlayer = new WaveOutEvent();
-
-            if (this._settings.OutputDevice >= 0)
-            {
-                ((WaveOutEvent)this._wavePlayer).DeviceNumber = this._settings.OutputDevice;
-            }
-
-            // Optimized buffering settings for stability - slightly higher latency for reliability
-            ((WaveOutEvent)this._wavePlayer).DesiredLatency = 100; // 100ms for stable initialization
-            ((WaveOutEvent)this._wavePlayer).NumberOfBuffers = 3;   // 3 buffers for seamless transitions
+            this._wavePlayer = this.CreateWavePlayer();
 
             this._wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
 
@@ -605,16 +609,7 @@ public class AudioPlayer : IDisposable
                 }
             }
 
-            this._wavePlayer = new WaveOutEvent();
-
-            if (this._settings.OutputDevice >= 0)
-            {
-                ((WaveOutEvent)this._wavePlayer).DeviceNumber = this._settings.OutputDevice;
-            }
-
-            // Optimized buffering settings for minimal latency with stability
-            ((WaveOutEvent)this._wavePlayer).DesiredLatency = 80; // 80ms buffer
-            ((WaveOutEvent)this._wavePlayer).NumberOfBuffers = 2;  // Use 2 buffers
+            this._wavePlayer = this.CreateWavePlayer();
 
             this._wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
 
@@ -664,6 +659,11 @@ public class AudioPlayer : IDisposable
                 this._wavePlayer.Stop();
                 this._wavePlayer.Dispose();
                 this._wavePlayer = null;
+                if (this._wasapiDevice != null)
+                {
+                    try { this._wasapiDevice.Dispose(); } catch { }
+                    this._wasapiDevice = null;
+                }
             }
         }
         catch

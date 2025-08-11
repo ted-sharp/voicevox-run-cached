@@ -648,7 +648,7 @@ class Program
             }
 
             Console.WriteLine("Available output devices (WASAPI):");
-            if (!string.IsNullOrEmpty(defaultName))
+            if (!String.IsNullOrEmpty(defaultName))
             {
                 Console.WriteLine($"  Default: \"{defaultName}\" (ID: {defaultId})");
             }

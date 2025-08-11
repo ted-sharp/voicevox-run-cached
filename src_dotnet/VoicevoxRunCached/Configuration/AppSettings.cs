@@ -41,7 +41,7 @@ public class CacheSettings(string directory = "./cache/audio/", int expirationDa
 }
 
 // C# 13 Primary constructor for AudioSettings with device preparation
-public class AudioSettings(int outputDevice = -1, double volume = 1.0, bool prepareDevice = false, int preparationDurationMs = 200, double preparationVolume = 0.01)
+public class AudioSettings(int outputDevice = -1, double volume = 1.0, bool prepareDevice = false, int preparationDurationMs = 200, double preparationVolume = 0.01, string outputDeviceId = "")
 {
     public int OutputDevice { get; set; } = outputDevice;
     public double Volume { get; set; } = volume;
@@ -50,6 +50,9 @@ public class AudioSettings(int outputDevice = -1, double volume = 1.0, bool prep
     public bool PrepareDevice { get; set; } = prepareDevice;
     public int PreparationDurationMs { get; set; } = preparationDurationMs;
     public double PreparationVolume { get; set; } = preparationVolume; // Very low but audible volume for device warming
+
+    // WASAPI endpoint ID preference. When set, WasapiOut will be used instead of WaveOutEvent.
+    public string OutputDeviceId { get; set; } = outputDeviceId;
 }
 
 // C# 13 Primary constructor for FillerSettings
