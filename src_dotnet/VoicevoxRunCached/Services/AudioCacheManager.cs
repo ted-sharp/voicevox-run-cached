@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
+using System.Threading.Tasks;
 using NAudio.Wave;
 using NAudio.Lame;
 using NAudio.MediaFoundation;
@@ -13,6 +14,7 @@ namespace VoicevoxRunCached.Services;
 public class AudioCacheManager
 {
     private readonly CacheSettings _settings;
+    // Switch to new System.Threading.Lock and use C# 13 lock statement
     private readonly Lock _cacheLock = new();
 
     public AudioCacheManager(CacheSettings settings)
@@ -29,7 +31,7 @@ public class AudioCacheManager
         var audioFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
         var metaFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.meta.json");
 
-        using (this._cacheLock.EnterScope())
+        lock (this._cacheLock)
         {
             if (!File.Exists(audioFilePath) || !File.Exists(metaFilePath))
             {
@@ -68,7 +70,7 @@ public class AudioCacheManager
             // Convert WAV to MP3
             var mp3Data = this.ConvertWavToMp3(audioData);
 
-            using (this._cacheLock.EnterScope())
+            lock (this._cacheLock)
             {
                 File.WriteAllBytes(audioFilePath, mp3Data);
 
@@ -306,7 +308,7 @@ public class AudioCacheManager
             var audioFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
             var metaFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.meta.json");
 
-            using (this._cacheLock.EnterScope())
+            lock (this._cacheLock)
             {
                 if (File.Exists(audioFilePath))
                 {
@@ -338,7 +340,7 @@ public class AudioCacheManager
             var audioFiles = Directory.GetFiles(this._settings.Directory, "*.mp3");
             var metaFiles = Directory.GetFiles(this._settings.Directory, "*.meta.json");
 
-            using (this._cacheLock.EnterScope())
+            lock (this._cacheLock)
             {
                 foreach (var file in audioFiles.Concat(metaFiles))
                 {

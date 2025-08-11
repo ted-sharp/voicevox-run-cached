@@ -9,7 +9,8 @@ public class ProgressSpinner : IDisposable
     private readonly string[] _frames = ["|", "/", "-", "\\"];
     private readonly CancellationTokenSource _cancellationTokenSource = new();
     private readonly Task _animationTask;
-    private readonly object _lock = new();
+    // Use .NET 9 C# 13 System.Threading.Lock for better lock semantics/perf
+    private readonly Lock _lock = new();
     private string _message = "";
     private bool _isDisposed = false;
 
