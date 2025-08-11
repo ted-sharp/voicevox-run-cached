@@ -703,7 +703,20 @@ class Program
                 using var outputStream = new MemoryStream();
                 MediaFoundationManager.EnsureInitialized();
                 MediaFoundationEncoder.EncodeToMp3(reader, outputStream, 128000);
-                await File.WriteAllBytesAsync(outPath, outputStream.ToArray());
+                var mp3Bytes = outputStream.ToArray();
+                // sanity-check MP3 header (0xFFEx)
+                bool isMp3 = mp3Bytes.Length >= 2 && mp3Bytes[0] == 0xFF && (mp3Bytes[1] & 0xE0) == 0xE0;
+                if (!isMp3)
+                {
+                    // fallback: write as wav with corrected extension
+                    var wavOut = Path.ChangeExtension(outPath, ".wav");
+                    await File.WriteAllBytesAsync(wavOut, wavData);
+                    Console.WriteLine($"\e[33mWarning: MP3 encoding fallback to WAV: {wavOut}\e[0m");
+                }
+                else
+                {
+                    await File.WriteAllBytesAsync(outPath, mp3Bytes);
+                }
             }
             catch (Exception ex)
             {
@@ -713,6 +726,26 @@ class Program
         }
 
         // Default: write WAV bytes as-is
-        await File.WriteAllBytesAsync(outPath, wavData);
+        // If extension mismatches, warn and correct
+        bool isWav = wavData.Length >= 12 &&
+                     wavData[0] == 'R' && wavData[1] == 'I' && wavData[2] == 'F' && wavData[3] == 'F' &&
+                     wavData[8] == 'W' && wavData[9] == 'A' && wavData[10] == 'V' && wavData[11] == 'E';
+        if (!isWav)
+        {
+            // Unexpected, but write raw bytes to requested path
+            await File.WriteAllBytesAsync(outPath, wavData);
+            return;
+        }
+
+        if (extension != ".wav")
+        {
+            var corrected = Path.ChangeExtension(outPath, ".wav");
+            await File.WriteAllBytesAsync(corrected, wavData);
+            Console.WriteLine($"\e[33mWarning: Adjusted extension to .wav: {corrected}\e[0m");
+        }
+        else
+        {
+            await File.WriteAllBytesAsync(outPath, wavData);
+        }
     }
 }

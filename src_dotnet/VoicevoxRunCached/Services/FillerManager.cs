@@ -48,11 +48,12 @@ public class FillerManager
                 Volume = 1.0
             };
 
-            // Check if already cached
+            // Check if already cached (mp3 or wav)
             var cacheKey = this._cacheManager.ComputeCacheKey(fillerRequest);
-            var fillerCachePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
+            var fillerCacheMp3 = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
+            var fillerCacheWav = Path.Combine(this._settings.Directory, $"{cacheKey}.wav");
 
-            if (!File.Exists(fillerCachePath))
+            if (!File.Exists(fillerCacheMp3) && !File.Exists(fillerCacheWav))
             {
                 try
                 {
@@ -60,7 +61,7 @@ public class FillerManager
                     var audioData = await apiClient.SynthesizeAudioAsync(audioQuery, fillerRequest.SpeakerId);
 
                     // Save directly to filler directory
-                    await this.SaveFillerAudioAsync(fillerCachePath, audioData);
+                    await this.SaveFillerAudioAsync(fillerCacheMp3, audioData);
                 }
                 catch (Exception ex)
                 {
@@ -91,13 +92,26 @@ public class FillerManager
         };
 
         var cacheKey = this._cacheManager.ComputeCacheKey(fillerRequest);
-        var fillerCachePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
+        var fillerCacheMp3 = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
+        var fillerCacheWav = Path.Combine(this._settings.Directory, $"{cacheKey}.wav");
 
-        if (File.Exists(fillerCachePath))
+        if (File.Exists(fillerCacheMp3))
         {
             try
             {
-                return await File.ReadAllBytesAsync(fillerCachePath);
+                return await File.ReadAllBytesAsync(fillerCacheMp3);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to load filler audio: {ex.Message}");
+            }
+        }
+
+        if (File.Exists(fillerCacheWav))
+        {
+            try
+            {
+                return await File.ReadAllBytesAsync(fillerCacheWav);
             }
             catch (Exception ex)
             {
@@ -110,8 +124,19 @@ public class FillerManager
 
     private async Task SaveFillerAudioAsync(string filePath, byte[] audioData)
     {
-        var mp3Data = await this.ConvertWavToMp3Async(audioData);
-        await File.WriteAllBytesAsync(filePath, mp3Data);
+        var converted = await this.ConvertWavToMp3Async(audioData);
+        // Detect whether converted data is actually MP3 or WAV, then choose extension accordingly
+        bool isMp3 = converted.Length >= 2 && converted[0] == 0xFF && (converted[1] & 0xE0) == 0xE0;
+        bool isWav = converted.Length >= 12 &&
+                     converted[0] == 'R' && converted[1] == 'I' && converted[2] == 'F' && converted[3] == 'F' &&
+                     converted[8] == 'W' && converted[9] == 'A' && converted[10] == 'V' && converted[11] == 'E';
+
+        var targetPath = filePath;
+        if (!isMp3 && isWav)
+        {
+            targetPath = Path.ChangeExtension(filePath, ".wav");
+        }
+        await File.WriteAllBytesAsync(targetPath, converted);
     }
 
     private async Task<byte[]> ConvertWavToMp3Async(byte[] wavData)
@@ -127,7 +152,7 @@ public class FillerManager
         }
         catch
         {
-            // フォーマット判定に失敗した場合はそのまま返す（再生側でフォールバック）
+            // フォーマット判定に失敗した場合はWAVを返す（呼び出し側で適切な拡張子に保存）
             return await Task.FromResult(wavData);
         }
     }
@@ -139,10 +164,13 @@ public class FillerManager
             if (!Directory.Exists(this._settings.Directory))
                 return Task.CompletedTask;
 
-            var files = Directory.GetFiles(this._settings.Directory, "*.mp3");
-            foreach (var file in files)
+            foreach (var pattern in new[] { "*.mp3", "*.wav" })
             {
-                try { File.Delete(file); } catch { }
+                var files = Directory.GetFiles(this._settings.Directory, pattern);
+                foreach (var file in files)
+                {
+                    try { File.Delete(file); } catch { }
+                }
             }
         }
         catch
