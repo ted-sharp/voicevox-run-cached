@@ -20,6 +20,9 @@ dotnet run "こんにちは、世界！"
 # Run with specific speaker
 dotnet run "テストメッセージです。" --speaker 1
 
+# List audio devices
+dotnet run devices --full
+
 # Build release version
 dotnet build -c Release
 
@@ -88,15 +91,18 @@ src_dotnet/VoicevoxRunCached/
 ## Configuration
 
 The application uses `appsettings.json` with these sections:
-- **VoiceVox**: BaseUrl, DefaultSpeaker, ConnectionTimeout
-- **Cache**: Directory, ExpirationDays, MaxSizeGB
-- **Audio**: OutputDevice (-1 for default), Volume
+- **VoiceVox**: EngineType, BaseUrl, EngineArguments, DefaultSpeaker, ConnectionTimeout, EnginePath, AutoStartEngine, StartupTimeoutSeconds, KeepEngineRunning
+- **Cache**: Directory, UseExecutableBaseDirectory, ExpirationDays, MaxSizeGB
+- **Audio**: OutputDevice (-1 for default), Volume, PrepareDevice, PreparationDurationMs, PreparationVolume, OutputDeviceId
+- **Filler**: Enabled, Directory, UseExecutableBaseDirectory, FillerTexts
+- **Logging**: Level, Format
 
 ## Command Interface
 
 ```bash
 VoicevoxRunCached <text> [options]
 VoicevoxRunCached speakers
+VoicevoxRunCached devices [--full] [--json]
 VoicevoxRunCached --init
 VoicevoxRunCached --clear
 
@@ -107,11 +113,16 @@ Options:
 --volume <value>      Speech volume (default: 1.0)
 --no-cache           Skip cache usage
 --cache-only         Use cache only, don't call API
+--out, -o <path>     Save output audio to file (.wav or .mp3)
+--no-play            Do not play audio (useful with --out)
 --verbose            Show detailed timing information
+--log-level <level>  Log level: trace|debug|info|warn|error|crit|none
+--log-format <fmt>   Log format: simple|json
 --help, -h           Show help message
 
 Commands:
 speakers             List available speakers
+devices              List audio output devices
 --init               Initialize filler audio cache
 --clear              Clear all audio cache files
 ```
@@ -119,7 +130,7 @@ speakers             List available speakers
 ## Development Notes
 
 - All VOICEVOX API calls must be serial (no parallel requests)
-- Speaker initialization required before first use of each speaker  
+- Speaker initialization required before first use of each speaker
 - Cache files use SHA256 hashing for unique identification
 - Audio files stored as MP3 with accompanying .meta.json metadata
 - Text segmentation optimizes cache efficiency for partial text changes

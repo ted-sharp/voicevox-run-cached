@@ -35,7 +35,7 @@ VoicevoxRunCachedは、VOICEVOX REST APIを使用してテキストから音声�
 - **前提条件**: VOICEVOX エンジン
   - デフォルト: `http://127.0.0.1:50021`
   - [VOICEVOX公式サイト](https://voicevox.hiroshiba.jp/)からダウンロード可能
-  - **重要**: 使用前にVOICEVOXエンジンを起動しておく必要があります
+  - **重要**: エンジンは自動起動可能（`AutoStartEngine: true` が既定）。外部で起動済みのエンジンにも接続できます
 
 ## インストール
 
@@ -161,6 +161,9 @@ VoicevoxRunCached.exe "テストメッセージです。" --speaker 1
 
 # 音声パラメータの調整
 VoicevoxRunCached.exe "速度を変更します。" --speed 1.2 --pitch 0.1 --volume 0.8
+
+# ファイルに保存（再生なし）
+VoicevoxRunCached.exe "保存テストです。" --out out.mp3 --no-play
 ```
 
 **エイリアス設定後の簡単な使用方法:**
@@ -169,6 +172,7 @@ VoicevoxRunCached.exe "速度を変更します。" --speed 1.2 --pitch 0.1 --vo
 voice "こんにちは、世界！"
 voice "テストメッセージです。" -s 1
 voice "速度を変更します。" --speed 1.2
+voice "保存テストです。" --out out.wav --no-play
 ```
 
 ### コマンドライン引数
@@ -183,6 +187,10 @@ voice "速度を変更します。" --speed 1.2
 | `--no-cache` | キャッシュを使用しない | false |
 | `--cache-only` | キャッシュのみ使用（API呼び出し無し） | false |
 | `--verbose` | 詳細な実行時間情報を表示 | false |
+| `--out, -o <path>` | 音声をファイル保存（.wav/.mp3対応、自動判定） | - |
+| `--no-play` | 再生せずに終了（`--out`と併用推奨） | false |
+| `--log-level <level>` | ログレベル: trace|debug|info|warn|error|crit|none | info |
+| `--log-format <fmt>` | ログ形式: simple|json | simple |
 | `--help, -h` | ヘルプを表示 | - |
 
 ### 特別なコマンド
@@ -190,6 +198,11 @@ voice "速度を変更します。" --speed 1.2
 ```bash
 # 利用可能なスピーカー一覧を表示
 VoicevoxRunCached.exe speakers
+
+# オーディオデバイス一覧
+VoicevoxRunCached.exe devices
+VoicevoxRunCached.exe devices --full
+VoicevoxRunCached.exe devices --json
 
 # フィラー音声キャッシュの初期化
 VoicevoxRunCached.exe --init
@@ -202,6 +215,8 @@ VoicevoxRunCached.exe "テストメッセージです。" --verbose
 
 # エイリアス使用時
 voice speakers
+voice devices
+voice devices --full
 voice --init
 voice --clear
 voice "テストメッセージです。" --verbose
@@ -243,11 +258,14 @@ voice "テストメッセージです。" --verbose
     "Volume": 1.2,
     "PrepareDevice": false,
     "PreparationDurationMs": 200,
-    "PreparationVolume": 0.01
+    "PreparationVolume": 0.01,
+    // Optional: prefer a specific WASAPI endpoint by ID. When set, it overrides OutputDevice.
+    "OutputDeviceId": ""
   },
   "Filler": {
     "Enabled": true,
     "Directory": "./cache/filler/",
+    "UseExecutableBaseDirectory": true,
     "FillerTexts": [
       "えーっと、",
       "あのー、",
@@ -256,6 +274,12 @@ voice "テストメッセージです。" --verbose
       "ええっと、",
       "えとえと、"
     ]
+  },
+  "Logging": {
+    // Level: Trace|Debug|Information|Warning|Error|Critical|None
+    "Level": "Information",
+    // Format: simple|json
+    "Format": "simple"
   }
 }
 
@@ -276,6 +300,7 @@ voice "テストメッセージです。" --verbose
 
 #### Cache設定
 - **Directory**: キャッシュファイル保存ディレクトリ
+- **UseExecutableBaseDirectory**: 相対パスを実行ファイル基準で解決するか
 - **ExpirationDays**: キャッシュの有効期限（日数）
 - **MaxSizeGB**: キャッシュの最大サイズ（GB）
 
@@ -285,11 +310,17 @@ voice "テストメッセージです。" --verbose
 - **PrepareDevice**: デバイス準備機能を有効にするか（音切れ防止）
 - **PreparationDurationMs**: デバイス準備時間（ミリ秒）
 - **PreparationVolume**: 準備時の音量（極小音量での暖気運転）
+- **OutputDeviceId**: 優先するWASAPIデバイスID（指定時は`OutputDevice`より優先）
 
 #### Filler設定
 - **Enabled**: フィラー機能を有効にするか（音声生成待機中の自然な間つなぎ）
 - **Directory**: フィラー音声キャッシュ保存ディレクトリ
 - **FillerTexts**: 話の始めに適したフィラー音声のテキスト一覧（読点付きで自然な語調）
+- **UseExecutableBaseDirectory**: 相対パスを実行ファイル基準で解決するか
+
+#### Logging設定
+- **Level**: 既定のログレベル（verbose指定時はDebugに相当）
+- **Format**: simple（標準）/ json（構造化ログ）
 
 ## VoicevoxRunCached vs curl比較
 
@@ -438,6 +469,10 @@ VoicevoxRunCached.exe --init
 **Q: 音声が再生されない**
 - A: Windowsの音量設定と出力デバイスを確認してください
 - A: `appsettings.json`のAudio.OutputDeviceを-1に設定してください
+
+**Q: 使用できる出力デバイスを確認したい**
+- A: `VoicevoxRunCached.exe devices --full` で一覧を表示できます（`--json`で機械可読出力）
+- A: 特定のデバイスを優先したい場合は `Audio.OutputDeviceId` を設定してください
 
 **Q: 音声の開始部分が途切れる（特にUSBオーディオ・Bluetooth）**
 - A: `appsettings.json`で`"PrepareDevice": true`に設定してください
