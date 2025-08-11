@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Console;
+using System.Text.Json;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using VoicevoxRunCached.Configuration;
@@ -8,6 +9,7 @@ using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services;
 using NAudio.Wave;
 using NAudio.MediaFoundation;
+using NAudio.CoreAudioApi;
 
 namespace VoicevoxRunCached;
 
@@ -73,7 +75,8 @@ class Program
 
         if (args[0] == "devices")
         {
-            HandleListDevices(logger);
+            var subArgs = args.Skip(1).ToArray();
+            HandleListDevices(logger, subArgs);
             return 0;
         }
 
@@ -146,7 +149,7 @@ class Program
         Console.WriteLine("Usage:");
         Console.WriteLine("  VoicevoxRunCached <text> [options]");
         Console.WriteLine("  VoicevoxRunCached speakers");
-        Console.WriteLine("  VoicevoxRunCached devices");
+        Console.WriteLine("  VoicevoxRunCached devices [--full] [--json]");
         Console.WriteLine("  VoicevoxRunCached --init");
         Console.WriteLine("  VoicevoxRunCached --clear");
         Console.WriteLine();
@@ -580,14 +583,103 @@ class Program
         }
     }
 
-    private static void HandleListDevices(ILogger logger)
+    private static void HandleListDevices(ILogger logger, string[] args)
     {
         try
         {
-            logger.LogInformation("Available output devices:");
-            Console.WriteLine("Available output devices:");
-            Console.WriteLine("  -1: Default Device");
-            // Detailed enumeration is intentionally omitted for stability across environments
+            bool outputJson = args.Contains("--json");
+            bool full = args.Contains("--full");
+
+            using var enumerator = new MMDeviceEnumerator();
+
+            // Default endpoint (may throw depending on environment)
+            string? defaultName = null;
+            string? defaultId = null;
+            try
+            {
+                var def = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+                defaultName = def?.FriendlyName ?? "Default Device";
+                defaultId = def?.ID ?? "";
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to get default audio endpoint");
+            }
+
+            var list = new List<object>();
+            if (full)
+            {
+                try
+                {
+                    var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
+                    foreach (var d in devices)
+                    {
+                        try
+                        {
+                            list.Add(new
+                            {
+                                id = d.ID,
+                                name = d.FriendlyName,
+                                state = d.State.ToString()
+                            });
+                        }
+                        catch (Exception inner)
+                        {
+                            logger.LogWarning(inner, "Failed to read device info");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to enumerate audio endpoints");
+                }
+            }
+
+            if (outputJson)
+            {
+                var payload = new
+                {
+                    @default = new { id = defaultId, name = defaultName },
+                    devices = list
+                };
+                var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
+                Console.WriteLine(json);
+                return;
+            }
+
+            Console.WriteLine("Available output devices (WASAPI):");
+            if (!string.IsNullOrEmpty(defaultName))
+            {
+                Console.WriteLine($"  Default: \"{defaultName}\" (ID: {defaultId})");
+            }
+            else
+            {
+                Console.WriteLine("  Default: (unavailable)");
+            }
+
+            if (full)
+            {
+                if (list.Count == 0)
+                {
+                    Console.WriteLine("  (no active render devices)");
+                }
+                else
+                {
+                    int idx = 0;
+                    foreach (var item in list)
+                    {
+                        var id = (string?)item.GetType().GetProperty("id")?.GetValue(item) ?? "";
+                        var name = (string?)item.GetType().GetProperty("name")?.GetValue(item) ?? "";
+                        var state = (string?)item.GetType().GetProperty("state")?.GetValue(item) ?? "";
+                        Console.WriteLine($"  [{idx}] \"{name}\" (ID: {id}) State: {state}");
+                        idx++;
+                    }
+                }
+            }
+            else
+            {
+                Console.WriteLine("  (use 'devices --full' for a detailed list)");
+            }
         }
         catch (Exception ex)
         {
