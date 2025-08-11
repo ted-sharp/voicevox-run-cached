@@ -4,11 +4,11 @@ setlocal enabledelayedexpansion
 rem Quick test runner for VoicevoxRunCached
 rem Usage:
 rem   _test-voice.bat                 -> plays default sample text
-rem   _test-voice.bat "å¥½ããªæ–‡ç« "       -> plays given text
+rem   _test-voice.bat "D‚«‚È•¶Í"       -> plays given text
 rem   _test-voice.bat speakers        -> list available speakers
 rem   _test-voice.bat --init          -> initialize filler cache
 rem   _test-voice.bat --clear         -> clear audio cache
-rem   _test-voice.bat "æ–‡ç« " --verbose   -> pass-through any options
+rem   _test-voice.bat "•¶Í" --verbose   -> pass-through any options
 
 set "SCRIPT_DIR=%~dp0"
 set "PROJECT_DIR=%SCRIPT_DIR%VoicevoxRunCached"
@@ -21,7 +21,7 @@ if not exist "%PROJECT_DIR%\VoicevoxRunCached.csproj" (
 pushd "%PROJECT_DIR%" >nul 2>&1
 
 if "%~1"=="" (
-  set "TEXT=ãƒ†ã‚¹ãƒˆãƒ¡ãƒƒã‚»ãƒ¼ã‚¸ã§ã™ã€‚"
+  set "TEXT=ƒeƒXƒgƒƒbƒZ[ƒW‚Å‚·B"
   echo Running: VoicevoxRunCached "!TEXT!"
   dotnet run -- "!TEXT!"
 ) else (
