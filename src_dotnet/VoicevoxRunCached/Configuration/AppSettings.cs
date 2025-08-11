@@ -6,6 +6,7 @@ public class AppSettings
     public CacheSettings Cache { get; set; } = new();
     public AudioSettings Audio { get; set; } = new();
     public FillerSettings Filler { get; set; } = new();
+    public LoggingSettings Logging { get; set; } = new();
 }
 
 // C# 13 Primary constructor for VoiceVoxSettings
@@ -65,4 +66,13 @@ public class FillerSettings(bool enabled = false, string directory = "./cache/fi
         "えとえと、"
     ];
     public bool UseExecutableBaseDirectory { get; set; } = useExecutableBaseDirectory;
+}
+
+// Logging settings (appsettings.json)
+public class LoggingSettings(string level = "Information", string format = "simple")
+{
+    // Level: Trace|Debug|Information|Warning|Error|Critical|None
+    public string Level { get; set; } = level;
+    // Format: simple|json
+    public string Format { get; set; } = format;
 }

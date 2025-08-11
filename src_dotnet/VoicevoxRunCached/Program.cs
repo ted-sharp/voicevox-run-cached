@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Console;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using VoicevoxRunCached.Configuration;
@@ -34,15 +35,27 @@ class Program
         var configuration = BuildConfiguration();
         var settings = configuration.Get<AppSettings>() ?? new AppSettings();
 
+        var (minLogLevel, useJsonConsole) = ParseLogOptions(args, settings);
         using var loggerFactory = LoggerFactory.Create(builder =>
         {
-            builder
-                .SetMinimumLevel(LogLevel.Information)
-                .AddConsole(options =>
+            builder.SetMinimumLevel(minLogLevel);
+            if (useJsonConsole)
+            {
+                builder.AddJsonConsole(o =>
                 {
-                    options.TimestampFormat = "HH:mm:ss.fff ";
-                    options.IncludeScopes = false;
+                    o.TimestampFormat = "HH:mm:ss.fff ";
+                    o.IncludeScopes = false;
                 });
+            }
+            else
+            {
+                builder.AddSimpleConsole(o =>
+                {
+                    o.TimestampFormat = "HH:mm:ss.fff ";
+                    o.SingleLine = true;
+                    o.IncludeScopes = false;
+                });
+            }
         });
         var logger = loggerFactory.CreateLogger("VoicevoxRunCached");
 
@@ -141,6 +154,8 @@ class Program
         Console.WriteLine("  --out, -o <path>         Save output audio to file (.wav or .mp3)");
         Console.WriteLine("  --no-play                Do not play audio (useful with --out)");
         Console.WriteLine("  --verbose                Show detailed timing information");
+        Console.WriteLine("  --log-level <level>      Log level: trace|debug|info|warn|error|crit|none (default: info; verbose=debug)");
+        Console.WriteLine("  --log-format <fmt>       Log format: simple|json (default: simple)");
         Console.WriteLine("  --help, -h               Show this help message");
         Console.WriteLine();
         Console.WriteLine("Commands:");
@@ -190,6 +205,12 @@ class Program
                 case "--out" or "-o" when i + 1 < args.Length:
                     i++;
                     break;
+                case "--log-level" when i + 1 < args.Length:
+                    i++;
+                    break;
+                case "--log-format" when i + 1 < args.Length:
+                    i++;
+                    break;
                 default:
                     Console.WriteLine($"Warning: Unknown option '{args[i]}'");
                     break;
@@ -214,6 +235,30 @@ class Program
             }
         }
         return null;
+    }
+
+    private static (LogLevel Level, bool UseJson) ParseLogOptions(string[] args, AppSettings settings)
+    {
+        // verbose implies Debug unless overridden explicitly
+        var verbose = args.Contains("--verbose");
+        var levelStr = (GetStringOption(args, "--log-level") ?? settings.Logging.Level).ToLowerInvariant();
+        var fmtStr = (GetStringOption(args, "--log-format") ?? settings.Logging.Format).ToLowerInvariant();
+
+        LogLevel level = verbose ? LogLevel.Debug : LogLevel.Information;
+        level = levelStr switch
+        {
+            "trace" => LogLevel.Trace,
+            "debug" => LogLevel.Debug,
+            "info" or "information" => LogLevel.Information,
+            "warn" or "warning" => LogLevel.Warning,
+            "error" => LogLevel.Error,
+            "crit" or "critical" => LogLevel.Critical,
+            "none" => LogLevel.None,
+            _ => level
+        };
+
+        bool useJson = fmtStr == "json";
+        return (level, useJson);
     }
 
     private static async Task HandleTextToSpeechAsync(AppSettings settings, VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false, string? outPath = null, bool noPlay = false, ILogger? logger = null)
