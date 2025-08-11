@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using System.Globalization;
 using System.Runtime.InteropServices;
 using VoicevoxRunCached.Configuration;
@@ -33,6 +34,18 @@ class Program
         var configuration = BuildConfiguration();
         var settings = configuration.Get<AppSettings>() ?? new AppSettings();
 
+        using var loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder
+                .SetMinimumLevel(LogLevel.Information)
+                .AddConsole(options =>
+                {
+                    options.TimestampFormat = "HH:mm:ss.fff ";
+                    options.IncludeScopes = false;
+                });
+        });
+        var logger = loggerFactory.CreateLogger("VoicevoxRunCached");
+
         if (args.Length == 0 || args[0] == "--help" || args[0] == "-h")
         {
             ShowUsage();
@@ -41,25 +54,25 @@ class Program
 
         if (args[0] == "speakers")
         {
-            await HandleListSpeakersAsync(settings);
+            await HandleListSpeakersAsync(settings, logger);
             return 0;
         }
 
         if (args[0] == "devices")
         {
-            HandleListDevices();
+            HandleListDevices(logger);
             return 0;
         }
 
         if (args[0] == "--init")
         {
-            await HandleInitializeFillerAsync(settings);
+            await HandleInitializeFillerAsync(settings, logger);
             return 0;
         }
 
         if (args[0] == "--clear")
         {
-            await HandleClearCacheAsync(settings);
+            await HandleClearCacheAsync(settings, logger);
             return 0;
         }
 
@@ -75,7 +88,7 @@ class Program
         string? outPath = GetStringOption(args, "--out") ?? GetStringOption(args, "-o");
         bool noPlay = GetBoolOption(args, "--no-play");
 
-        await HandleTextToSpeechAsync(settings, request, GetBoolOption(args, "--no-cache"), GetBoolOption(args, "--cache-only"), GetBoolOption(args, "--verbose"), outPath, noPlay);
+        await HandleTextToSpeechAsync(settings, request, GetBoolOption(args, "--no-cache"), GetBoolOption(args, "--cache-only"), GetBoolOption(args, "--verbose"), outPath, noPlay, logger);
         return 0;
     }
 
@@ -203,7 +216,7 @@ class Program
         return null;
     }
 
-    private static async Task HandleTextToSpeechAsync(AppSettings settings, VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false, string? outPath = null, bool noPlay = false)
+    private static async Task HandleTextToSpeechAsync(AppSettings settings, VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false, string? outPath = null, bool noPlay = false, ILogger? logger = null)
     {
         var totalStartTime = DateTime.UtcNow;
         try
@@ -213,6 +226,7 @@ class Program
             using var engineManager = new VoiceVoxEngineManager(settings.VoiceVox);
             if (!await engineManager.EnsureEngineRunningAsync())
             {
+                logger?.LogError("VOICEVOX engine is not available");
                 Console.WriteLine("\e[31mError: VOICEVOX engine is not available\e[0m");
                 Environment.Exit(1);
                 return;
@@ -220,6 +234,7 @@ class Program
 
             if (verbose)
             {
+                logger?.LogInformation("Engine check completed in {ElapsedMs}ms", (DateTime.UtcNow - engineStartTime).TotalMilliseconds);
                 Console.WriteLine($"Engine check completed in {(DateTime.UtcNow - engineStartTime).TotalMilliseconds:F1}ms");
             }
 
@@ -236,10 +251,12 @@ class Program
                         var audioQuery = await apiClient.GenerateAudioQueryAsync(request);
                         var wavData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId);
                         await WriteOutputFileAsync(wavData, outPath!);
+                        logger?.LogInformation("Saved output to: {OutPath}", outPath);
                         Console.WriteLine($"\e[32mSaved output to: {outPath}\e[0m");
                     }
                     catch (Exception ex)
                     {
+                        logger?.LogWarning(ex, "Failed to save output to {OutPath}", outPath);
                         Console.WriteLine($"Warning: Failed to save output to '{outPath}': {ex.Message}");
                     }
                 });
@@ -251,9 +268,11 @@ class Program
                 {
                     await exportTask;
                 }
+                logger?.LogInformation("Done (no-play mode)");
                 Console.WriteLine("\e[32mDone!\e[0m");
                 if (verbose)
                 {
+                    logger?.LogInformation("Total execution time: {ElapsedMs}ms", (DateTime.UtcNow - totalStartTime).TotalMilliseconds);
                     Console.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms");
                 }
                 return;
@@ -266,11 +285,13 @@ class Program
             if (!noCache)
             {
                 var segmentStartTime = DateTime.UtcNow;
+                logger?.LogInformation("Processing segments...");
                 Console.WriteLine("Processing segments...");
                 var segments = await cacheManager.ProcessTextSegmentsAsync(request);
 
                 if (verbose)
                 {
+                    logger?.LogInformation("Segment processing completed in {ElapsedMs}ms", (DateTime.UtcNow - segmentStartTime).TotalMilliseconds);
                     Console.WriteLine($"Segment processing completed in {(DateTime.UtcNow - segmentStartTime).TotalMilliseconds:F1}ms");
                 }
                 var cachedCount = segments.Count(s => s.IsCached);
@@ -278,6 +299,7 @@ class Program
 
                 if (cachedCount > 0)
                 {
+                    logger?.LogInformation("Found {Cached}/{Total} segments in cache", cachedCount, totalCount);
                     // C# 13 Escape character for success message
                     Console.WriteLine($"\e[32mFound {cachedCount}/{totalCount} segments in cache!\e[0m"); // Green text
                 }
@@ -291,11 +313,13 @@ class Program
                     if (cacheOnly)
                     {
                         // C# 13 Escape character for error message
+                        logger?.LogError("{Count} segments not cached and --cache-only specified", uncachedSegments.Count);
                         Console.WriteLine($"\e[31mError: {uncachedSegments.Count} segments not cached and --cache-only specified\e[0m"); // Red text
                         Environment.Exit(1);
                         return;
                     }
 
+                    logger?.LogInformation("Generating {Count} segments in background...", uncachedSegments.Count);
                     // C# 13 Escape character for info message
                     Console.WriteLine($"\e[33mGenerating {uncachedSegments.Count} segments in background...\e[0m"); // Yellow text
                     generationTask = GenerateSegmentsAsync(settings, request, segments, cacheManager);
@@ -304,6 +328,7 @@ class Program
                 // Start playing immediately - cached segments play right away, uncached segments wait
                 // C# 13 Escape character for status message
                 var playbackStartTime = DateTime.UtcNow;
+                logger?.LogInformation("Playing audio...");
                 Console.WriteLine($"\e[36mPlaying audio...\e[0m"); // Cyan text
                 using var audioPlayer = new AudioPlayer(settings.Audio);
                 var fillerManager = settings.Filler.Enabled ? new FillerManager(settings.Filler, cacheManager, settings.VoiceVox.DefaultSpeaker) : null;
@@ -311,6 +336,7 @@ class Program
 
                 if (verbose)
                 {
+                    logger?.LogInformation("Audio playback completed in {ElapsedMs}ms", (DateTime.UtcNow - playbackStartTime).TotalMilliseconds);
                     Console.WriteLine($"Audio playback completed in {(DateTime.UtcNow - playbackStartTime).TotalMilliseconds:F1}ms");
                 }
             }
@@ -328,11 +354,13 @@ class Program
                 // disposed by using
 
                 // C# 13 Escape character for playback status
+                logger?.LogInformation("Playing audio...");
                 Console.WriteLine($"\e[36mPlaying audio...\e[0m"); // Cyan text
                 using var audioPlayer = new AudioPlayer(settings.Audio);
                 await audioPlayer.PlayAudioAsync(audioData);
             }
 
+            logger?.LogInformation("Done");
             // C# 13 Escape character for completion message
             Console.WriteLine($"\e[32mDone!\e[0m"); // Green text
 
@@ -343,18 +371,20 @@ class Program
 
             if (verbose)
             {
+                logger?.LogInformation("Total execution time: {ElapsedMs}ms", (DateTime.UtcNow - totalStartTime).TotalMilliseconds);
                 Console.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms");
             }
         }
         catch (Exception ex)
         {
+            logger?.LogError(ex, "Unhandled error");
             // C# 13 Escape character for error message
             Console.WriteLine($"\e[31mError: {ex.Message}\e[0m"); // Red text
             Environment.Exit(1);
         }
     }
 
-    private static async Task HandleListSpeakersAsync(AppSettings settings)
+    private static async Task HandleListSpeakersAsync(AppSettings settings, ILogger logger)
     {
         try
         {
@@ -362,6 +392,7 @@ class Program
             using var engineManager = new VoiceVoxEngineManager(settings.VoiceVox);
             if (!await engineManager.EnsureEngineRunningAsync())
             {
+                logger.LogError("VOICEVOX engine is not available");
                 Console.WriteLine("\e[31mError: VOICEVOX engine is not available\e[0m");
                 Environment.Exit(1);
                 return;
@@ -370,12 +401,15 @@ class Program
             using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
             var speakers = await apiClient.GetSpeakersAsync();
 
+            logger.LogInformation("Available speakers:");
             Console.WriteLine("Available speakers:");
             foreach (var speaker in speakers)
             {
+                logger.LogInformation("{Name} (v{Version})", speaker.Name, speaker.Version);
                 Console.WriteLine($"  {speaker.Name} (v{speaker.Version})");
                 foreach (var style in speaker.Styles)
                 {
+                    logger.LogInformation("  ID: {Id} - {Name}", style.Id, style.Name);
                     Console.WriteLine($"    ID: {style.Id} - {style.Name}");
                 }
                 Console.WriteLine();
@@ -383,6 +417,7 @@ class Program
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Error listing speakers");
             // C# 13 Escape character for error message
             Console.WriteLine($"\e[31mError: {ex.Message}\e[0m"); // Red text
             Environment.Exit(1);
@@ -435,7 +470,7 @@ class Program
         }
     }
 
-    private static async Task HandleInitializeFillerAsync(AppSettings settings)
+    private static async Task HandleInitializeFillerAsync(AppSettings settings, ILogger logger)
     {
         try
         {
@@ -443,6 +478,7 @@ class Program
             using var engineManager = new VoiceVoxEngineManager(settings.VoiceVox);
             if (!await engineManager.EnsureEngineRunningAsync())
             {
+                logger.LogError("VOICEVOX engine is not available");
                 Console.WriteLine("\e[31mError: VOICEVOX engine is not available\e[0m");
                 Environment.Exit(1);
                 return;
@@ -451,16 +487,19 @@ class Program
             var cacheManager = new AudioCacheManager(settings.Cache);
             var fillerManager = new FillerManager(settings.Filler, cacheManager, settings.VoiceVox.DefaultSpeaker);
 
+            logger.LogInformation("Initializing filler cache...");
             await fillerManager.InitializeFillerCacheAsync(settings);
+            logger.LogInformation("Filler cache initialized");
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Error initializing filler cache");
             Console.WriteLine($"\e[31mError initializing filler cache: {ex.Message}\e[0m");
             Environment.Exit(1);
         }
     }
 
-    private static async Task HandleClearCacheAsync(AppSettings settings)
+    private static async Task HandleClearCacheAsync(AppSettings settings, ILogger logger)
     {
         try
         {
@@ -473,26 +512,30 @@ class Program
             var fillerManager = new FillerManager(settings.Filler, cacheManager, settings.VoiceVox.DefaultSpeaker);
             await fillerManager.ClearFillerCacheAsync();
 
+            logger.LogInformation("Cache cleared successfully");
             // disposed by using
             Console.WriteLine("\e[32mCache cleared successfully!\e[0m"); // Green text
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Error clearing cache");
             Console.WriteLine($"\e[31mError clearing cache: {ex.Message}\e[0m"); // Red text
             Environment.Exit(1);
         }
     }
 
-    private static void HandleListDevices()
+    private static void HandleListDevices(ILogger logger)
     {
         try
         {
+            logger.LogInformation("Available output devices:");
             Console.WriteLine("Available output devices:");
             Console.WriteLine("  -1: Default Device");
             // Detailed enumeration is intentionally omitted for stability across environments
         }
         catch (Exception ex)
         {
+            logger.LogError(ex, "Error listing devices");
             Console.WriteLine($"\e[31mError listing devices: {ex.Message}\e[0m");
             Environment.Exit(1);
         }
