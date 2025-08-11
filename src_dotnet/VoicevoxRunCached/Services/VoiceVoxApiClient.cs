@@ -25,27 +25,28 @@ public class VoiceVoxApiClient : IDisposable
         };
     }
 
-    private static async Task<T> WithSimpleRetryAsync<T>(Func<Task<T>> action, int maxAttempts = 2, int delayMs = 250)
+    private static async Task<T> WithSimpleRetryAsync<T>(Func<Task<T>> action, int maxAttempts = 2, int delayMs = 250, CancellationToken cancellationToken = default)
     {
         Exception? last = null;
         for (int attempt = 1; attempt <= maxAttempts; attempt++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             try { return await action(); }
             catch (Exception ex)
             {
                 last = ex;
                 if (attempt == maxAttempts) break;
-                await Task.Delay(delayMs);
+                try { await Task.Delay(delayMs, cancellationToken); } catch (OperationCanceledException) { throw; }
             }
         }
         throw last ?? new InvalidOperationException("Unknown error in retry block");
     }
 
-    public async Task<List<Speaker>> GetSpeakersAsync()
+    public async Task<List<Speaker>> GetSpeakersAsync(CancellationToken cancellationToken = default)
     {
         return await this.ExecuteApiCallAsync(async () =>
         {
-            var response = await WithSimpleRetryAsync(async () => await this._httpClient.GetAsync("/speakers"));
+            var response = await WithSimpleRetryAsync(async () => await this._httpClient.GetAsync("/speakers", cancellationToken), cancellationToken: cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var json = await response.Content.ReadAsStringAsync();
@@ -61,24 +62,24 @@ public class VoiceVoxApiClient : IDisposable
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
     };
 
-    public async Task InitializeSpeakerAsync(int speakerId)
+    public async Task InitializeSpeakerAsync(int speakerId, CancellationToken cancellationToken = default)
     {
         await this.ExecuteApiCallAsync(async () =>
         {
-            var response = await WithSimpleRetryAsync(async () => await this._httpClient.PostAsync($"/initialize_speaker?speaker={speakerId}", null));
+            var response = await WithSimpleRetryAsync(async () => await this._httpClient.PostAsync($"/initialize_speaker?speaker={speakerId}", null, cancellationToken), cancellationToken: cancellationToken);
             response.EnsureSuccessStatusCode();
             return true; // Return value for generic method
         }, $"Failed to initialize speaker {speakerId}");
     }
 
-    public async Task<string> GenerateAudioQueryAsync(VoiceRequest request)
+    public async Task<string> GenerateAudioQueryAsync(VoiceRequest request, CancellationToken cancellationToken = default)
     {
         var json = await this.ExecuteApiCallAsync(async () =>
         {
             var encodedText = Uri.EscapeDataString(request.Text);
             var url = $"/audio_query?text={encodedText}&speaker={request.SpeakerId}";
 
-            var response = await WithSimpleRetryAsync(async () => await this._httpClient.PostAsync(url, null));
+            var response = await WithSimpleRetryAsync(async () => await this._httpClient.PostAsync(url, null, cancellationToken), cancellationToken: cancellationToken);
             response.EnsureSuccessStatusCode();
 
             return await response.Content.ReadAsStringAsync();
@@ -87,14 +88,14 @@ public class VoiceVoxApiClient : IDisposable
         return ApplyVoiceParametersToAudioQueryJson(json, request);
     }
 
-    public async Task<byte[]> SynthesizeAudioAsync(string audioQuery, int speakerId)
+    public async Task<byte[]> SynthesizeAudioAsync(string audioQuery, int speakerId, CancellationToken cancellationToken = default)
     {
         return await this.ExecuteApiCallAsync(async () =>
         {
             var content = new StringContent(audioQuery, Encoding.UTF8, "application/json");
             var url = $"/synthesis?speaker={speakerId}";
 
-            var response = await WithSimpleRetryAsync(async () => await this._httpClient.PostAsync(url, content));
+            var response = await WithSimpleRetryAsync(async () => await this._httpClient.PostAsync(url, content, cancellationToken), cancellationToken: cancellationToken);
             response.EnsureSuccessStatusCode();
 
             return await response.Content.ReadAsByteArrayAsync();

@@ -145,7 +145,7 @@ public class AudioPlayer : IDisposable
         }
     }
 
-    public async Task PlayAudioStreamingAsync(byte[] audioData, Func<byte[], Task>? cacheCallback = null)
+    public async Task PlayAudioStreamingAsync(byte[] audioData, Func<byte[], Task>? cacheCallback = null, CancellationToken cancellationToken = default)
     {
         if (this._disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
@@ -256,9 +256,13 @@ public class AudioPlayer : IDisposable
             // Minimal delay to ensure proper audio initialization
             await Task.Delay(20);
 
+            cancellationToken.ThrowIfCancellationRequested();
             this._wavePlayer.Play();
 
-            await tcs.Task;
+            using (cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken)))
+            {
+                await tcs.Task;
+            }
 
             // Ensure all buffered audio is played before stopping
             await Task.Delay(150); // Wait for buffer to flush
@@ -279,7 +283,7 @@ public class AudioPlayer : IDisposable
         }
     }
 
-    public async Task PlayAudioSequentiallyAsync(List<byte[]> audioSegments)
+    public async Task PlayAudioSequentiallyAsync(List<byte[]> audioSegments, CancellationToken cancellationToken = default)
     {
         if (this._disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
@@ -307,7 +311,7 @@ public class AudioPlayer : IDisposable
             {
                 if (segment.Length == 0) continue;
 
-                await this.PlaySegmentAsync(segment);
+                await this.PlaySegmentAsync(segment, cancellationToken: cancellationToken);
             }
         }
         finally
@@ -316,7 +320,7 @@ public class AudioPlayer : IDisposable
         }
     }
 
-    public async Task PlayAudioSequentiallyWithGenerationAsync(List<TextSegment> segments, Task? generationTask, FillerManager? fillerManager = null)
+    public async Task PlayAudioSequentiallyWithGenerationAsync(List<TextSegment> segments, Task? generationTask, FillerManager? fillerManager = null, CancellationToken cancellationToken = default)
     {
         if (this._disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
@@ -350,7 +354,7 @@ public class AudioPlayer : IDisposable
                 if (segment.IsCached && segment.AudioData != null)
                 {
                     // Play cached segments immediately
-                    await this.PlaySegmentAsync(segment.AudioData, isFirstSegment);
+                    await this.PlaySegmentAsync(segment.AudioData, isFirstSegment, cancellationToken);
                     isFirstSegment = false;
                 }
                 else
@@ -367,7 +371,7 @@ public class AudioPlayer : IDisposable
                             if (fillerAudio != null)
                             {
                                 Console.WriteLine("Playing filler while waiting for segment generation...");
-                                await this.PlaySegmentAsync(fillerAudio, isFirstSegment);
+                                await this.PlaySegmentAsync(fillerAudio, isFirstSegment, cancellationToken);
                                 isFirstSegment = false;
                             }
                         }
@@ -390,7 +394,7 @@ public class AudioPlayer : IDisposable
                             break;
                         }
 
-                        await Task.Delay(100); // Check every 100ms
+                        await Task.Delay(100, cancellationToken); // Check every 100ms
                     }
 
                     // Final check after waiting
@@ -401,7 +405,7 @@ public class AudioPlayer : IDisposable
                     }
 
                     // Play the generated segment
-                    await this.PlaySegmentAsync(segment.AudioData, isFirstSegment);
+                    await this.PlaySegmentAsync(segment.AudioData, isFirstSegment, cancellationToken);
                     isFirstSegment = false;
                 }
 
@@ -417,7 +421,7 @@ public class AudioPlayer : IDisposable
                             if (fillerAudio != null)
                             {
                                 Console.WriteLine("Playing filler while waiting for next segment...");
-                                await this.PlaySegmentAsync(fillerAudio, false);
+                                await this.PlaySegmentAsync(fillerAudio, false, cancellationToken);
                             }
                         }
                         catch (Exception ex)
@@ -440,7 +444,7 @@ public class AudioPlayer : IDisposable
         }
     }
 
-    private async Task PlaySegmentAsync(byte[] audioData, bool isFirstSegment = false)
+    private async Task PlaySegmentAsync(byte[] audioData, bool isFirstSegment = false, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -526,9 +530,13 @@ public class AudioPlayer : IDisposable
                 await Task.Delay(10);
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             this._wavePlayer?.Play();
 
-            await tcs.Task;
+            using (cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken)))
+            {
+                await tcs.Task;
+            }
 
             // Ensure complete audio playback - increased delay for proper segment completion
             await Task.Delay(120);

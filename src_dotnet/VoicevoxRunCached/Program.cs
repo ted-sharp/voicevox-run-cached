@@ -101,7 +101,16 @@ class Program
         string? outPath = GetStringOption(args, "--out") ?? GetStringOption(args, "-o");
         bool noPlay = GetBoolOption(args, "--no-play");
 
-        await HandleTextToSpeechAsync(settings, request, GetBoolOption(args, "--no-cache"), GetBoolOption(args, "--cache-only"), GetBoolOption(args, "--verbose"), outPath, noPlay, logger);
+        // Setup cancellation (Ctrl+C)
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (s, e) =>
+        {
+            e.Cancel = true; // prevent process kill
+            logger.LogWarning("Cancellation requested (Ctrl+C). Attempting graceful shutdown...");
+            cts.Cancel();
+        };
+
+        await HandleTextToSpeechAsync(settings, request, GetBoolOption(args, "--no-cache"), GetBoolOption(args, "--cache-only"), GetBoolOption(args, "--verbose"), outPath, noPlay, logger, cts.Token);
         return 0;
     }
 
@@ -261,7 +270,7 @@ class Program
         return (level, useJson);
     }
 
-    private static async Task HandleTextToSpeechAsync(AppSettings settings, VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false, string? outPath = null, bool noPlay = false, ILogger? logger = null)
+    private static async Task HandleTextToSpeechAsync(AppSettings settings, VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false, string? outPath = null, bool noPlay = false, ILogger? logger = null, CancellationToken cancellationToken = default)
     {
         var totalStartTime = DateTime.UtcNow;
         try
@@ -269,7 +278,7 @@ class Program
             // Ensure VOICEVOX engine is running
             var engineStartTime = DateTime.UtcNow;
             using var engineManager = new VoiceVoxEngineManager(settings.VoiceVox);
-            if (!await engineManager.EnsureEngineRunningAsync())
+            if (cancellationToken.IsCancellationRequested || !await engineManager.EnsureEngineRunningAsync())
             {
                 logger?.LogError("VOICEVOX engine is not available");
                 Console.WriteLine("\e[31mError: VOICEVOX engine is not available\e[0m");
@@ -292,9 +301,9 @@ class Program
                     try
                     {
                         using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
-                        await apiClient.InitializeSpeakerAsync(request.SpeakerId);
-                        var audioQuery = await apiClient.GenerateAudioQueryAsync(request);
-                        var wavData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId);
+                        await apiClient.InitializeSpeakerAsync(request.SpeakerId, cancellationToken);
+                        var audioQuery = await apiClient.GenerateAudioQueryAsync(request, cancellationToken);
+                        var wavData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId, cancellationToken);
                         await WriteOutputFileAsync(wavData, outPath!);
                         logger?.LogInformation("Saved output to: {OutPath}", outPath);
                         Console.WriteLine($"\e[32mSaved output to: {outPath}\e[0m");
@@ -332,6 +341,7 @@ class Program
                 var segmentStartTime = DateTime.UtcNow;
                 logger?.LogInformation("Processing segments...");
                 Console.WriteLine("Processing segments...");
+                cancellationToken.ThrowIfCancellationRequested();
                 var segments = await cacheManager.ProcessTextSegmentsAsync(request);
 
                 if (verbose)
@@ -367,7 +377,7 @@ class Program
                     logger?.LogInformation("Generating {Count} segments in background...", uncachedSegments.Count);
                     // C# 13 Escape character for info message
                     Console.WriteLine($"\e[33mGenerating {uncachedSegments.Count} segments in background...\e[0m"); // Yellow text
-                    generationTask = GenerateSegmentsAsync(settings, request, segments, cacheManager);
+                    generationTask = GenerateSegmentsAsync(settings, request, segments, cacheManager, cancellationToken);
                 }
 
                 // Start playing immediately - cached segments play right away, uncached segments wait
@@ -377,7 +387,7 @@ class Program
                 Console.WriteLine($"\e[36mPlaying audio...\e[0m"); // Cyan text
                 using var audioPlayer = new AudioPlayer(settings.Audio);
                 var fillerManager = settings.Filler.Enabled ? new FillerManager(settings.Filler, cacheManager, settings.VoiceVox.DefaultSpeaker) : null;
-                await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, generationTask, fillerManager);
+                await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, generationTask, fillerManager, cancellationToken);
 
                 if (verbose)
                 {
@@ -391,10 +401,10 @@ class Program
                 using var spinner = new ProgressSpinner("Generating speech...");
                 using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
 
-                await apiClient.InitializeSpeakerAsync(request.SpeakerId);
+                await apiClient.InitializeSpeakerAsync(request.SpeakerId, cancellationToken);
 
-                var audioQuery = await apiClient.GenerateAudioQueryAsync(request);
-                audioData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId);
+                var audioQuery = await apiClient.GenerateAudioQueryAsync(request, cancellationToken);
+                audioData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId, cancellationToken);
 
                 // disposed by using
 
@@ -469,11 +479,11 @@ class Program
         }
     }
 
-    private static async Task GenerateSegmentsAsync(AppSettings settings, VoiceRequest request, List<TextSegment> segments, AudioCacheManager cacheManager)
+    private static async Task GenerateSegmentsAsync(AppSettings settings, VoiceRequest request, List<TextSegment> segments, AudioCacheManager cacheManager, CancellationToken cancellationToken = default)
     {
         using var spinner = new ProgressSpinner($"Generating segment 1/{segments.Count(s => !s.IsCached)}");
         using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
-        await apiClient.InitializeSpeakerAsync(request.SpeakerId);
+        await apiClient.InitializeSpeakerAsync(request.SpeakerId, cancellationToken);
 
         int uncachedCount = 0;
         int totalUncached = segments.Count(s => !s.IsCached);
@@ -493,8 +503,9 @@ class Program
                     Volume = request.Volume
                 };
 
-                var audioQuery = await apiClient.GenerateAudioQueryAsync(segmentRequest);
-                var segmentAudio = await apiClient.SynthesizeAudioAsync(audioQuery, segmentRequest.SpeakerId);
+                cancellationToken.ThrowIfCancellationRequested();
+                var audioQuery = await apiClient.GenerateAudioQueryAsync(segmentRequest, cancellationToken);
+                var segmentAudio = await apiClient.SynthesizeAudioAsync(audioQuery, segmentRequest.SpeakerId, cancellationToken);
 
                 segments[i].AudioData = segmentAudio;
                 segments[i].IsCached = true; // Mark as ready for playback
