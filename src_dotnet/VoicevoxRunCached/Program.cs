@@ -415,7 +415,7 @@ class Program
                 logger?.LogInformation("Playing audio...");
                 Console.WriteLine($"\e[36mPlaying audio...\e[0m"); // Cyan text
                 using var audioPlayer = new AudioPlayer(settings.Audio);
-                await audioPlayer.PlayAudioAsync(audioData);
+                await audioPlayer.PlayAudioAsync(audioData, cancellationToken);
             }
 
             logger?.LogInformation("Done");

@@ -30,8 +30,10 @@ public class VoiceVoxEngineManager : IDisposable
     {
         try
         {
-            using var client = new HttpClient();
-            client.Timeout = TimeSpan.FromSeconds(5);
+            using var client = new HttpClient
+            {
+                Timeout = TimeSpan.FromSeconds(5)
+            };
             var response = await client.GetAsync($"{this._settings.BaseUrl}/version");
             return response.IsSuccessStatusCode;
         }

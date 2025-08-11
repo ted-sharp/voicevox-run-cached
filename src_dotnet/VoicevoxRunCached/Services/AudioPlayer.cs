@@ -3,6 +3,7 @@ using NAudio.MediaFoundation;
 using NAudio.CoreAudioApi;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
+using System.Text;
 
 // C# 13 Using alias for commonly used types
 using WavePlayer = NAudio.Wave.WaveOutEvent;
@@ -48,7 +49,7 @@ public class AudioPlayer : IDisposable
         {
             try
             {
-                var enumerator = new MMDeviceEnumerator();
+                using var enumerator = new MMDeviceEnumerator();
                 this._wasapiDevice = enumerator.GetDevice(this._settings.OutputDeviceId);
                 return new WasapiOut(this._wasapiDevice, AudioClientShareMode.Shared, false, 100);
             }
@@ -125,16 +126,11 @@ public class AudioPlayer : IDisposable
         using var stream = new MemoryStream();
         using var writer = new BinaryWriter(stream);
 
-        // WAV header using ReadOnlySpan for string constants
-        ReadOnlySpan<char> riffChars = "RIFF";
-        ReadOnlySpan<char> waveChars = "WAVE";
-        ReadOnlySpan<char> fmtChars = "fmt ";
-        ReadOnlySpan<char> dataChars = "data";
-
-        writer.Write(riffChars.ToArray());
+        // WAV header using ASCII bytes
+        writer.Write(Encoding.ASCII.GetBytes("RIFF"));
         writer.Write(fileSize);
-        writer.Write(waveChars.ToArray());
-        writer.Write(fmtChars.ToArray());
+        writer.Write(Encoding.ASCII.GetBytes("WAVE"));
+        writer.Write(Encoding.ASCII.GetBytes("fmt "));
         writer.Write(16); // PCM format chunk size
         writer.Write((short)1); // PCM format
         writer.Write((short)channels);
@@ -142,7 +138,7 @@ public class AudioPlayer : IDisposable
         writer.Write(sampleRate * channels * (bitsPerSample / 8)); // Byte rate
         writer.Write((short)(channels * (bitsPerSample / 8))); // Block align
         writer.Write((short)bitsPerSample);
-        writer.Write(dataChars.ToArray());
+        writer.Write(Encoding.ASCII.GetBytes("data"));
         writer.Write(dataSize);
 
         // Generate very low amplitude sine wave for effective device warming
@@ -276,18 +272,18 @@ public class AudioPlayer : IDisposable
             this._wavePlayer.Init(reader);
 
             // Minimal delay to ensure proper audio initialization
-            await Task.Delay(20);
+            await Task.Delay(20, cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
             this._wavePlayer.Play();
 
             using (cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken)))
             {
-                await tcs.Task;
+                await tcs.Task.ConfigureAwait(false);
             }
 
             // Ensure all buffered audio is played before stopping
-            await Task.Delay(150); // Wait for buffer to flush
+            await Task.Delay(150, cancellationToken); // Wait for buffer to flush
 
             // Wait for cache to complete if it's running
             if (cacheTask != null)
@@ -543,7 +539,7 @@ public class AudioPlayer : IDisposable
             }
 
             // Ensure complete audio playback - increased delay for proper segment completion
-            await Task.Delay(120);
+            await Task.Delay(120, cancellationToken);
 
             // Stop but don't dispose the WavePlayer - reuse for next segment
             this._wavePlayer?.Stop();
@@ -554,7 +550,7 @@ public class AudioPlayer : IDisposable
         }
     }
 
-    public async Task PlayAudioAsync(byte[] audioData)
+    public async Task PlayAudioAsync(byte[] audioData, CancellationToken cancellationToken = default)
     {
         if (this._disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
@@ -631,14 +627,14 @@ public class AudioPlayer : IDisposable
             this._wavePlayer.Init(reader);
 
             // Minimal delay to ensure proper audio initialization
-            await Task.Delay(20);
+            await Task.Delay(20, cancellationToken);
 
             this._wavePlayer.Play();
 
-            await tcs.Task;
+            await tcs.Task.ConfigureAwait(false);
 
             // Ensure all buffered audio is played before stopping
-            await Task.Delay(150); // Wait for buffer to flush
+            await Task.Delay(150, cancellationToken); // Wait for buffer to flush
         }
         catch (Exception ex)
         {
