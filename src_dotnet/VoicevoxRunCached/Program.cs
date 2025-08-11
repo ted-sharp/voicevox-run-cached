@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
@@ -23,6 +24,9 @@ class Program
     static async Task<int> Main(string[] args)
     {
         EnableAnsiColors();
+
+        // Initialize Media Foundation once per process
+        MediaFoundationManager.Initialize();
 
         var configuration = BuildConfiguration();
         var settings = configuration.Get<AppSettings>() ?? new AppSettings();
@@ -141,15 +145,15 @@ class Program
                     request.SpeakerId = speaker;
                     i++;
                     break;
-                case "--speed" when i + 1 < args.Length && Double.TryParse(args[i + 1], out double speed):
+                case "--speed" when i + 1 < args.Length && Double.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double speed):
                     request.Speed = speed;
                     i++;
                     break;
-                case "--pitch" when i + 1 < args.Length && Double.TryParse(args[i + 1], out double pitch):
+                case "--pitch" when i + 1 < args.Length && Double.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double pitch):
                     request.Pitch = pitch;
                     i++;
                     break;
-                case "--volume" when i + 1 < args.Length && Double.TryParse(args[i + 1], out double volume):
+                case "--volume" when i + 1 < args.Length && Double.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double volume):
                     request.Volume = volume;
                     i++;
                     break;
@@ -393,6 +397,10 @@ class Program
             var cacheManager = new AudioCacheManager(settings.Cache);
 
             await cacheManager.ClearAllCacheAsync();
+
+            // Also clear filler cache using configured filler directory
+            var fillerManager = new FillerManager(settings.Filler, cacheManager, settings.VoiceVox.DefaultSpeaker);
+            await fillerManager.ClearFillerCacheAsync();
 
             // disposed by using
             Console.WriteLine("\e[32mCache cleared successfully!\e[0m"); // Green text

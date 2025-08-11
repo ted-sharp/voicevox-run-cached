@@ -1,5 +1,5 @@
-using NAudio.MediaFoundation;
 using NAudio.Wave;
+using NAudio.MediaFoundation;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 
@@ -121,9 +121,8 @@ public class FillerManager
             using var wavStream = new MemoryStream(wavData);
             using var waveReader = new WaveFileReader(wavStream);
             using var outputStream = new MemoryStream();
-            MediaFoundationApi.Startup();
+            MediaFoundationManager.EnsureInitialized();
             MediaFoundationEncoder.EncodeToMp3(waveReader, outputStream, 128000);
-            MediaFoundationApi.Shutdown();
             return await Task.FromResult(outputStream.ToArray());
         }
         catch
@@ -131,6 +130,25 @@ public class FillerManager
             // フォーマット判定に失敗した場合はそのまま返す（再生側でフォールバック）
             return await Task.FromResult(wavData);
         }
+    }
+
+    public Task ClearFillerCacheAsync()
+    {
+        try
+        {
+            if (!Directory.Exists(this._settings.Directory))
+                return Task.CompletedTask;
+
+            var files = Directory.GetFiles(this._settings.Directory, "*.mp3");
+            foreach (var file in files)
+            {
+                try { File.Delete(file); } catch { }
+            }
+        }
+        catch
+        {
+        }
+        return Task.CompletedTask;
     }
 
     private void ResolveFillerBaseDirectory()

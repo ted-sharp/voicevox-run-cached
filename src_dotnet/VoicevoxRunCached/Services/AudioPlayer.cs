@@ -20,7 +20,7 @@ public class AudioPlayer : IDisposable
     {
         // C# 13 nameof expression for type-safe parameter validation
         this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        MediaFoundationApi.Startup();
+        MediaFoundationManager.EnsureInitialized();
 
         // Start device preparation if enabled in settings
         if (this._settings.PrepareDevice)
@@ -695,7 +695,6 @@ public class AudioPlayer : IDisposable
                 }
             }
 
-            MediaFoundationApi.Shutdown();
             this._disposed = true;
         }
         GC.SuppressFinalize(this);

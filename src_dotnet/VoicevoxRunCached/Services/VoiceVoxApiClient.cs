@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 
@@ -72,7 +73,7 @@ public class VoiceVoxApiClient : IDisposable
 
     public async Task<string> GenerateAudioQueryAsync(VoiceRequest request)
     {
-        return await this.ExecuteApiCallAsync(async () =>
+        var json = await this.ExecuteApiCallAsync(async () =>
         {
             var encodedText = Uri.EscapeDataString(request.Text);
             var url = $"/audio_query?text={encodedText}&speaker={request.SpeakerId}";
@@ -82,6 +83,8 @@ public class VoiceVoxApiClient : IDisposable
 
             return await response.Content.ReadAsStringAsync();
         }, "Failed to generate audio query");
+
+        return ApplyVoiceParametersToAudioQueryJson(json, request);
     }
 
     public async Task<byte[]> SynthesizeAudioAsync(string audioQuery, int speakerId)
@@ -118,5 +121,30 @@ public class VoiceVoxApiClient : IDisposable
     public void Dispose()
     {
         this._httpClient?.Dispose();
+    }
+
+    private static string ApplyVoiceParametersToAudioQueryJson(string audioQueryJson, VoiceRequest request)
+    {
+        try
+        {
+            var node = JsonNode.Parse(audioQueryJson) as JsonObject;
+            if (node == null) return audioQueryJson;
+
+            static double Clamp(double v, double min, double max) => v < min ? min : (v > max ? max : v);
+
+            var speed = Clamp(request.Speed, 0.5, 2.0);
+            var pitch = Clamp(request.Pitch, -0.15, 0.15);
+            var volume = Clamp(request.Volume, 0.0, 2.0);
+
+            node["speedScale"] = speed;
+            node["pitchScale"] = pitch;
+            node["volumeScale"] = volume;
+
+            return node.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
+        }
+        catch
+        {
+            return audioQueryJson;
+        }
     }
 }

@@ -243,7 +243,8 @@ public class AudioCacheManager
     // C# 13 ref readonly parameter for better performance with large structs
     public string ComputeCacheKey(VoiceRequest request)
     {
-        var keyString = $"{request.Text}|{request.SpeakerId}|{request.Speed:F2}|{request.Pitch:F2}|{request.Volume:F2}";
+        var keyString = String.Format(System.Globalization.CultureInfo.InvariantCulture,
+            "{0}|{1}|{2:F2}|{3:F2}|{4:F2}", request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
         using var sha256 = SHA256.Create();
         var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(keyString));
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
@@ -288,10 +289,8 @@ public class AudioCacheManager
             using var waveReader = new WaveFileReader(wavStream);
             using var outputStream = new MemoryStream();
 
-            // Ensure Media Foundation is initialized for encoding
-            MediaFoundationApi.Startup();
+            MediaFoundationManager.EnsureInitialized();
             MediaFoundationEncoder.EncodeToMp3(waveReader, outputStream, 128000);
-            MediaFoundationApi.Shutdown();
             return outputStream.ToArray();
         }
         catch (Exception ex)
@@ -354,26 +353,7 @@ public class AudioCacheManager
                 }
             }
 
-            // Also clear filler cache directory if it exists
-            var fillerDirectory = Path.Combine(Path.GetDirectoryName(this._settings.Directory) ?? ".", "filler");
-            if (Directory.Exists(fillerDirectory))
-            {
-                var fillerFiles = Directory.GetFiles(fillerDirectory, "*.mp3");
-                using (this._cacheLock.EnterScope())
-                {
-                    foreach (var file in fillerFiles)
-                    {
-                        try
-                        {
-                            File.Delete(file);
-                        }
-                        catch
-                        {
-                            // Ignore individual file deletion errors
-                        }
-                    }
-                }
-            }
+            // Filler cache cleanup moved to FillerManager to respect its settings
         }
         catch (Exception ex)
         {
