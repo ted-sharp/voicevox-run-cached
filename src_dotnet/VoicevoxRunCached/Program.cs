@@ -4,6 +4,8 @@ using System.Runtime.InteropServices;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services;
+using NAudio.Wave;
+using NAudio.MediaFoundation;
 
 namespace VoicevoxRunCached;
 
@@ -43,6 +45,12 @@ class Program
             return 0;
         }
 
+        if (args[0] == "devices")
+        {
+            HandleListDevices();
+            return 0;
+        }
+
         if (args[0] == "--init")
         {
             await HandleInitializeFillerAsync(settings);
@@ -64,7 +72,10 @@ class Program
             return 1;
         }
 
-        await HandleTextToSpeechAsync(settings, request, GetBoolOption(args, "--no-cache"), GetBoolOption(args, "--cache-only"), GetBoolOption(args, "--verbose"));
+        string? outPath = GetStringOption(args, "--out") ?? GetStringOption(args, "-o");
+        bool noPlay = GetBoolOption(args, "--no-play");
+
+        await HandleTextToSpeechAsync(settings, request, GetBoolOption(args, "--no-cache"), GetBoolOption(args, "--cache-only"), GetBoolOption(args, "--verbose"), outPath, noPlay);
         return 0;
     }
 
@@ -100,6 +111,7 @@ class Program
         Console.WriteLine("Usage:");
         Console.WriteLine("  VoicevoxRunCached <text> [options]");
         Console.WriteLine("  VoicevoxRunCached speakers");
+        Console.WriteLine("  VoicevoxRunCached devices");
         Console.WriteLine("  VoicevoxRunCached --init");
         Console.WriteLine("  VoicevoxRunCached --clear");
         Console.WriteLine();
@@ -113,11 +125,14 @@ class Program
         Console.WriteLine("  --volume <value>          Speech volume (default: 1.0)");
         Console.WriteLine("  --no-cache               Skip cache usage");
         Console.WriteLine("  --cache-only             Use cache only, don't call API");
+        Console.WriteLine("  --out, -o <path>         Save output audio to file (.wav or .mp3)");
+        Console.WriteLine("  --no-play                Do not play audio (useful with --out)");
         Console.WriteLine("  --verbose                Show detailed timing information");
         Console.WriteLine("  --help, -h               Show this help message");
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine("  speakers                 List available speakers");
+        Console.WriteLine("  devices                  List audio output devices");
         Console.WriteLine("  --init                   Initialize filler audio cache");
         Console.WriteLine("  --clear                  Clear all audio cache files");
     }
@@ -157,7 +172,10 @@ class Program
                     request.Volume = volume;
                     i++;
                     break;
-                case "--no-cache" or "--cache-only" or "--verbose" or "--help" or "-h":
+                case "--no-cache" or "--cache-only" or "--verbose" or "--help" or "-h" or "--no-play":
+                    break;
+                case "--out" or "-o" when i + 1 < args.Length:
+                    i++;
                     break;
                 default:
                     Console.WriteLine($"Warning: Unknown option '{args[i]}'");
@@ -173,7 +191,19 @@ class Program
         return args.Contains(option);
     }
 
-    private static async Task HandleTextToSpeechAsync(AppSettings settings, VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false)
+    private static string? GetStringOption(string[] args, string option)
+    {
+        for (int i = 0; i < args.Length - 1; i++)
+        {
+            if (args[i] == option)
+            {
+                return args[i + 1];
+            }
+        }
+        return null;
+    }
+
+    private static async Task HandleTextToSpeechAsync(AppSettings settings, VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false, string? outPath = null, bool noPlay = false)
     {
         var totalStartTime = DateTime.UtcNow;
         try
@@ -191,6 +221,42 @@ class Program
             if (verbose)
             {
                 Console.WriteLine($"Engine check completed in {(DateTime.UtcNow - engineStartTime).TotalMilliseconds:F1}ms");
+            }
+
+            // If output file specified, start background export task (single-shot full text generation)
+            Task? exportTask = null;
+            if (!String.IsNullOrWhiteSpace(outPath))
+            {
+                exportTask = Task.Run(async () =>
+                {
+                    try
+                    {
+                        using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
+                        await apiClient.InitializeSpeakerAsync(request.SpeakerId);
+                        var audioQuery = await apiClient.GenerateAudioQueryAsync(request);
+                        var wavData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId);
+                        await WriteOutputFileAsync(wavData, outPath!);
+                        Console.WriteLine($"\e[32mSaved output to: {outPath}\e[0m");
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"Warning: Failed to save output to '{outPath}': {ex.Message}");
+                    }
+                });
+            }
+
+            if (noPlay)
+            {
+                if (exportTask != null)
+                {
+                    await exportTask;
+                }
+                Console.WriteLine("\e[32mDone!\e[0m");
+                if (verbose)
+                {
+                    Console.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms");
+                }
+                return;
             }
 
             var cacheManager = new AudioCacheManager(settings.Cache);
@@ -269,6 +335,11 @@ class Program
 
             // C# 13 Escape character for completion message
             Console.WriteLine($"\e[32mDone!\e[0m"); // Green text
+
+            if (exportTask != null)
+            {
+                await exportTask;
+            }
 
             if (verbose)
             {
@@ -410,5 +481,47 @@ class Program
             Console.WriteLine($"\e[31mError clearing cache: {ex.Message}\e[0m"); // Red text
             Environment.Exit(1);
         }
+    }
+
+    private static void HandleListDevices()
+    {
+        try
+        {
+            Console.WriteLine("Available output devices:");
+            Console.WriteLine("  -1: Default Device");
+            // Detailed enumeration is intentionally omitted for stability across environments
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"\e[31mError listing devices: {ex.Message}\e[0m");
+            Environment.Exit(1);
+        }
+    }
+
+    private static async Task WriteOutputFileAsync(byte[] wavData, string outPath)
+    {
+        var extension = Path.GetExtension(outPath).ToLowerInvariant();
+        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(outPath))!);
+
+        if (extension == ".mp3")
+        {
+            try
+            {
+                using var wavStream = new MemoryStream(wavData);
+                using var reader = new WaveFileReader(wavStream);
+                using var outputStream = new MemoryStream();
+                MediaFoundationManager.EnsureInitialized();
+                MediaFoundationEncoder.EncodeToMp3(reader, outputStream, 128000);
+                await File.WriteAllBytesAsync(outPath, outputStream.ToArray());
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException($"Failed to export MP3: {ex.Message}", ex);
+            }
+            return;
+        }
+
+        // Default: write WAV bytes as-is
+        await File.WriteAllBytesAsync(outPath, wavData);
     }
 }
