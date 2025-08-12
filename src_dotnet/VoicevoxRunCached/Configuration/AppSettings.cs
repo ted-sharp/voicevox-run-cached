@@ -7,6 +7,7 @@ public class AppSettings
     public AudioSettings Audio { get; set; } = new();
     public FillerSettings Filler { get; set; } = new();
     public LoggingSettings Logging { get; set; } = new();
+    public TestSettings Test { get; set; } = new();
 }
 
 // C# 13 Primary constructor for VoiceVoxSettings
@@ -78,4 +79,10 @@ public class LoggingSettings(string level = "Information", string format = "simp
     public string Level { get; set; } = level;
     // Format: simple|json
     public string Format { get; set; } = format;
+}
+
+// Test settings (appsettings.json)
+public class TestSettings(string message = "テストメッセージです。")
+{
+    public string Message { get; set; } = message;
 }

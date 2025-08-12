@@ -92,6 +92,21 @@ class Program
             return 0;
         }
 
+        // --test: Use configured test message from appsettings.json
+        if (args[0] == "--test")
+        {
+            var testMessage = settings.Test?.Message ?? String.Empty;
+            if (String.IsNullOrWhiteSpace(testMessage))
+            {
+                Console.WriteLine("\e[31mError: Test.Message is empty in configuration\e[0m");
+                return 1;
+            }
+
+            // Replace first arg with the configured message and keep other options
+            var remaining = args.Skip(1).ToArray();
+            args = (new[] { testMessage }).Concat(remaining).ToArray();
+        }
+
         var request = ParseArguments(args, settings);
         if (request == null)
         {
@@ -148,6 +163,7 @@ class Program
         Console.WriteLine();
         Console.WriteLine("Usage:");
         Console.WriteLine("  VoicevoxRunCached <text> [options]");
+        Console.WriteLine("  VoicevoxRunCached --test [options]");
         Console.WriteLine("  VoicevoxRunCached speakers");
         Console.WriteLine("  VoicevoxRunCached devices [--full] [--json]");
         Console.WriteLine("  VoicevoxRunCached --init");
@@ -173,6 +189,7 @@ class Program
         Console.WriteLine("Commands:");
         Console.WriteLine("  speakers                 List available speakers");
         Console.WriteLine("  devices                  List audio output devices");
+        Console.WriteLine("  --test                   Play the configured test message (Test.Message)");
         Console.WriteLine("  --init                   Initialize filler audio cache");
         Console.WriteLine("  --clear                  Clear all audio cache files");
     }
