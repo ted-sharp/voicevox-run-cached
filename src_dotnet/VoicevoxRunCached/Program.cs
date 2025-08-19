@@ -51,7 +51,7 @@ class Program
         var logger = loggerFactory.CreateLogger("VoicevoxRunCached");
 
         // Log application startup
-        Log.Information("VoicevoxRunCached アプリケーションを開始します - バージョン {Version}", GetVersion());
+        logger.LogInformation("VoicevoxRunCached アプリケーションを開始します - バージョン {Version}", GetVersion());
 
         // Create command handler with updated settings
         var commandHandler = new CommandHandler(settings, logger);

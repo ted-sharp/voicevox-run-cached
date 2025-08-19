@@ -38,7 +38,6 @@ public class LoggingManager
         var logLevel = useJsonConsole ? LogEventLevel.Debug : LogEventLevel.Information;
 
         Log.Logger = new LoggerConfiguration()
-            .ReadFrom.Configuration(configuration)
             .MinimumLevel.Is(logLevel)
             .Enrich.FromLogContext()
             .Enrich.WithMachineName()
