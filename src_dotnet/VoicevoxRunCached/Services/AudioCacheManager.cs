@@ -131,7 +131,7 @@ public class AudioCacheManager : IDisposable
             throw new InvalidOperationException($"Failed to save audio cache: {ex.Message}", ex);
         }
 
-                // After saving, enforce max size policy in background with proper cancellation
+        // After saving, enforce max size policy in background with proper cancellation
         _ = Task.Run(async () =>
         {
             try

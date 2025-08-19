@@ -72,7 +72,7 @@ public static class ErrorCodes
     /// </summary>
     public static string GetCategory(string errorCode)
     {
-        if (string.IsNullOrEmpty(errorCode))
+        if (String.IsNullOrEmpty(errorCode))
             return "UNKNOWN";
 
         var prefix = errorCode.Split('_')[0];

@@ -10,13 +10,13 @@ public class VoicevoxRunCachedException : Exception
     public VoicevoxRunCachedException(string message, string errorCode = "UNKNOWN_ERROR")
         : base(message)
     {
-        ErrorCode = errorCode;
+        this.ErrorCode = errorCode;
     }
 
     public VoicevoxRunCachedException(string message, Exception innerException, string errorCode = "UNKNOWN_ERROR")
         : base(message, innerException)
     {
-        ErrorCode = errorCode;
+        this.ErrorCode = errorCode;
     }
 }
 

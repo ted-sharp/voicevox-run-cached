@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Services;
 
 namespace VoicevoxRunCached.Services;
 
@@ -11,20 +12,26 @@ public class ConfigurationManager
 
     public ConfigurationManager()
     {
-        _configuration = BuildConfiguration();
-        _validationService = new ConfigurationValidationService();
+        this._configuration = BuildConfiguration();
+        this._validationService = new ConfigurationValidationService();
     }
 
     public AppSettings GetSettings()
     {
-        return _configuration.Get<AppSettings>() ?? new AppSettings();
+        var settings = new AppSettings();
+        // 基本的な設定のみを読み込み
+        if (Int32.TryParse(this._configuration["VoiceVox:DefaultSpeaker"], out int defaultSpeaker))
+            settings.VoiceVox.DefaultSpeaker = defaultSpeaker;
+        if (Boolean.TryParse(this._configuration["Filler:Enabled"], out bool fillerEnabled))
+            settings.Filler.Enabled = fillerEnabled;
+        return settings;
     }
 
     public bool ValidateConfiguration(AppSettings settings, ILogger? logger = null)
     {
         try
         {
-            _validationService.ValidateConfiguration(settings);
+            this._validationService.ValidateConfiguration(settings);
             ConsoleHelper.WriteValidationSuccess("設定の検証が完了しました", logger);
             return true;
         }
@@ -43,7 +50,7 @@ public class ConfigurationManager
 
     public IConfiguration GetConfiguration()
     {
-        return _configuration;
+        return this._configuration;
     }
 
     private static IConfiguration BuildConfiguration()
@@ -55,6 +62,28 @@ public class ConfigurationManager
         return new ConfigurationBuilder()
             .SetBasePath(executableDirectory)
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+            .Build();
+    }
+
+    /// <summary>
+    /// コマンドライン引数を含む設定を構築
+    /// </summary>
+    public static IConfiguration BuildConfigurationWithCommandLine(string[] args)
+    {
+        // コマンドライン引数を前処理
+        var processedArgs = ArgumentParser.PreprocessArgs(args);
+
+        // Use the directory where the executable is located, not the current working directory
+        var executablePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
+        var executableDirectory = Path.GetDirectoryName(executablePath) ?? Directory.GetCurrentDirectory();
+
+        return new ConfigurationBuilder()
+            .SetBasePath(executableDirectory)
+            // 設定ファイル（最低優先度）
+            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
+            .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true)
+            // コマンドライン引数（最高優先度）
+            .AddCommandLine(processedArgs, ArgumentParser.Aliases)
             .Build();
     }
 }

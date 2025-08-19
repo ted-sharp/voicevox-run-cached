@@ -28,9 +28,15 @@ class Program
         // Initialize Media Foundation once per process
         MediaFoundationManager.Initialize();
 
-        // Initialize configuration and validation
+        // Initialize configuration and validation with command-line arguments
         var configManager = new ConfigurationManager();
-        var settings = configManager.GetSettings();
+        var configuration = ConfigurationManager.BuildConfigurationWithCommandLine(args);
+        var settings = new AppSettings();
+        // 基本的な設定のみを読み込み
+        if (Int32.TryParse(configuration["VoiceVox:DefaultSpeaker"], out int defaultSpeaker))
+            settings.VoiceVox.DefaultSpeaker = defaultSpeaker;
+        if (Boolean.TryParse(configuration["Filler:Enabled"], out bool fillerEnabled))
+            settings.Filler.Enabled = fillerEnabled;
 
         if (!configManager.ValidateConfiguration(settings, null!))
         {
@@ -39,7 +45,7 @@ class Program
 
         // Configure logging
         var (minLogLevel, useJsonConsole) = LoggingManager.ParseLogOptions(args, settings);
-        LoggingManager.ConfigureSerilog(configManager.GetConfiguration(), args, settings, minLogLevel, useJsonConsole);
+        LoggingManager.ConfigureSerilog(configuration, args, settings, minLogLevel, useJsonConsole);
 
         using var loggerFactory = LoggingManager.CreateLoggerFactory(minLogLevel, useJsonConsole);
         var logger = loggerFactory.CreateLogger("VoicevoxRunCached");
@@ -47,7 +53,7 @@ class Program
         // Log application startup
         Log.Information("VoicevoxRunCached アプリケーションを開始します - バージョン {Version}", GetVersion());
 
-        // Create command handler
+        // Create command handler with updated settings
         var commandHandler = new CommandHandler(settings, logger);
 
         // Handle commands
@@ -94,8 +100,8 @@ class Program
             }
 
             // Replace first arg with the configured message and keep other options
-            var remaining = args.Skip(1).ToArray();
-            args = (new[] { testMessage }).Concat(remaining).ToArray();
+            var remaining = args.Skip(1).Where(arg => arg != null).Cast<string>().ToArray();
+            args = new[] { testMessage }.Concat(remaining).ToArray();
         }
 
         // Parse arguments and handle text-to-speech

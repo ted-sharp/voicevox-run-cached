@@ -1,11 +1,56 @@
 using System.Globalization;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
+using Aloe.Utils.CommandLine;
 
 namespace VoicevoxRunCached.Services;
 
-public class ArgumentParser
+public static class ArgumentParser
 {
+    // フラグ引数の定義（--flag → --flag true）
+    public static readonly List<string> FlagArgs = new()
+    {
+        "--verbose",
+        "--no-cache",
+        "--cache-only",
+        "--no-play",
+        "--json",
+        "--full",
+        "--help",
+        "-h"
+    };
+
+    // ショート引数の定義（-uadmin → -u admin）
+    public static readonly List<string> ShortArgs = new()
+    {
+        "-s",
+        "-o"
+    };
+
+    // コマンドライン引数と設定プロパティのマッピング
+    public static readonly Dictionary<string, string> Aliases = new()
+    {
+        { "--verbose", "Logging:Verbose" },
+        { "--no-cache", "Cache:Disabled" },
+        { "--cache-only", "Cache:Only" },
+        { "--no-play", "Audio:NoPlay" },
+        { "--json", "Output:Json" },
+        { "--full", "Output:Full" },
+        { "-s", "VoiceVox:SpeakerId" },
+        { "-o", "Output:Path" }
+    };
+
+    /// <summary>
+    /// コマンドライン引数を前処理して、IConfigurationで使用できる形式に変換
+    /// </summary>
+    public static string[] PreprocessArgs(string[] args)
+    {
+        return ArgsHelper.PreprocessArgs(args, FlagArgs, ShortArgs);
+    }
+
+    /// <summary>
+    /// 前処理された引数からVoiceRequestを解析
+    /// </summary>
     public static VoiceRequest? ParseArguments(string[] args, AppSettings settings)
     {
         if (args.Length == 0)
@@ -20,40 +65,43 @@ public class ArgumentParser
             Volume = 1.0
         };
 
+        // 前処理された引数を解析
+        var processedArgs = PreprocessArgs(args);
+
         // C# 13 Enhanced pattern matching for cleaner argument parsing
-        for (int i = 1; i < args.Length; i++)
+        for (int i = 1; i < processedArgs.Length; i++)
         {
-            switch (args[i])
+            switch (processedArgs[i])
             {
-                case "--speaker" or "-s" when i + 1 < args.Length && Int32.TryParse(args[i + 1], out int speaker):
+                case "--speaker" or "-s" when i + 1 < processedArgs.Length && Int32.TryParse(processedArgs[i + 1], out int speaker):
                     request.SpeakerId = speaker;
                     i++;
                     break;
-                case "--speed" when i + 1 < args.Length && Double.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double speed):
+                case "--speed" when i + 1 < processedArgs.Length && Double.TryParse(processedArgs[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double speed):
                     request.Speed = speed;
                     i++;
                     break;
-                case "--pitch" when i + 1 < args.Length && Double.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double pitch):
+                case "--pitch" when i + 1 < processedArgs.Length && Double.TryParse(processedArgs[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double pitch):
                     request.Pitch = pitch;
                     i++;
                     break;
-                case "--volume" when i + 1 < args.Length && Double.TryParse(args[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double volume):
+                case "--volume" when i + 1 < processedArgs.Length && Double.TryParse(processedArgs[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double volume):
                     request.Volume = volume;
                     i++;
                     break;
                 case "--no-cache" or "--cache-only" or "--verbose" or "--help" or "-h" or "--no-play":
                     break;
-                case "--out" or "-o" when i + 1 < args.Length:
+                case "--out" or "-o" when i + 1 < processedArgs.Length:
                     i++;
                     break;
-                case "--log-level" when i + 1 < args.Length:
+                case "--log-level" when i + 1 < processedArgs.Length:
                     i++;
                     break;
-                case "--log-format" when i + 1 < args.Length:
+                case "--log-format" when i + 1 < processedArgs.Length:
                     i++;
                     break;
                 default:
-                    Console.WriteLine($"Warning: Unknown option '{args[i]}'");
+                    Console.WriteLine($"Warning: Unknown option '{processedArgs[i]}'");
                     break;
             }
         }
@@ -61,18 +109,26 @@ public class ArgumentParser
         return request;
     }
 
+    /// <summary>
+    /// 前処理された引数からブール値を取得
+    /// </summary>
     public static bool GetBoolOption(string[] args, string option)
     {
-        return args.Contains(option);
+        var processedArgs = PreprocessArgs(args);
+        return processedArgs.Contains(option);
     }
 
+    /// <summary>
+    /// 前処理された引数から文字列値を取得
+    /// </summary>
     public static string? GetStringOption(string[] args, string option)
     {
-        for (int i = 0; i < args.Length - 1; i++)
+        var processedArgs = PreprocessArgs(args);
+        for (int i = 0; i < processedArgs.Length - 1; i++)
         {
-            if (args[i] == option)
+            if (processedArgs[i] == option)
             {
-                return args[i + 1];
+                return processedArgs[i + 1];
             }
         }
         return null;
@@ -114,5 +170,11 @@ public class ArgumentParser
         Console.WriteLine("  --init                   Initialize filler audio cache");
         Console.WriteLine("  --clear                  Clear all audio cache files");
         Console.WriteLine("  --benchmark              Run performance benchmarks");
+        Console.WriteLine();
+        Console.WriteLine("Enhanced Features:");
+        Console.WriteLine("  • Standalone flags: --verbose → --verbose true");
+        Console.WriteLine("  • Concatenated options: -s1 → -s 1");
+        Console.WriteLine("  • Configuration integration: --verbose sets Logging:Verbose");
+        Console.WriteLine("  • Priority: Command-line > Environment > appsettings.json");
     }
 }
