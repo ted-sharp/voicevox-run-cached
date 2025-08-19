@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net.Http;
 using VoicevoxRunCached.Configuration;
+using Serilog;
 
 namespace VoicevoxRunCached.Services;
 
@@ -22,7 +23,7 @@ public class VoiceVoxEngineManager : IDisposable
         if (await this.IsEngineRunningAsync())
             return true;
 
-        Console.WriteLine("VOICEVOX engine not detected, attempting to start...");
+        Log.Information("VOICEVOXエンジンが検出されていません。起動を試行します...");
         return await this.StartEngineAsync();
     }
 
@@ -53,14 +54,14 @@ public class VoiceVoxEngineManager : IDisposable
             enginePath = this.FindDefaultEnginePath();
             if (String.IsNullOrEmpty(enginePath))
             {
-                Console.WriteLine("\e[31mError: VOICEVOX engine not found. Please set EnginePath in appsettings.json\e[0m");
+                Log.Error("VOICEVOXエンジンが見つかりません。appsettings.jsonでEnginePathを設定してください");
                 return false;
             }
         }
 
         if (!File.Exists(enginePath))
         {
-            Console.WriteLine($"\e[31mError: VOICEVOX engine not found at: {enginePath}\e[0m");
+            Log.Error("VOICEVOXエンジンが見つかりません: {EnginePath}", enginePath);
             return false;
         }
 
@@ -82,7 +83,7 @@ public class VoiceVoxEngineManager : IDisposable
             this._engineProcess = Process.Start(startInfo);
             if (this._engineProcess == null)
             {
-                Console.WriteLine("\e[31mError: Failed to start VOICEVOX engine process\e[0m");
+                Log.Error("VOICEVOXエンジンプロセスの起動に失敗しました");
                 return false;
             }
 
@@ -95,7 +96,7 @@ public class VoiceVoxEngineManager : IDisposable
                 if (await this.IsEngineRunningAsync())
                 {
                     spinner.Dispose();
-                    Console.WriteLine("\e[32mVOICEVOX engine started successfully\e[0m");
+                    Log.Information("VOICEVOXエンジンが正常に起動しました");
                     return true;
                 }
 
@@ -103,12 +104,12 @@ public class VoiceVoxEngineManager : IDisposable
             }
 
             spinner.Dispose();
-            Console.WriteLine("\e[31mError: VOICEVOX engine startup timeout\e[0m");
+            Log.Error("VOICEVOXエンジンの起動タイムアウトが発生しました");
             return false;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"\e[31mError starting VOICEVOX engine: {ex.Message}\e[0m");
+            Log.Error(ex, "VOICEVOXエンジンの起動中にエラーが発生しました");
             return false;
         }
     }
@@ -124,7 +125,7 @@ public class VoiceVoxEngineManager : IDisposable
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Warning: Failed to stop VOICEVOX engine: {ex.Message}");
+                Log.Warning(ex, "VOICEVOXエンジンの停止に失敗しました");
             }
         }
     }
@@ -147,7 +148,7 @@ public class VoiceVoxEngineManager : IDisposable
         {
             if (File.Exists(path))
             {
-                Console.WriteLine($"Found {this._settings.EngineType} engine at: {path}");
+                Log.Information("{EngineType} エンジンが見つかりました: {Path}", this._settings.EngineType, path);
                 return path;
             }
         }

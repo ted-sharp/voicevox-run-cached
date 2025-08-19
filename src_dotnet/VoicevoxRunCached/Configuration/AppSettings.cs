@@ -72,11 +72,23 @@ public class FillerSettings(bool enabled = false, string directory = "./cache/fi
     public bool UseExecutableBaseDirectory { get; set; } = useExecutableBaseDirectory;
 }
 
+// Log level enum for configuration
+public enum LogLevel
+{
+    Trace,
+    Debug,
+    Information,
+    Warning,
+    Error,
+    Critical,
+    None
+}
+
 // Logging settings (appsettings.json)
-public class LoggingSettings(string level = "Information", string format = "simple")
+public class LoggingSettings(LogLevel level = LogLevel.Information, string format = "simple")
 {
     // Level: Trace|Debug|Information|Warning|Error|Critical|None
-    public string Level { get; set; } = level;
+    public LogLevel Level { get; set; } = level;
     // Format: simple|json
     public string Format { get; set; } = format;
 }

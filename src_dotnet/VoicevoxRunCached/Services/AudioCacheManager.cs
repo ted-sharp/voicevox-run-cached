@@ -8,26 +8,41 @@ using NAudio.Lame;
 using NAudio.MediaFoundation;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
+using Serilog;
 
 namespace VoicevoxRunCached.Services;
 
-public class AudioCacheManager
+public class AudioCacheManager : IDisposable
 {
     private readonly CacheSettings _settings;
+    private readonly MemoryCacheService _memoryCache;
     // Switch to new System.Threading.Lock and use C# 13 lock statement
     private readonly Lock _cacheLock = new();
 
-    public AudioCacheManager(CacheSettings settings)
+    public AudioCacheManager(CacheSettings settings, MemoryCacheService? memoryCache = null)
     {
         // C# 13 nameof expression for type-safe parameter validation
         this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        this._memoryCache = memoryCache ?? new MemoryCacheService(settings);
         this.ResolveCacheBaseDirectory();
         this.EnsureCacheDirectoryExists();
+
+        Log.Information("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}, メモリキャッシュ: 有効", this._settings.Directory);
     }
 
     public async Task<byte[]?> GetCachedAudioAsync(VoiceRequest request)
     {
         var cacheKey = this.ComputeCacheKey(request);
+
+        // まずメモリキャッシュをチェック
+        var memoryCached = _memoryCache.Get<byte[]>(cacheKey);
+        if (memoryCached != null)
+        {
+            Log.Debug("メモリキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, memoryCached.Length);
+            return memoryCached;
+        }
+
+        // メモリキャッシュにない場合はディスクキャッシュをチェック
         var audioFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
         var metaFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.meta.json");
 
@@ -35,6 +50,7 @@ public class AudioCacheManager
         {
             if (!File.Exists(audioFilePath) || !File.Exists(metaFilePath))
             {
+                Log.Debug("キャッシュミス: {CacheKey} - ファイルが存在しません", cacheKey);
                 return null;
             }
         }
@@ -46,14 +62,22 @@ public class AudioCacheManager
 
             if (metadata == null || this.IsExpired(metadata.CreatedAt))
             {
+                Log.Debug("キャッシュミス: {CacheKey} - メタデータが無効または期限切れ", cacheKey);
                 await this.DeleteCacheFileAsync(cacheKey);
                 return null;
             }
 
-            return await File.ReadAllBytesAsync(audioFilePath);
+            var audioData = await File.ReadAllBytesAsync(audioFilePath);
+
+            // ディスクキャッシュから取得したデータをメモリキャッシュにも保存
+            _memoryCache.Set(cacheKey, audioData);
+
+            Log.Debug("ディスクキャッシュヒット: {CacheKey} - サイズ: {Size} bytes (メモリキャッシュにも保存)", cacheKey, audioData.Length);
+            return audioData;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            Log.Warning(ex, "キャッシュファイルの読み込みに失敗: {CacheKey}", cacheKey);
             await this.DeleteCacheFileAsync(cacheKey);
             return null;
         }
@@ -90,9 +114,15 @@ public class AudioCacheManager
                 });
                 File.WriteAllText(metaFilePath, metaJson);
             }
+
+            // メモリキャッシュにも保存
+            _memoryCache.Set(cacheKey, mp3Data);
+
+            Log.Debug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes (ディスク + メモリ)", cacheKey, mp3Data.Length);
         }
         catch (Exception ex)
         {
+            Log.Error(ex, "キャッシュの保存に失敗: {CacheKey}", cacheKey);
             throw new InvalidOperationException($"Failed to save audio cache: {ex.Message}", ex);
         }
 
@@ -332,6 +362,9 @@ public class AudioCacheManager
     {
         try
         {
+            // メモリキャッシュをクリア
+            _memoryCache.Clear();
+
             if (!Directory.Exists(this._settings.Directory))
             {
                 return Task.CompletedTask;
@@ -355,13 +388,20 @@ public class AudioCacheManager
                 }
             }
 
+            Log.Information("キャッシュをクリアしました - ディスク: {FileCount} ファイル, メモリ: クリア済み", audioFiles.Length + metaFiles.Length);
             // Filler cache cleanup moved to FillerManager to respect its settings
         }
         catch (Exception ex)
         {
+            Log.Error(ex, "キャッシュのクリアに失敗しました");
             throw new InvalidOperationException($"Failed to clear cache: {ex.Message}", ex);
         }
         return Task.CompletedTask;
+    }
+
+    public void Dispose()
+    {
+        _memoryCache.Dispose();
     }
 }
 

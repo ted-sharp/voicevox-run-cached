@@ -10,6 +10,8 @@ using VoicevoxRunCached.Services;
 using NAudio.Wave;
 using NAudio.MediaFoundation;
 using NAudio.CoreAudioApi;
+using Serilog;
+using Serilog.Events;
 
 namespace VoicevoxRunCached;
 
@@ -37,6 +39,22 @@ class Program
         var configuration = BuildConfiguration();
         var settings = configuration.Get<AppSettings>() ?? new AppSettings();
 
+        // Validate configuration using FluentValidation
+        try
+        {
+            var validationService = new ConfigurationValidationService();
+            validationService.ValidateConfiguration(settings);
+            Console.WriteLine("\e[32m✓ 設定の検証が完了しました\e[0m");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.WriteLine($"\e[31m✗ 設定の検証に失敗しました: {ex.Message}\e[0m");
+            return 1;
+        }
+
+        // Configure Serilog
+        ConfigureSerilog(configuration, args, settings);
+
         var (minLogLevel, useJsonConsole) = ParseLogOptions(args, settings);
         using var loggerFactory = LoggerFactory.Create(builder =>
         {
@@ -60,6 +78,9 @@ class Program
             }
         });
         var logger = loggerFactory.CreateLogger("VoicevoxRunCached");
+
+        // Log application startup
+        Log.Information("VoicevoxRunCached アプリケーションを開始します - バージョン {Version}", GetVersion());
 
         if (args.Length == 0 || args[0] == "--help" || args[0] == "-h")
         {
@@ -89,6 +110,13 @@ class Program
         if (args[0] == "--clear")
         {
             await HandleClearCacheAsync(settings, logger);
+            return 0;
+        }
+
+        // --benchmark: Run performance benchmarks
+        if (args[0] == "--benchmark")
+        {
+            await HandleBenchmarkAsync(settings, logger);
             return 0;
         }
 
@@ -125,10 +153,15 @@ class Program
         {
             e.Cancel = true; // prevent process kill
             logger.LogWarning("Cancellation requested (Ctrl+C). Attempting graceful shutdown...");
+            Log.Warning("ユーザーによるキャンセル要求 (Ctrl+C)。正常終了を試行します...");
             cts.Cancel();
         };
 
         await HandleTextToSpeechAsync(settings, request, GetBoolOption(args, "--no-cache"), GetBoolOption(args, "--cache-only"), GetBoolOption(args, "--verbose"), outPath, noPlay, logger, cts.Token);
+
+        // Cleanup Serilog before exit
+        ProgramExtensions.CleanupSerilog();
+
         return 0;
     }
 
@@ -192,6 +225,7 @@ class Program
         Console.WriteLine("  --test                   Play the configured test message (Test.Message)");
         Console.WriteLine("  --init                   Initialize filler audio cache");
         Console.WriteLine("  --clear                  Clear all audio cache files");
+        Console.WriteLine("  --benchmark              Run performance benchmarks");
     }
 
     private static VoiceRequest? ParseArguments(string[] args, AppSettings settings)
@@ -266,23 +300,23 @@ class Program
         return null;
     }
 
-    private static (LogLevel Level, bool UseJson) ParseLogOptions(string[] args, AppSettings settings)
+    private static (Microsoft.Extensions.Logging.LogLevel Level, bool UseJson) ParseLogOptions(string[] args, AppSettings settings)
     {
         // verbose implies Debug unless overridden explicitly
         var verbose = args.Contains("--verbose");
-        var levelStr = (GetStringOption(args, "--log-level") ?? settings.Logging.Level).ToLowerInvariant();
+        var levelStr = (GetStringOption(args, "--log-level") ?? settings.Logging.Level.ToString()).ToLowerInvariant();
         var fmtStr = (GetStringOption(args, "--log-format") ?? settings.Logging.Format).ToLowerInvariant();
 
-        LogLevel level = verbose ? LogLevel.Debug : LogLevel.Information;
+        Microsoft.Extensions.Logging.LogLevel level = verbose ? Microsoft.Extensions.Logging.LogLevel.Debug : Microsoft.Extensions.Logging.LogLevel.Information;
         level = levelStr switch
         {
-            "trace" => LogLevel.Trace,
-            "debug" => LogLevel.Debug,
-            "info" or "information" => LogLevel.Information,
-            "warn" or "warning" => LogLevel.Warning,
-            "error" => LogLevel.Error,
-            "crit" or "critical" => LogLevel.Critical,
-            "none" => LogLevel.None,
+            "trace" => Microsoft.Extensions.Logging.LogLevel.Trace,
+            "debug" => Microsoft.Extensions.Logging.LogLevel.Debug,
+            "info" or "information" => Microsoft.Extensions.Logging.LogLevel.Information,
+            "warn" or "warning" => Microsoft.Extensions.Logging.LogLevel.Warning,
+            "error" => Microsoft.Extensions.Logging.LogLevel.Error,
+            "crit" or "critical" => Microsoft.Extensions.Logging.LogLevel.Critical,
+            "none" => Microsoft.Extensions.Logging.LogLevel.None,
             _ => level
         };
 
@@ -290,7 +324,7 @@ class Program
         return (level, useJson);
     }
 
-    private static async Task HandleTextToSpeechAsync(AppSettings settings, VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false, string? outPath = null, bool noPlay = false, ILogger? logger = null, CancellationToken cancellationToken = default)
+    private static async Task HandleTextToSpeechAsync(AppSettings settings, VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false, string? outPath = null, bool noPlay = false, Microsoft.Extensions.Logging.ILogger? logger = null, CancellationToken cancellationToken = default)
     {
         var totalStartTime = DateTime.UtcNow;
         try
@@ -459,7 +493,7 @@ class Program
         }
     }
 
-    private static async Task HandleListSpeakersAsync(AppSettings settings, ILogger logger)
+    private static async Task HandleListSpeakersAsync(AppSettings settings, Microsoft.Extensions.Logging.ILogger logger)
     {
         try
         {
@@ -546,7 +580,7 @@ class Program
         }
     }
 
-    private static async Task HandleInitializeFillerAsync(AppSettings settings, ILogger logger)
+    private static async Task HandleInitializeFillerAsync(AppSettings settings, Microsoft.Extensions.Logging.ILogger logger)
     {
         try
         {
@@ -575,7 +609,7 @@ class Program
         }
     }
 
-    private static async Task HandleClearCacheAsync(AppSettings settings, ILogger logger)
+    private static async Task HandleClearCacheAsync(AppSettings settings, Microsoft.Extensions.Logging.ILogger logger)
     {
         try
         {
@@ -600,7 +634,72 @@ class Program
         }
     }
 
-    private static void HandleListDevices(ILogger logger, string[] args)
+    private static async Task HandleBenchmarkAsync(AppSettings settings, Microsoft.Extensions.Logging.ILogger logger)
+    {
+        try
+        {
+            // Ensure VOICEVOX engine is running
+            using var engineManager = new VoiceVoxEngineManager(settings.VoiceVox);
+            if (!await engineManager.EnsureEngineRunningAsync())
+            {
+                logger.LogError("VOICEVOX engine is not available");
+                Console.WriteLine("\e[31mError: VOICEVOX engine is not available\e[0m");
+                Environment.Exit(1);
+                return;
+            }
+
+            logger.LogInformation("Starting performance benchmark...");
+            Console.WriteLine("Starting performance benchmark...");
+
+            // Warm-up
+            logger.LogInformation("Warming up...");
+            Console.WriteLine("Warming up...");
+
+            using var apiClient = new VoiceVoxApiClient(settings.VoiceVox);
+            await apiClient.InitializeSpeakerAsync(settings.VoiceVox.DefaultSpeaker);
+
+            // Benchmark
+            logger.LogInformation("Benchmarking...");
+            Console.WriteLine("Benchmarking...");
+            var segments = new List<TextSegment>
+            {
+                new TextSegment { Text = "Hello, this is a performance benchmark." },
+                new TextSegment { Text = "This is a longer text to test the caching mechanism." },
+                new TextSegment { Text = "And another segment to ensure the pipeline is efficient." }
+            };
+
+            using var spinner = new ProgressSpinner("Benchmarking...");
+            var totalStartTime = DateTime.UtcNow;
+
+            for (int i = 0; i < 10; i++) // Run benchmark 10 times
+            {
+                spinner.UpdateMessage($"Benchmark iteration {i + 1}/10");
+                var request = new VoiceRequest
+                {
+                    Text = segments[i % segments.Count].Text, // Cycle through segments
+                    SpeakerId = settings.VoiceVox.DefaultSpeaker,
+                    Speed = 1.0,
+                    Pitch = 0.0,
+                    Volume = 1.0
+                };
+
+                var audioQuery = await apiClient.GenerateAudioQueryAsync(request, CancellationToken.None);
+                var audioData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId, CancellationToken.None);
+            }
+
+            var elapsedTime = (DateTime.UtcNow - totalStartTime).TotalMilliseconds;
+            logger.LogInformation("Benchmark completed. Total time: {ElapsedMs}ms", elapsedTime);
+            Console.WriteLine($"\e[32mBenchmark completed. Total time: {elapsedTime:F1}ms\e[0m"); // Green text
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during benchmark");
+            Console.WriteLine($"\e[31mError during benchmark: {ex.Message}\e[0m"); // Red text
+            Environment.Exit(1);
+        }
+    }
+
+    private static void HandleListDevices(Microsoft.Extensions.Logging.ILogger logger, string[] args)
     {
         try
         {
@@ -763,6 +862,48 @@ class Program
         else
         {
             await File.WriteAllBytesAsync(outPath, wavData);
+        }
+    }
+
+    private static void ConfigureSerilog(IConfiguration configuration, string[] args, AppSettings settings)
+    {
+        var (minLogLevel, useJsonConsole) = ParseLogOptions(args, settings);
+
+        var logLevel = useJsonConsole ? LogEventLevel.Debug : LogEventLevel.Information;
+
+        Log.Logger = new LoggerConfiguration()
+            .ReadFrom.Configuration(configuration)
+            .MinimumLevel.Is(logLevel)
+            .Enrich.FromLogContext()
+            .Enrich.WithMachineName()
+            .Enrich.WithThreadId()
+            .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+            .WriteTo.File(
+                path: "./logs/voicevox-.log",
+                rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: 7,
+                outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} {Level:u3}] {Message:lj}{NewLine}{Exception}")
+            .CreateLogger();
+    }
+
+    private static string GetVersion()
+    {
+        return typeof(Program).Assembly.GetName().Version?.ToString() ?? "Unknown";
+    }
+}
+
+// Serilogの適切なクローズ処理のための拡張メソッド
+public static class ProgramExtensions
+{
+    public static void CleanupSerilog()
+    {
+        try
+        {
+            Log.CloseAndFlush();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: Failed to cleanup Serilog: {ex.Message}");
         }
     }
 }

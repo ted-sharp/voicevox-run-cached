@@ -2,6 +2,7 @@ using NAudio.Wave;
 using NAudio.MediaFoundation;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
+using Serilog;
 
 namespace VoicevoxRunCached.Services;
 
@@ -17,14 +18,20 @@ public class FillerManager
         this._cacheManager = cacheManager;
         this._defaultSpeaker = defaultSpeakerId;
         this.ResolveFillerBaseDirectory();
+
+        Log.Information("FillerManager を初期化しました - 有効: {Enabled}, ディレクトリ: {Directory}", this._settings.Enabled, this._settings.Directory);
     }
 
     public async Task InitializeFillerCacheAsync(AppSettings appSettings)
     {
         if (!this._settings.Enabled)
+        {
+            Log.Information("フィラー機能が無効化されているため、初期化をスキップします");
             return;
+        }
 
         Directory.CreateDirectory(this._settings.Directory);
+        Log.Information("フィラーキャッシュの初期化を開始します - テキスト数: {Count}", this._settings.FillerTexts.Length);
 
         using var spinner = new ProgressSpinner("Initializing filler cache...");
         using var apiClient = new VoiceVoxApiClient(appSettings.VoiceVox);
@@ -38,6 +45,7 @@ public class FillerManager
         {
             processed++;
             spinner.UpdateMessage($"Generating filler {processed}/{total}: \"{fillerText}\"");
+            Log.Debug("フィラー音声を生成中 {Processed}/{Total}: \"{Text}\"", processed, total, fillerText);
 
             var fillerRequest = new VoiceRequest
             {
@@ -62,25 +70,34 @@ public class FillerManager
 
                     // Save directly to filler directory
                     await this.SaveFillerAudioAsync(fillerCacheMp3, audioData);
+                    Log.Debug("フィラー音声を生成・保存しました: \"{Text}\"", fillerText);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"Warning: Failed to generate filler '{fillerText}': {ex.Message}");
+                    Log.Warning(ex, "フィラー音声の生成に失敗: \"{Text}\"", fillerText);
                 }
+            }
+            else
+            {
+                Log.Debug("フィラー音声は既にキャッシュ済み: \"{Text}\"", fillerText);
             }
         }
 
         spinner.Dispose();
-        Console.WriteLine($"\e[32mFiller cache initialized with {this._settings.FillerTexts.Length} items\e[0m");
+        Log.Information("フィラーキャッシュの初期化が完了しました - 項目数: {Count}", this._settings.FillerTexts.Length);
     }
 
     public async Task<byte[]?> GetRandomFillerAudioAsync()
     {
         if (!this._settings.Enabled || this._settings.FillerTexts.Length == 0)
+        {
+            Log.Debug("フィラー機能が無効またはテキストが設定されていません");
             return null;
+        }
 
         var random = new Random();
         var randomFiller = this._settings.FillerTexts[random.Next(this._settings.FillerTexts.Length)];
+        Log.Debug("ランダムフィラー音声を選択: \"{Text}\"", randomFiller);
 
         var fillerRequest = new VoiceRequest
         {
@@ -101,10 +118,10 @@ public class FillerManager
             {
                 return await File.ReadAllBytesAsync(fillerCacheMp3);
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Warning: Failed to load filler audio: {ex.Message}");
-            }
+                    catch (Exception ex)
+        {
+            Log.Warning(ex, "フィラー音声の読み込みに失敗しました");
+        }
         }
 
         if (File.Exists(fillerCacheWav))
@@ -113,10 +130,10 @@ public class FillerManager
             {
                 return await File.ReadAllBytesAsync(fillerCacheWav);
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Warning: Failed to load filler audio: {ex.Message}");
-            }
+                    catch (Exception ex)
+        {
+            Log.Warning(ex, "フィラー音声の読み込みに失敗しました");
+        }
         }
 
         return null;

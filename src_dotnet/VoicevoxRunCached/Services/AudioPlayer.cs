@@ -4,6 +4,7 @@ using NAudio.CoreAudioApi;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using System.Text;
+using Serilog;
 
 // C# 13 Using alias for commonly used types
 using WavePlayer = NAudio.Wave.WaveOutEvent;
@@ -245,7 +246,7 @@ public class AudioPlayer : IDisposable
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Warning: Failed to cache audio: {ex.Message}");
+                        Log.Warning(ex, "音声のキャッシュ保存に失敗しました");
                     }
                 });
             }
@@ -360,7 +361,7 @@ public class AudioPlayer : IDisposable
                 else
                 {
                     // Segment not cached - play filler while waiting for generation
-                    Console.WriteLine($"Waiting for segment {i + 1} to be generated...");
+                    Log.Debug("セグメント {SegmentNumber} の生成を待機中...", i + 1);
 
                     // Play filler while waiting for uncached segment
                     if (fillerManager != null)
@@ -370,14 +371,14 @@ public class AudioPlayer : IDisposable
                             var fillerAudio = await fillerManager.GetRandomFillerAudioAsync();
                             if (fillerAudio != null)
                             {
-                                Console.WriteLine("Playing filler while waiting for segment generation...");
+                                Log.Debug("セグメント生成待機中にフィラー音声を再生します");
                                 await this.PlaySegmentAsync(fillerAudio, isFirstSegment, cancellationToken);
                                 isFirstSegment = false;
                             }
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"Warning: Filler playback failed: {ex.Message}");
+                            Log.Warning(ex, "フィラー音声の再生に失敗しました");
                         }
                     }
 
@@ -400,7 +401,7 @@ public class AudioPlayer : IDisposable
                     // Final check after waiting
                     if (segment.AudioData == null)
                     {
-                        Console.WriteLine($"Warning: Segment {i + 1} could not be generated, skipping...");
+                        Log.Warning("セグメント {SegmentNumber} の生成に失敗しました。スキップします", i + 1);
                         continue;
                     }
 
@@ -420,13 +421,13 @@ public class AudioPlayer : IDisposable
                             var fillerAudio = await fillerManager.GetRandomFillerAudioAsync();
                             if (fillerAudio != null)
                             {
-                                Console.WriteLine("Playing filler while waiting for next segment...");
+                                Log.Debug("次のセグメント待機中にフィラー音声を再生します");
                                 await this.PlaySegmentAsync(fillerAudio, false, cancellationToken);
                             }
                         }
                         catch (Exception ex)
                         {
-                            Console.WriteLine($"Warning: Filler playback failed: {ex.Message}");
+                            Log.Warning(ex, "フィラー音声の再生に失敗しました");
                         }
                     }
                 }
