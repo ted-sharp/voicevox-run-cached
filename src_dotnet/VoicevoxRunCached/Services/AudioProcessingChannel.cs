@@ -18,8 +18,8 @@ public class AudioProcessingChannel : IDisposable
 
     public AudioProcessingChannel(AudioCacheManager cacheManager, VoiceVoxApiClient apiClient)
     {
-        _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
-        _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
+        this._cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
+        this._apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
 
         // バウンドチャンネルを作成（メモリ使用量を制限）
         var channelOptions = new BoundedChannelOptions(100)
@@ -29,13 +29,13 @@ public class AudioProcessingChannel : IDisposable
             SingleWriter = false
         };
 
-        _processingChannel = Channel.CreateBounded<AudioProcessingTask>(channelOptions);
-        _resultChannel = Channel.CreateBounded<AudioProcessingResult>(channelOptions);
-        _cancellationTokenSource = new CancellationTokenSource();
+        this._processingChannel = Channel.CreateBounded<AudioProcessingTask>(channelOptions);
+        this._resultChannel = Channel.CreateBounded<AudioProcessingResult>(channelOptions);
+        this._cancellationTokenSource = new CancellationTokenSource();
 
         // バックグラウンド処理タスクを開始
-        _processingTask = Task.Run(ProcessAudioTasksAsync);
-        _resultTask = Task.Run(ProcessResultsAsync);
+        this._processingTask = Task.Run(this.ProcessAudioTasksAsync);
+        this._resultTask = Task.Run(this.ProcessResultsAsync);
 
         Log.Information("AudioProcessingChannel を初期化しました - 最大キューサイズ: 100");
     }
@@ -50,14 +50,14 @@ public class AudioProcessingChannel : IDisposable
         };
 
         // 処理キューに追加
-        await _processingChannel.Writer.WriteAsync(task, cancellationToken);
+        await this._processingChannel.Writer.WriteAsync(task, cancellationToken);
 
         // 結果を待機
-        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _cancellationTokenSource.Token);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, this._cancellationTokenSource.Token);
 
-        while (await _resultChannel.Reader.WaitToReadAsync(linkedCts.Token))
+        while (await this._resultChannel.Reader.WaitToReadAsync(linkedCts.Token))
         {
-            if (_resultChannel.Reader.TryRead(out var result) && result.TaskId == task.Id)
+            if (this._resultChannel.Reader.TryRead(out var result) && result.TaskId == task.Id)
             {
                 return result;
             }
@@ -70,14 +70,14 @@ public class AudioProcessingChannel : IDisposable
     {
         try
         {
-            await foreach (var task in _processingChannel.Reader.ReadAllAsync(_cancellationTokenSource.Token))
+            await foreach (var task in this._processingChannel.Reader.ReadAllAsync(this._cancellationTokenSource.Token))
             {
                 try
                 {
                     Log.Debug("音声処理タスクを開始: {TaskId}", task.Id);
 
                     // まずキャッシュをチェック
-                    var cachedAudio = await _cacheManager.GetCachedAudioAsync(task.Request);
+                    var cachedAudio = await this._cacheManager.GetCachedAudioAsync(task.Request);
                     if (cachedAudio != null)
                     {
                         var result = new AudioProcessingResult
@@ -89,17 +89,17 @@ public class AudioProcessingChannel : IDisposable
                             Success = true
                         };
 
-                        await _resultChannel.Writer.WriteAsync(result, _cancellationTokenSource.Token);
+                        await this._resultChannel.Writer.WriteAsync(result, this._cancellationTokenSource.Token);
                         Log.Debug("キャッシュから音声を取得: {TaskId}", task.Id);
                         continue;
                     }
 
                     // キャッシュにない場合はAPIから生成
-                    var audioQuery = await _apiClient.GenerateAudioQueryAsync(task.Request, _cancellationTokenSource.Token);
-                    var audioData = await _apiClient.SynthesizeAudioAsync(audioQuery, task.Request.SpeakerId, _cancellationTokenSource.Token);
+                    var audioQuery = await this._apiClient.GenerateAudioQueryAsync(task.Request, this._cancellationTokenSource.Token);
+                    var audioData = await this._apiClient.SynthesizeAudioAsync(audioQuery, task.Request.SpeakerId, this._cancellationTokenSource.Token);
 
                     // キャッシュに保存
-                    await _cacheManager.SaveAudioCacheAsync(task.Request, audioData);
+                    await this._cacheManager.SaveAudioCacheAsync(task.Request, audioData);
 
                     var apiResult = new AudioProcessingResult
                     {
@@ -110,7 +110,7 @@ public class AudioProcessingChannel : IDisposable
                         Success = true
                     };
 
-                    await _resultChannel.Writer.WriteAsync(apiResult, _cancellationTokenSource.Token);
+                    await this._resultChannel.Writer.WriteAsync(apiResult, this._cancellationTokenSource.Token);
                     Log.Debug("APIから音声を生成: {TaskId}", task.Id);
                 }
                 catch (Exception ex)
@@ -127,7 +127,7 @@ public class AudioProcessingChannel : IDisposable
                         ErrorMessage = ex.Message
                     };
 
-                    await _resultChannel.Writer.WriteAsync(errorResult, _cancellationTokenSource.Token);
+                    await this._resultChannel.Writer.WriteAsync(errorResult, this._cancellationTokenSource.Token);
                 }
             }
         }
@@ -145,7 +145,7 @@ public class AudioProcessingChannel : IDisposable
     {
         try
         {
-            await foreach (var result in _resultChannel.Reader.ReadAllAsync(_cancellationTokenSource.Token))
+            await foreach (var result in this._resultChannel.Reader.ReadAllAsync(this._cancellationTokenSource.Token))
             {
                 // 結果の後処理（必要に応じて）
                 if (result.Success)
@@ -167,19 +167,19 @@ public class AudioProcessingChannel : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (this._disposed) return;
 
         try
         {
-            _cancellationTokenSource.Cancel();
-            _processingChannel.Writer.Complete();
-            _resultChannel.Writer.Complete();
+            this._cancellationTokenSource.Cancel();
+            this._processingChannel.Writer.Complete();
+            this._resultChannel.Writer.Complete();
 
             // タスクの完了を待機（タイムアウト付き）
             var timeout = TimeSpan.FromSeconds(5);
-            Task.WaitAll(new[] { _processingTask, _resultTask }, timeout);
+            Task.WaitAll(new[] { this._processingTask, this._resultTask }, timeout);
 
-            _cancellationTokenSource.Dispose();
+            this._cancellationTokenSource.Dispose();
         }
         catch (Exception ex)
         {
@@ -187,7 +187,7 @@ public class AudioProcessingChannel : IDisposable
         }
         finally
         {
-            _disposed = true;
+            this._disposed = true;
         }
 
         Log.Debug("AudioProcessingChannel を破棄しました");

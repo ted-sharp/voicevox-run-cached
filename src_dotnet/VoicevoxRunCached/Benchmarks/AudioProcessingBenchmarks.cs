@@ -22,32 +22,32 @@ public class AudioProcessingBenchmarks
     public void Setup()
     {
         // サンプルWAVデータを生成（1秒間の44.1kHz 16bit モノラル）
-        _sampleWavData = GenerateSampleWavData();
+        this._sampleWavData = this.GenerateSampleWavData();
 
         var cacheSettings = new CacheSettings("./benchmark-cache/", 30, 1.0, true);
-        _memoryCache = new MemoryCacheService(cacheSettings);
-        _cacheManager = new AudioCacheManager(cacheSettings, _memoryCache);
+        this._memoryCache = new MemoryCacheService(cacheSettings);
+        this._cacheManager = new AudioCacheManager(cacheSettings, this._memoryCache);
 
-        _testRequest = new VoiceRequest("テスト用の音声データです。", 1, 1.0, 0.0, 1.0);
+        this._testRequest = new VoiceRequest("テスト用の音声データです。", 1, 1.0, 0.0, 1.0);
     }
 
     [GlobalCleanup]
     public void Cleanup()
     {
-        _cacheManager?.Dispose();
-        _memoryCache?.Dispose();
+        this._cacheManager?.Dispose();
+        this._memoryCache?.Dispose();
     }
 
     [Benchmark]
     public byte[] WavToMp3Conversion()
     {
-        return ConvertWavToMp3(_sampleWavData);
+        return this.ConvertWavToMp3(this._sampleWavData);
     }
 
     [Benchmark]
     public string CacheKeyGeneration()
     {
-        return _cacheManager.ComputeCacheKey(_testRequest);
+        return this._cacheManager.ComputeCacheKey(this._testRequest);
     }
 
     [Benchmark]
@@ -57,20 +57,20 @@ public class AudioProcessingBenchmarks
         var data = new byte[1024];
         new Random().NextBytes(data);
 
-        _memoryCache.Set(key, data);
-        var retrieved = _memoryCache.Get<byte[]>(key);
+        this._memoryCache.Set(key, data);
+        var retrieved = this._memoryCache.Get<byte[]>(key);
 
         await Task.CompletedTask;
     }
 
-        [Benchmark]
+    [Benchmark]
     public async Task DiskCacheOperations()
     {
         var data = new byte[1024];
         new Random().NextBytes(data);
 
-        await _cacheManager.SaveAudioCacheAsync(_testRequest, data);
-        var retrieved = await _cacheManager.GetCachedAudioAsync(_testRequest);
+        await this._cacheManager.SaveAudioCacheAsync(this._testRequest, data);
+        var retrieved = await this._cacheManager.GetCachedAudioAsync(this._testRequest);
 
         await Task.CompletedTask;
     }

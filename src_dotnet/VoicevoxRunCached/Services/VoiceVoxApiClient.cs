@@ -36,7 +36,7 @@ public class VoiceVoxApiClient : IDisposable
     public async Task<List<Speaker>> GetSpeakersAsync(CancellationToken cancellationToken = default)
     {
         Log.Debug("スピーカー一覧を取得中...");
-        return await _retryPolicyService.ExecuteWithRetryAsync(async () =>
+        return await this._retryPolicyService.ExecuteWithRetryAsync(async () =>
         {
             return await this.ExecuteApiCallAsync(async () =>
             {
@@ -61,7 +61,7 @@ public class VoiceVoxApiClient : IDisposable
     public async Task InitializeSpeakerAsync(int speakerId, CancellationToken cancellationToken = default)
     {
         Log.Debug("スピーカー {SpeakerId} を初期化中...", speakerId);
-        await _retryPolicyService.ExecuteWithRetryAsync(async () =>
+        await this._retryPolicyService.ExecuteWithRetryAsync(async () =>
         {
             return await this.ExecuteApiCallAsync(async () =>
             {
@@ -76,7 +76,7 @@ public class VoiceVoxApiClient : IDisposable
     public async Task<string> GenerateAudioQueryAsync(VoiceRequest request, CancellationToken cancellationToken = default)
     {
         Log.Debug("音声クエリを生成中... - テキスト: {Text}, スピーカー: {SpeakerId}", request.Text, request.SpeakerId);
-        return await _retryPolicyService.ExecuteWithRetryAsync(async () =>
+        return await this._retryPolicyService.ExecuteWithRetryAsync(async () =>
         {
             var json = await this.ExecuteApiCallAsync(async () =>
             {
@@ -98,7 +98,7 @@ public class VoiceVoxApiClient : IDisposable
     public async Task<byte[]> SynthesizeAudioAsync(string audioQuery, int speakerId, CancellationToken cancellationToken = default)
     {
         Log.Debug("音声合成中... - スピーカー: {SpeakerId}", speakerId);
-        return await _retryPolicyService.ExecuteWithRetryAsync(async () =>
+        return await this._retryPolicyService.ExecuteWithRetryAsync(async () =>
         {
             return await this.ExecuteApiCallAsync(async () =>
             {

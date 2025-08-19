@@ -15,7 +15,7 @@ public class RetryPolicyService
     public RetryPolicyService()
     {
         // 指数バックオフ付きリトライポリシー
-        _retryPolicy = Policy
+        this._retryPolicy = Policy
             .Handle<HttpRequestException>()
             .Or<TimeoutException>()
             .Or<OperationCanceledException>()
@@ -30,7 +30,7 @@ public class RetryPolicyService
             );
 
         // サーキットブレーカーポリシー
-        _circuitBreakerPolicy = Policy
+        this._circuitBreakerPolicy = Policy
             .Handle<HttpRequestException>()
             .Or<TimeoutException>()
             .CircuitBreakerAsync(
@@ -54,19 +54,19 @@ public class RetryPolicyService
         var timeoutPolicy = Policy.TimeoutAsync(TimeSpan.FromSeconds(30));
 
         // ポリシーを組み合わせ
-        _combinedPolicy = Policy.WrapAsync(_retryPolicy, _circuitBreakerPolicy, timeoutPolicy);
+        this._combinedPolicy = Policy.WrapAsync(this._retryPolicy, this._circuitBreakerPolicy, timeoutPolicy);
     }
 
-    public AsyncPolicy GetRetryPolicy() => _retryPolicy;
-    public AsyncPolicy GetCircuitBreakerPolicy() => _circuitBreakerPolicy;
-    public AsyncPolicy GetCombinedPolicy() => _combinedPolicy;
+    public AsyncPolicy GetRetryPolicy() => this._retryPolicy;
+    public AsyncPolicy GetCircuitBreakerPolicy() => this._circuitBreakerPolicy;
+    public AsyncPolicy GetCombinedPolicy() => this._combinedPolicy;
 
     public async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> action, string operationName = "操作")
     {
         try
         {
             Log.Debug("{Operation} を実行中...", operationName);
-            var result = await _combinedPolicy.ExecuteAsync(action);
+            var result = await this._combinedPolicy.ExecuteAsync(action);
             Log.Debug("{Operation} が正常に完了しました", operationName);
             return result;
         }
@@ -89,7 +89,7 @@ public class RetryPolicyService
 
     public async Task ExecuteWithRetryAsync(Func<Task> action, string operationName = "操作")
     {
-        await ExecuteWithRetryAsync(async () =>
+        await this.ExecuteWithRetryAsync(async () =>
         {
             await action();
             return true;

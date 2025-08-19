@@ -118,10 +118,10 @@ public class FillerManager
             {
                 return await File.ReadAllBytesAsync(fillerCacheMp3);
             }
-                    catch (Exception ex)
-        {
-            Log.Warning(ex, "フィラー音声の読み込みに失敗しました");
-        }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "フィラー音声の読み込みに失敗しました");
+            }
         }
 
         if (File.Exists(fillerCacheWav))
@@ -130,10 +130,10 @@ public class FillerManager
             {
                 return await File.ReadAllBytesAsync(fillerCacheWav);
             }
-                    catch (Exception ex)
-        {
-            Log.Warning(ex, "フィラー音声の読み込みに失敗しました");
-        }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "フィラー音声の読み込みに失敗しました");
+            }
         }
 
         return null;

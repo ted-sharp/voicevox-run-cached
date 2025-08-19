@@ -35,7 +35,7 @@ public class AudioCacheManager : IDisposable
         var cacheKey = this.ComputeCacheKey(request);
 
         // まずメモリキャッシュをチェック
-        var memoryCached = _memoryCache.Get<byte[]>(cacheKey);
+        var memoryCached = this._memoryCache.Get<byte[]>(cacheKey);
         if (memoryCached != null)
         {
             Log.Debug("メモリキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, memoryCached.Length);
@@ -46,13 +46,18 @@ public class AudioCacheManager : IDisposable
         var audioFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.mp3");
         var metaFilePath = Path.Combine(this._settings.Directory, $"{cacheKey}.meta.json");
 
+        // ファイル存在チェックを一度に実行
+        bool audioExists, metaExists;
         lock (this._cacheLock)
         {
-            if (!File.Exists(audioFilePath) || !File.Exists(metaFilePath))
-            {
-                Log.Debug("キャッシュミス: {CacheKey} - ファイルが存在しません", cacheKey);
-                return null;
-            }
+            audioExists = File.Exists(audioFilePath);
+            metaExists = File.Exists(metaFilePath);
+        }
+
+        if (!audioExists || !metaExists)
+        {
+            Log.Debug("キャッシュミス: {CacheKey} - ファイルが存在しません", cacheKey);
+            return null;
         }
 
         try
@@ -69,10 +74,10 @@ public class AudioCacheManager : IDisposable
 
             var audioData = await File.ReadAllBytesAsync(audioFilePath);
 
-            // ディスクキャッシュから取得したデータをメモリキャッシュにも保存
-            _memoryCache.Set(cacheKey, audioData);
+            // メモリキャッシュに保存（次回は高速アクセス）
+            this._memoryCache.Set(cacheKey, audioData);
 
-            Log.Debug("ディスクキャッシュヒット: {CacheKey} - サイズ: {Size} bytes (メモリキャッシュにも保存)", cacheKey, audioData.Length);
+            Log.Debug("ディスクキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, audioData.Length);
             return audioData;
         }
         catch (Exception ex)
@@ -115,10 +120,10 @@ public class AudioCacheManager : IDisposable
                 File.WriteAllText(metaFilePath, metaJson);
             }
 
-            // メモリキャッシュにも保存
-            _memoryCache.Set(cacheKey, mp3Data);
+            // メモリキャッシュに保存（高速アクセス用）
+            this._memoryCache.Set(cacheKey, mp3Data);
 
-            Log.Debug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes (ディスク + メモリ)", cacheKey, mp3Data.Length);
+            Log.Debug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes", cacheKey, mp3Data.Length);
         }
         catch (Exception ex)
         {
@@ -126,11 +131,24 @@ public class AudioCacheManager : IDisposable
             throw new InvalidOperationException($"Failed to save audio cache: {ex.Message}", ex);
         }
 
-        // After saving, enforce max size policy in background
+                // After saving, enforce max size policy in background with proper cancellation
         _ = Task.Run(async () =>
         {
-            try { await this.CleanupByMaxSizeAsync(); } catch { }
-        });
+            try
+            {
+                // 軽量なキャンセレーション用トークン（短時間実行のため）
+                using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+                await this.CleanupByMaxSizeAsync(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                Log.Debug("キャッシュクリーンアップがタイムアウトしました");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "バックグラウンドキャッシュクリーンアップに失敗しました");
+            }
+        }, CancellationToken.None);
 
         return Task.CompletedTask;
     }
@@ -178,10 +196,12 @@ public class AudioCacheManager : IDisposable
         }
     }
 
-    public async Task CleanupByMaxSizeAsync()
+    public async Task CleanupByMaxSizeAsync(CancellationToken cancellationToken = default)
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (!Directory.Exists(this._settings.Directory))
             {
                 return;
@@ -225,6 +245,8 @@ public class AudioCacheManager : IDisposable
 
             foreach (var entry in ordered)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (totalBytes <= maxBytes)
                 {
                     break;
@@ -273,12 +295,15 @@ public class AudioCacheManager : IDisposable
     }
 
     // C# 13 ref readonly parameter for better performance with large structs
+    private static readonly SHA256 _sha256 = SHA256.Create();
+
     public string ComputeCacheKey(VoiceRequest request)
     {
         var keyString = String.Format(System.Globalization.CultureInfo.InvariantCulture,
             "{0}|{1}|{2:F2}|{3:F2}|{4:F2}", request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
-        using var sha256 = SHA256.Create();
-        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(keyString));
+
+        // 軽量なハッシュ計算（SHA256の再利用）
+        var hashBytes = _sha256.ComputeHash(Encoding.UTF8.GetBytes(keyString));
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 
@@ -363,7 +388,7 @@ public class AudioCacheManager : IDisposable
         try
         {
             // メモリキャッシュをクリア
-            _memoryCache.Clear();
+            this._memoryCache.Clear();
 
             if (!Directory.Exists(this._settings.Directory))
             {
@@ -401,7 +426,7 @@ public class AudioCacheManager : IDisposable
 
     public void Dispose()
     {
-        _memoryCache.Dispose();
+        this._memoryCache.Dispose();
     }
 }
 

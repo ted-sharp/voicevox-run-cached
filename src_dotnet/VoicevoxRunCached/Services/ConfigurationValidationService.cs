@@ -10,7 +10,7 @@ public class ConfigurationValidationService
 
     public ConfigurationValidationService()
     {
-        _validator = new AppSettingsValidator();
+        this._validator = new AppSettingsValidator();
     }
 
     public async Task<FluentValidation.Results.ValidationResult> ValidateConfigurationAsync(AppSettings settings)
@@ -20,7 +20,7 @@ public class ConfigurationValidationService
             throw new ArgumentNullException(nameof(settings));
         }
 
-        return await _validator.ValidateAsync(settings);
+        return await this._validator.ValidateAsync(settings);
     }
 
     public void ValidateConfiguration(AppSettings settings)
@@ -30,10 +30,10 @@ public class ConfigurationValidationService
             throw new ArgumentNullException(nameof(settings));
         }
 
-        var result = _validator.Validate(settings);
+        var result = this._validator.Validate(settings);
         if (!result.IsValid)
         {
-            var errors = string.Join(Environment.NewLine, result.Errors.Select(e => $"- {e.PropertyName}: {e.ErrorMessage}"));
+            var errors = String.Join(Environment.NewLine, result.Errors.Select(e => $"- {e.PropertyName}: {e.ErrorMessage}"));
             throw new InvalidOperationException($"設定の検証に失敗しました:{Environment.NewLine}{errors}");
         }
     }
@@ -42,7 +42,7 @@ public class ConfigurationValidationService
     {
         try
         {
-            var result = await ValidateConfigurationAsync(settings);
+            var result = await this.ValidateConfigurationAsync(settings);
             return result.IsValid;
         }
         catch
@@ -58,7 +58,7 @@ public class ConfigurationValidationService
             return ["設定がnullです"];
         }
 
-        var result = _validator.Validate(settings);
+        var result = this._validator.Validate(settings);
         return result.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}").ToList();
     }
 }
