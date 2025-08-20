@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace VoicevoxRunCached.Models;
 
 // C# 13 Primary constructor for cleaner initialization
@@ -27,15 +29,15 @@ public class AudioQueryResponse
 // C# 13 Primary constructor for Speaker model
 public class Speaker(string name = "", string speakerUuid = "", string version = "")
 {
-    public string Name { get; set; } = name;
-    public string SpeakerUuid { get; set; } = speakerUuid;
-    public List<SpeakerStyle> Styles { get; set; } = [];
-    public string Version { get; set; } = version;
+    [JsonPropertyName("name")] public string Name { get; set; } = name;
+    [JsonPropertyName("speaker_uuid")] public string SpeakerUuid { get; set; } = speakerUuid;
+    [JsonPropertyName("styles")] public List<SpeakerStyle> Styles { get; set; } = [];
+    [JsonPropertyName("version")] public string Version { get; set; } = version;
 }
 
 // C# 13 Primary constructor for SpeakerStyle model
 public class SpeakerStyle(string name = "", int id = 0)
 {
-    public string Name { get; set; } = name;
-    public int Id { get; set; } = id;
+    [JsonPropertyName("name")] public string Name { get; set; } = name;
+    [JsonPropertyName("id")] public int Id { get; set; } = id;
 }

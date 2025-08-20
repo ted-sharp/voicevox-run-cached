@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.Binder;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Services;
@@ -19,11 +20,15 @@ public class ConfigurationManager
     public AppSettings GetSettings()
     {
         var settings = new AppSettings();
-        // 基本的な設定のみを読み込み
-        if (Int32.TryParse(this._configuration["VoiceVox:DefaultSpeaker"], out int defaultSpeaker))
-            settings.VoiceVox.DefaultSpeaker = defaultSpeaker;
-        if (Boolean.TryParse(this._configuration["Filler:Enabled"], out bool fillerEnabled))
-            settings.Filler.Enabled = fillerEnabled;
+
+        // 設定ファイルから直接バインド
+        this._configuration.GetSection("VoiceVox").Bind(settings.VoiceVox);
+        this._configuration.GetSection("Cache").Bind(settings.Cache);
+        this._configuration.GetSection("Audio").Bind(settings.Audio);
+        this._configuration.GetSection("Filler").Bind(settings.Filler);
+        this._configuration.GetSection("Logging").Bind(settings.Logging);
+        this._configuration.GetSection("Test").Bind(settings.Test);
+
         return settings;
     }
 

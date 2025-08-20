@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Configuration;
 using System.Runtime.InteropServices;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
@@ -28,18 +29,25 @@ class Program
         // Initialize Media Foundation once per process
         MediaFoundationManager.Initialize();
 
-        // Initialize configuration and validation with command-line arguments
-        var configManager = new ConfigurationManager();
-        var configuration = ConfigurationManager.BuildConfigurationWithCommandLine(args);
+        // Initialize configuration (appsettings + CLI) and validate once
+        var configuration = VoicevoxRunCached.Services.ConfigurationManager.BuildConfigurationWithCommandLine(args);
         var settings = new AppSettings();
-        // 基本的な設定のみを読み込み
-        if (Int32.TryParse(configuration["VoiceVox:DefaultSpeaker"], out int defaultSpeaker))
-            settings.VoiceVox.DefaultSpeaker = defaultSpeaker;
-        if (Boolean.TryParse(configuration["Filler:Enabled"], out bool fillerEnabled))
-            settings.Filler.Enabled = fillerEnabled;
+        configuration.GetSection("VoiceVox").Bind(settings.VoiceVox);
+        configuration.GetSection("Cache").Bind(settings.Cache);
+        configuration.GetSection("Audio").Bind(settings.Audio);
+        configuration.GetSection("Filler").Bind(settings.Filler);
+        configuration.GetSection("Logging").Bind(settings.Logging);
+        configuration.GetSection("Test").Bind(settings.Test);
 
-        if (!configManager.ValidateConfiguration(settings, null!))
+        var validationService = new ConfigurationValidationService();
+        try
         {
+            validationService.ValidateConfiguration(settings);
+            ConsoleHelper.WriteValidationSuccess("設定の検証が完了しました", null);
+        }
+        catch (InvalidOperationException ex)
+        {
+            ConsoleHelper.WriteValidationError($"設定の検証に失敗しました: {ex.Message}", null);
             return 1;
         }
 
@@ -174,6 +182,8 @@ class Program
     {
         return typeof(Program).Assembly.GetName().Version?.ToString() ?? "Unknown";
     }
+
+
 }
 
 // Serilogの適切なクローズ処理のための拡張メソッド

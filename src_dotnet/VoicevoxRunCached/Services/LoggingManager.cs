@@ -35,44 +35,29 @@ public class LoggingManager
 
     public static void ConfigureSerilog(Microsoft.Extensions.Configuration.IConfiguration configuration, string[] args, AppSettings settings, LogLevel minLogLevel, bool useJsonConsole)
     {
-        var logLevel = useJsonConsole ? LogEventLevel.Debug : LogEventLevel.Information;
-
-        Log.Logger = new LoggerConfiguration()
-            .MinimumLevel.Is(logLevel)
+        // Read sinks/enrichers from configuration first
+        var loggerConfig = new LoggerConfiguration()
+            .ReadFrom.Configuration(configuration)
             .Enrich.FromLogContext()
             .Enrich.WithMachineName()
             .Enrich.WithThreadId()
-            .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}")
-            .WriteTo.File(
-                path: "./logs/voicevox-.log",
-                rollingInterval: RollingInterval.Day,
-                retainedFileCountLimit: 7,
-                outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} {Level:u3}] {Message:lj}{NewLine}{Exception}")
-            .CreateLogger();
+            // Override minimum level from CLI/settings
+            .MinimumLevel.Is(MapToSerilogLevel(minLogLevel));
+
+        // Note: If JSON console is requested, prefer Serilog configuration to define JSON console sink.
+        // To avoid duplicate console outputs, we do not add another console sink here.
+
+        Log.Logger = loggerConfig.CreateLogger();
     }
 
     public static ILoggerFactory CreateLoggerFactory(LogLevel minLogLevel, bool useJsonConsole)
     {
+        // Use Serilog as the sole provider to avoid double console/file outputs
         return LoggerFactory.Create(builder =>
         {
+            builder.ClearProviders();
             builder.SetMinimumLevel(minLogLevel);
-            if (useJsonConsole)
-            {
-                builder.AddJsonConsole(o =>
-                {
-                    o.TimestampFormat = "HH:mm:ss.fff ";
-                    o.IncludeScopes = false;
-                });
-            }
-            else
-            {
-                builder.AddSimpleConsole(o =>
-                {
-                    o.TimestampFormat = "HH:mm:ss.fff ";
-                    o.SingleLine = true;
-                    o.IncludeScopes = false;
-                });
-            }
+            builder.AddSerilog(Log.Logger, dispose: false);
         });
     }
 
@@ -87,4 +72,16 @@ public class LoggingManager
         }
         return null;
     }
+
+    private static LogEventLevel MapToSerilogLevel(LogLevel level) => level switch
+    {
+        LogLevel.Trace => LogEventLevel.Verbose,
+        LogLevel.Debug => LogEventLevel.Debug,
+        LogLevel.Information => LogEventLevel.Information,
+        LogLevel.Warning => LogEventLevel.Warning,
+        LogLevel.Error => LogEventLevel.Error,
+        LogLevel.Critical => LogEventLevel.Fatal,
+        LogLevel.None => LogEventLevel.Fatal, // effectively mute most logs
+        _ => LogEventLevel.Information
+    };
 }
