@@ -97,7 +97,7 @@ public class AudioCacheManager : IDisposable
         try
         {
             // Convert WAV to MP3
-            var mp3Data = this.ConvertWavToMp3(audioData);
+            var mp3Data = AudioConversionUtility.ConvertWavToMp3(audioData);
 
             lock (this._cacheLock)
             {
@@ -289,6 +289,9 @@ public class AudioCacheManager : IDisposable
                 segment.IsCached = true;
                 segment.AudioData = cachedData;
             }
+
+            // Set SpeakerId for channel-based processing
+            segment.SpeakerId = request.SpeakerId;
         }
 
         return segments;
@@ -336,24 +339,6 @@ public class AudioCacheManager : IDisposable
     private bool IsExpired(DateTime createdAt)
     {
         return DateTime.UtcNow - createdAt > TimeSpan.FromDays(this._settings.ExpirationDays);
-    }
-
-    private byte[] ConvertWavToMp3(byte[] wavData)
-    {
-        try
-        {
-            using var wavStream = new MemoryStream(wavData);
-            using var waveReader = new WaveFileReader(wavStream);
-            using var outputStream = new MemoryStream();
-
-            MediaFoundationManager.EnsureInitialized();
-            MediaFoundationEncoder.EncodeToMp3(waveReader, outputStream, 128000);
-            return outputStream.ToArray();
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException($"Failed to convert WAV to MP3: {ex.Message}", ex);
-        }
     }
 
     private Task DeleteCacheFileAsync(string cacheKey)

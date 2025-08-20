@@ -27,17 +27,18 @@ public static class ArgumentParser
         "-o"
     };
 
-    // コマンドライン引数と設定プロパティのマッピング
+    // コマンドライン引数と設定プロパティのマッピング（現在は使用されていないが将来の拡張用）
     public static readonly Dictionary<string, string> Aliases = new()
     {
-        { "--verbose", "Logging:Verbose" },
-        { "--no-cache", "Cache:Disabled" },
-        { "--cache-only", "Cache:Only" },
-        { "--no-play", "Audio:NoPlay" },
-        { "--json", "Output:Json" },
-        { "--full", "Output:Full" },
-        { "-s", "VoiceVox:SpeakerId" },
-        { "-o", "Output:Path" }
+        // Note: These mappings are currently not used but kept for future configuration integration
+        // { "--verbose", "Logging:Verbose" },
+        // { "--no-cache", "Cache:Disabled" },
+        // { "--cache-only", "Cache:Only" },
+        // { "--no-play", "Audio:NoPlay" },
+        // { "--json", "Output:Json" },
+        // { "--full", "Output:Full" },
+        // { "-s", "VoiceVox:SpeakerId" },
+        // { "-o", "Output:Path" }
     };
 
     /// <summary>
@@ -174,7 +175,7 @@ public static class ArgumentParser
         Console.WriteLine("Enhanced Features:");
         Console.WriteLine("  • Standalone flags: --verbose → --verbose true");
         Console.WriteLine("  • Concatenated options: -s1 → -s 1");
-        Console.WriteLine("  • Configuration integration: --verbose sets Logging:Verbose");
+        Console.WriteLine("  • Configuration integration: Planned for future versions");
         Console.WriteLine("  • Priority: Command-line > Environment > appsettings.json");
     }
 }

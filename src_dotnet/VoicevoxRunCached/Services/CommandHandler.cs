@@ -354,7 +354,7 @@ public class CommandHandler
                 var uncachedSegments = segments.Where(s => !s.IsCached).ToList();
 
                 // Start background generation for uncached segments
-                Task? generationTask = null;
+                AudioProcessingChannel? processingChannel = null;
                 if (uncachedSegments.Count > 0)
                 {
                     if (cacheOnly)
@@ -363,8 +363,8 @@ public class CommandHandler
                         return 1;
                     }
 
-                    ConsoleHelper.WriteWarning($"Generating {uncachedSegments.Count} segments in background...", this._logger);
-                    generationTask = this.GenerateSegmentsAsync(request, segments, cacheManager, cancellationToken);
+                    ConsoleHelper.WriteWarning($"Generating {uncachedSegments.Count} segments using processing channel...", this._logger);
+                    processingChannel = new AudioProcessingChannel(cacheManager, new VoiceVoxApiClient(this._settings.VoiceVox));
                 }
 
                 // Start playing immediately - cached segments play right away, uncached segments wait
@@ -372,7 +372,7 @@ public class CommandHandler
                 ConsoleHelper.WriteInfo("Playing audio...", this._logger);
                 using var audioPlayer = new AudioPlayer(this._settings.Audio);
                 var fillerManager = this._settings.Filler.Enabled ? new FillerManager(this._settings.Filler, cacheManager, this._settings.VoiceVox.DefaultSpeaker) : null;
-                await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, generationTask, fillerManager, cancellationToken);
+                await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, processingChannel, fillerManager, cancellationToken);
 
                 if (verbose)
                 {
@@ -415,59 +415,6 @@ public class CommandHandler
         }
     }
 
-    private async Task GenerateSegmentsAsync(VoiceRequest request, List<TextSegment> segments, AudioCacheManager cacheManager, CancellationToken cancellationToken = default)
-    {
-        using var spinner = new ProgressSpinner($"Generating segment 1/{segments.Count(s => !s.IsCached)}");
-        using var apiClient = new VoiceVoxApiClient(this._settings.VoiceVox);
-        await apiClient.InitializeSpeakerAsync(request.SpeakerId, cancellationToken);
-
-        int uncachedCount = 0;
-        int totalUncached = segments.Count(s => !s.IsCached);
-
-        for (int i = 0; i < segments.Count; i++)
-        {
-            if (!segments[i].IsCached)
-            {
-                uncachedCount++;
-                spinner.UpdateMessage($"Generating segment {uncachedCount}/{totalUncached}");
-                var segmentRequest = new VoiceRequest
-                {
-                    Text = segments[i].Text,
-                    SpeakerId = request.SpeakerId,
-                    Speed = request.Speed,
-                    Pitch = request.Pitch,
-                    Volume = request.Volume
-                };
-
-                cancellationToken.ThrowIfCancellationRequested();
-                var audioQuery = await apiClient.GenerateAudioQueryAsync(segmentRequest, cancellationToken);
-                var segmentAudio = await apiClient.SynthesizeAudioAsync(audioQuery, segmentRequest.SpeakerId, cancellationToken);
-
-                segments[i].AudioData = segmentAudio;
-                segments[i].IsCached = true; // Mark as ready for playback
-
-                // Cache the segment with proper cancellation and error handling
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        // セグメントキャッシュ用のタイムアウト（30秒）
-                        using var segmentCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-                        await cacheManager.SaveAudioCacheAsync(segmentRequest, segmentAudio);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        ConsoleHelper.WriteDebug($"セグメントキャッシュがタイムアウトしました: {segmentRequest.Text}", this._logger);
-                    }
-                    catch (Exception ex)
-                    {
-                        ConsoleHelper.WriteWarning($"セグメントのキャッシュに失敗しました: {segmentRequest.Text} - {ex.Message}", this._logger);
-                    }
-                }, cancellationToken);
-            }
-        }
-    }
-
     private async Task WriteOutputFileAsync(byte[] wavData, string outPath, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -479,12 +426,7 @@ public class CommandHandler
         {
             try
             {
-                using var wavStream = new MemoryStream(wavData);
-                using var reader = new WaveFileReader(wavStream);
-                using var outputStream = new MemoryStream();
-                MediaFoundationManager.EnsureInitialized();
-                MediaFoundationEncoder.EncodeToMp3(reader, outputStream, 128000);
-                var mp3Bytes = outputStream.ToArray();
+                var mp3Bytes = AudioConversionUtility.ConvertWavToMp3(wavData);
                 // sanity-check MP3 header (0xFFEx)
                 bool isMp3 = mp3Bytes.Length >= 2 && mp3Bytes[0] == 0xFF && (mp3Bytes[1] & 0xE0) == 0xE0;
                 if (!isMp3)

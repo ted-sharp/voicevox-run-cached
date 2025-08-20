@@ -160,17 +160,13 @@ public class FillerManager
     {
         try
         {
-            using var wavStream = new MemoryStream(wavData);
-            using var waveReader = new WaveFileReader(wavStream);
-            using var outputStream = new MemoryStream();
-            MediaFoundationManager.EnsureInitialized();
-            MediaFoundationEncoder.EncodeToMp3(waveReader, outputStream, 128000);
-            return await Task.FromResult(outputStream.ToArray());
+            // Run CPU-intensive conversion on background thread
+            return await Task.Run(() => AudioConversionUtility.ConvertWavToMp3(wavData));
         }
         catch
         {
             // フォーマット判定に失敗した場合はWAVを返す（呼び出し側で適切な拡張子に保存）
-            return await Task.FromResult(wavData);
+            return wavData;
         }
     }
 

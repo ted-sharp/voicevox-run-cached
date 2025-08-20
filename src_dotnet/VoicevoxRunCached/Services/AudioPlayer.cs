@@ -77,7 +77,8 @@ public class AudioPlayer : IDisposable
         try
         {
             // Create a silent audio to initialize the device with configurable duration
-            var silentWavData = this.CreateSilentWavData(durationMs);
+            var generateSilence = this._settings.PreparationVolume <= 0;
+            var silentWavData = AudioConversionUtility.CreateMinimalWavData(durationMs, generateSilence: generateSilence);
 
             using var audioStream = new MemoryStream(silentWavData);
             using var reader = new WaveFileReader(audioStream);
@@ -91,8 +92,16 @@ public class AudioPlayer : IDisposable
             // Use same buffer settings as main playback
             wavePlayer.DesiredLatency = 100;
             wavePlayer.NumberOfBuffers = 3;
-            // Use very low but audible volume for effective device warming
-            wavePlayer.Volume = (float)Math.Max(0.001, Math.Min(1.0, this._settings.PreparationVolume));
+
+            // Use very low but audible volume for effective device warming, or silent if volume is 0
+            if (this._settings.PreparationVolume <= 0)
+            {
+                wavePlayer.Volume = 0.0f; // Completely silent
+            }
+            else
+            {
+                wavePlayer.Volume = (float)Math.Max(0.001, Math.Min(1.0, this._settings.PreparationVolume));
+            }
 
             var tcs = new TaskCompletionSource<bool>();
 
@@ -111,50 +120,6 @@ public class AudioPlayer : IDisposable
         {
             // Pre-warming failed, but this is not critical
         }
-    }
-
-    private byte[] CreateSilentWavData(int durationMs)
-    {
-        // Create minimal WAV file with very low tone for device warming
-        const int sampleRate = 22050;
-        const int channels = 1;
-        const int bitsPerSample = 16;
-
-        var samplesCount = (sampleRate * durationMs) / 1000;
-        var dataSize = samplesCount * channels * (bitsPerSample / 8);
-        var fileSize = 44 + dataSize - 8;
-
-        using var stream = new MemoryStream();
-        using var writer = new BinaryWriter(stream);
-
-        // WAV header using ASCII bytes
-        writer.Write(Encoding.ASCII.GetBytes("RIFF"));
-        writer.Write(fileSize);
-        writer.Write(Encoding.ASCII.GetBytes("WAVE"));
-        writer.Write(Encoding.ASCII.GetBytes("fmt "));
-        writer.Write(16); // PCM format chunk size
-        writer.Write((short)1); // PCM format
-        writer.Write((short)channels);
-        writer.Write(sampleRate);
-        writer.Write(sampleRate * channels * (bitsPerSample / 8)); // Byte rate
-        writer.Write((short)(channels * (bitsPerSample / 8))); // Block align
-        writer.Write((short)bitsPerSample);
-        writer.Write(Encoding.ASCII.GetBytes("data"));
-        writer.Write(dataSize);
-
-        // Generate very low amplitude sine wave for effective device warming
-        const double frequency = 440.0; // A4 note
-        const short amplitude = 32; // Very low amplitude (about 0.1% of max)
-
-        for (int i = 0; i < samplesCount; i++)
-        {
-            var time = (double)i / sampleRate;
-            var sineValue = Math.Sin(2 * Math.PI * frequency * time);
-            var sample = (short)(sineValue * amplitude);
-            writer.Write(sample);
-        }
-
-        return stream.ToArray();
     }
 
     // Ensure device preparation is complete before playback
@@ -192,23 +157,15 @@ public class AudioPlayer : IDisposable
             audioStream.Position = 0;
             var headerBuffer = new byte[12];
             var bytesRead = await audioStream.ReadAsync(headerBuffer, 0, 12);
-            ReadOnlySpan<byte> headerSpan = headerBuffer;
-            ref readonly var headerRef = ref headerSpan[0];
             audioStream.Position = 0;
 
-            // Check for WAV header (RIFF....WAVE) using ref for efficient access
-            bool isWav = bytesRead >= 12 &&
-                         headerRef == 'R' && headerSpan[1] == 'I' && headerSpan[2] == 'F' && headerSpan[3] == 'F' &&
-                         headerSpan[8] == 'W' && headerSpan[9] == 'A' && headerSpan[10] == 'V' && headerSpan[11] == 'E';
+            var format = AudioConversionUtility.DetectFormat(headerBuffer);
 
-            // Check for MP3 header (starts with 0xFF) using ref for efficient access
-            bool isMp3 = bytesRead >= 2 && headerRef == 0xFF && (headerSpan[1] & 0xE0) == 0xE0;
-
-            if (isWav)
+            if (format == AudioFormat.WAV)
             {
                 reader = new WaveFileReader(audioStream);
             }
-            else if (isMp3)
+            else if (format == AudioFormat.MP3)
             {
                 reader = new Mp3FileReader(audioStream);
             }
@@ -330,7 +287,7 @@ public class AudioPlayer : IDisposable
         }
     }
 
-    public async Task PlayAudioSequentiallyWithGenerationAsync(List<TextSegment> segments, Task? generationTask, FillerManager? fillerManager = null, CancellationToken cancellationToken = default)
+    public async Task PlayAudioSequentiallyWithGenerationAsync(List<TextSegment> segments, AudioProcessingChannel? processingChannel, FillerManager? fillerManager = null, CancellationToken cancellationToken = default)
     {
         if (this._disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
@@ -382,20 +339,55 @@ public class AudioPlayer : IDisposable
                         }
                     }
 
-                    // Wait for this specific segment to be generated with safety checks
-                    var waitStartTime = DateTime.UtcNow;
-                    const int maxWaitTimeMs = 30000; // 30秒でタイムアウト
-
-                    while ((!segment.IsCached || segment.AudioData == null) &&
-                           (DateTime.UtcNow - waitStartTime).TotalMilliseconds < maxWaitTimeMs)
+                    // Use channel-based waiting instead of polling
+                    if (processingChannel != null)
                     {
-                        // Check if generation task completed (all segments done)
-                        if (generationTask?.IsCompleted == true)
+                        try
                         {
-                            break;
-                        }
+                            var segmentRequest = new VoiceRequest
+                            {
+                                Text = segment.Text,
+                                SpeakerId = segment.SpeakerId ?? 1, // Default fallback
+                                Speed = 1.0,
+                                Pitch = 0.0,
+                                Volume = 1.0
+                            };
 
-                        await Task.Delay(100, cancellationToken); // Check every 100ms
+                            var result = await processingChannel.ProcessAudioAsync(segmentRequest, cancellationToken);
+                            if (result.Success && result.AudioData.Length > 0)
+                            {
+                                segment.AudioData = result.AudioData;
+                                segment.IsCached = true;
+                                Log.Debug("セグメント {SegmentNumber} の生成が完了しました", i + 1);
+                            }
+                            else
+                            {
+                                Log.Warning("セグメント {SegmentNumber} の生成に失敗しました: {Error}", i + 1, result.ErrorMessage ?? "Unknown error");
+                                continue;
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            Log.Information("セグメント生成がキャンセルされました");
+                            throw;
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warning(ex, "セグメント {SegmentNumber} の生成に失敗しました。スキップします", i + 1);
+                            continue;
+                        }
+                    }
+                    else
+                    {
+                        // Fallback: wait for segment to be marked as ready (for backward compatibility)
+                        var waitStartTime = DateTime.UtcNow;
+                        const int maxWaitTimeMs = 30000; // 30秒でタイムアウト
+
+                        while ((!segment.IsCached || segment.AudioData == null) &&
+                               (DateTime.UtcNow - waitStartTime).TotalMilliseconds < maxWaitTimeMs)
+                        {
+                            await Task.Delay(100, cancellationToken);
+                        }
                     }
 
                     // Final check after waiting
@@ -433,11 +425,7 @@ public class AudioPlayer : IDisposable
                 }
             }
 
-            // Ensure background generation is complete
-            if (generationTask != null)
-            {
-                await generationTask;
-            }
+            // No need to wait for background generation - channel handles it synchronously
         }
         finally
         {
@@ -456,23 +444,15 @@ public class AudioPlayer : IDisposable
             audioStream.Position = 0;
             var headerBuffer = new byte[12];
             var bytesRead = await audioStream.ReadAsync(headerBuffer, 0, 12);
-            ReadOnlySpan<byte> headerSpan = headerBuffer;
-            ref readonly var headerRef = ref headerSpan[0];
             audioStream.Position = 0;
 
-            // Check for WAV header (RIFF....WAVE) using ref for efficient access
-            bool isWav = bytesRead >= 12 &&
-                         headerRef == 'R' && headerSpan[1] == 'I' && headerSpan[2] == 'F' && headerSpan[3] == 'F' &&
-                         headerSpan[8] == 'W' && headerSpan[9] == 'A' && headerSpan[10] == 'V' && headerSpan[11] == 'E';
+            var format = AudioConversionUtility.DetectFormat(headerBuffer);
 
-            // Check for MP3 header (starts with 0xFF) using ref for efficient access
-            bool isMp3 = bytesRead >= 2 && headerRef == 0xFF && (headerSpan[1] & 0xE0) == 0xE0;
-
-            if (isWav)
+            if (format == AudioFormat.WAV)
             {
                 reader = new WaveFileReader(audioStream);
             }
-            else if (isMp3)
+            else if (format == AudioFormat.MP3)
             {
                 reader = new Mp3FileReader(audioStream);
             }
@@ -570,23 +550,15 @@ public class AudioPlayer : IDisposable
             audioStream.Position = 0;
             var headerBuffer = new byte[12];
             var bytesRead = await audioStream.ReadAsync(headerBuffer, 0, 12);
-            ReadOnlySpan<byte> headerSpan = headerBuffer;
-            ref readonly var headerRef = ref headerSpan[0];
             audioStream.Position = 0;
 
-            // Check for WAV header (RIFF....WAVE) using ref for efficient access
-            bool isWav = bytesRead >= 12 &&
-                         headerRef == 'R' && headerSpan[1] == 'I' && headerSpan[2] == 'F' && headerSpan[3] == 'F' &&
-                         headerSpan[8] == 'W' && headerSpan[9] == 'A' && headerSpan[10] == 'V' && headerSpan[11] == 'E';
+            var format = AudioConversionUtility.DetectFormat(headerBuffer);
 
-            // Check for MP3 header (starts with 0xFF) using ref for efficient access
-            bool isMp3 = bytesRead >= 2 && headerRef == 0xFF && (headerSpan[1] & 0xE0) == 0xE0;
-
-            if (isWav)
+            if (format == AudioFormat.WAV)
             {
                 reader = new WaveFileReader(audioStream);
             }
-            else if (isMp3)
+            else if (format == AudioFormat.MP3)
             {
                 reader = new Mp3FileReader(audioStream);
             }

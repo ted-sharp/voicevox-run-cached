@@ -8,4 +8,5 @@ public class TextSegment(string text = "", int position = 0, int length = 0)
     public int Length { get; set; } = length;
     public bool IsCached { get; set; }
     public byte[]? AudioData { get; set; }
+    public int? SpeakerId { get; set; } // Speaker ID for the segment
 }
