@@ -2,6 +2,9 @@ using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
 using Polly.Timeout;
+using System.Net;
+using System.Net.Sockets;
+using System.Net.WebSockets;
 using Serilog;
 
 namespace VoicevoxRunCached.Services;
@@ -12,6 +15,11 @@ public class RetryPolicyService
     private readonly AsyncCircuitBreakerPolicy _circuitBreakerPolicy;
     private readonly AsyncPolicy _combinedPolicy;
 
+    // 新しいプロパティ
+    private readonly int _maxRetryAttempts = 3;
+    private readonly int _baseDelayMs = 1000; // 1秒
+    private readonly int _maxDelayMs = 30000; // 30秒
+
     public RetryPolicyService()
     {
         // 指数バックオフ付きリトライポリシー
@@ -20,12 +28,12 @@ public class RetryPolicyService
             .Or<TimeoutException>()
             .Or<OperationCanceledException>()
             .WaitAndRetryAsync(
-                retryCount: 3,
+                retryCount: this._maxRetryAttempts,
                 sleepDurationProvider: retryAttempt =>
                     TimeSpan.FromSeconds(Math.Pow(2, retryAttempt - 1)), // 指数バックオフ: 1s, 2s, 4s
                 onRetry: (exception, timeSpan, retryCount, context) =>
                 {
-                    Log.Warning(exception, "リトライ {RetryCount}/3 - {TimeSpan}後に再試行します", retryCount, timeSpan);
+                    Log.Warning(exception, "リトライ {RetryCount}/{MaxRetries} - {TimeSpan}後に再試行します", retryCount, this._maxRetryAttempts, timeSpan);
                 }
             );
 
@@ -61,38 +69,125 @@ public class RetryPolicyService
     public AsyncPolicy GetCircuitBreakerPolicy() => this._circuitBreakerPolicy;
     public AsyncPolicy GetCombinedPolicy() => this._combinedPolicy;
 
-    public async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> action, string operationName = "操作")
+    public async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> operation, string operationName, CancellationToken cancellationToken = default)
     {
-        try
+        var retryCount = 0;
+        var lastException = default(Exception);
+
+        while (retryCount < this._maxRetryAttempts)
         {
-            Log.Debug("{Operation} を実行中...", operationName);
-            var result = await this._combinedPolicy.ExecuteAsync(action);
-            Log.Debug("{Operation} が正常に完了しました", operationName);
-            return result;
+            try
+            {
+                return await operation();
+            }
+            catch (HttpRequestException ex) when (this.ShouldRetryHttpError(ex))
+            {
+                lastException = ex;
+                retryCount++;
+
+                if (retryCount < this._maxRetryAttempts)
+                {
+                    var delay = this.CalculateDelay(retryCount, ex.StatusCode);
+                    Log.Warning(ex, "HTTP error during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
+                        operationName, delay, retryCount, this._maxRetryAttempts);
+
+                    await Task.Delay(delay, cancellationToken);
+                }
+            }
+            catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException($"Operation '{operationName}' was cancelled", null, cancellationToken);
+            }
+            catch (TaskCanceledException ex)
+            {
+                lastException = ex;
+                retryCount++;
+
+                if (retryCount < this._maxRetryAttempts)
+                {
+                    var delay = this.CalculateDelay(retryCount, null);
+                    Log.Warning(ex, "Timeout during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
+                        operationName, delay, retryCount, this._maxRetryAttempts);
+
+                    await Task.Delay(delay, cancellationToken);
+                }
+            }
+            catch (Exception ex) when (this.ShouldRetryException(ex))
+            {
+                lastException = ex;
+                retryCount++;
+
+                if (retryCount < this._maxRetryAttempts)
+                {
+                    var delay = this.CalculateDelay(retryCount, null);
+                    Log.Warning(ex, "Retryable error during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
+                        operationName, delay, retryCount, this._maxRetryAttempts);
+
+                    await Task.Delay(delay, cancellationToken);
+                }
+            }
+            catch (Exception ex)
+            {
+                // Non-retryable error
+                Log.Error(ex, "Non-retryable error during {OperationName}", operationName);
+                throw;
+            }
         }
-        catch (BrokenCircuitException ex)
+
+        // All retries exhausted
+        var errorMessage = $"Operation '{operationName}' failed after {this._maxRetryAttempts} attempts";
+        if (lastException != null)
         {
-            Log.Error(ex, "{Operation} がサーキットブレーカーによりブロックされました", operationName);
-            throw;
+            throw new InvalidOperationException(errorMessage, lastException);
         }
-        catch (TimeoutRejectedException ex)
-        {
-            Log.Error(ex, "{Operation} がタイムアウトしました", operationName);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "{Operation} が失敗しました", operationName);
-            throw;
-        }
+
+        throw new InvalidOperationException(errorMessage);
     }
 
-    public async Task ExecuteWithRetryAsync(Func<Task> action, string operationName = "操作")
+    private bool ShouldRetryHttpError(HttpRequestException ex)
     {
-        await this.ExecuteWithRetryAsync(async () =>
+        if (!ex.StatusCode.HasValue)
+            return false;
+
+        // Retry on server errors and rate limiting
+        return ex.StatusCode.Value switch
         {
-            await action();
-            return true;
-        }, operationName);
+            HttpStatusCode.InternalServerError => true,
+            HttpStatusCode.BadGateway => true,
+            HttpStatusCode.ServiceUnavailable => true,
+            HttpStatusCode.GatewayTimeout => true,
+            HttpStatusCode.TooManyRequests => true,
+            _ => false
+        };
+    }
+
+    private bool ShouldRetryException(Exception ex)
+    {
+        // Retry on network-related exceptions
+        return ex is IOException ||
+               ex is SocketException ||
+               ex is WebException ||
+               ex.Message.Contains("connection", StringComparison.OrdinalIgnoreCase) ||
+               ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private int CalculateDelay(int retryCount, HttpStatusCode? statusCode)
+    {
+        var baseDelay = this._baseDelayMs;
+
+        // Apply exponential backoff
+        var exponentialDelay = baseDelay * Math.Pow(2, retryCount - 1);
+
+        // Add jitter to prevent thundering herd
+        var jitter = Random.Shared.Next(-100, 100);
+
+        // Special handling for rate limiting
+        if (statusCode == HttpStatusCode.TooManyRequests)
+        {
+            exponentialDelay = Math.Max(exponentialDelay, 1000); // Minimum 1 second for rate limiting
+        }
+
+        var finalDelay = (int)Math.Min(exponentialDelay + jitter, this._maxDelayMs);
+        return Math.Max(finalDelay, 100); // Minimum 100ms
     }
 }

@@ -1,130 +1,248 @@
-using System.Text.RegularExpressions;
-using NAudio.Wave;
+using System.Text;
 using VoicevoxRunCached.Models;
+using Serilog;
 
 namespace VoicevoxRunCached.Services;
 
-public static class TextSegmentProcessor
+/// <summary>
+/// テキストセグメント処理の最適化された実装
+/// </summary>
+public class TextSegmentProcessor
 {
-    private static readonly Regex SentencePattern = new Regex(@"[。．！？\.\!\?]+", RegexOptions.Compiled);
-    private static readonly Regex CleanupPattern = new Regex(@"\s+", RegexOptions.Compiled);
+    private readonly int _maxSegmentLength;
+    private readonly int _maxConcurrentTasks;
+    private readonly SemaphoreSlim _semaphore;
 
-    public static List<TextSegment> SegmentText(string text, params string[] additionalTexts)
+    public TextSegmentProcessor(int maxSegmentLength = 100, int maxConcurrentTasks = 4)
     {
-        // C# 13 Collection expression with spread operator
-        List<string> allTexts = [text, .. additionalTexts];
+        this._maxSegmentLength = maxSegmentLength;
+        this._maxConcurrentTasks = maxConcurrentTasks;
+        this._semaphore = new SemaphoreSlim(maxConcurrentTasks, maxConcurrentTasks);
 
-        // C# 13 Collection expression initialization
-        List<TextSegment> allSegments = [];
-        int globalPosition = 0;
+        Log.Information("TextSegmentProcessor を初期化しました - 最大セグメント長: {MaxLength}, 最大並行タスク数: {MaxConcurrent}",
+            maxSegmentLength, maxConcurrentTasks);
+    }
 
-        foreach (var currentText in allTexts)
+    /// <summary>
+    /// テキストを最適化された方法でセグメントに分割
+    /// </summary>
+    public async Task<List<TextSegment>> ProcessTextAsync(string text, int speakerId = 1, CancellationToken cancellationToken = default)
+    {
+        if (String.IsNullOrWhiteSpace(text))
         {
-            if (String.IsNullOrWhiteSpace(currentText))
-                continue;
-
-            var segments = new List<TextSegment>();
-            var sentences = SentencePattern.Split(currentText);
-            var matches = SentencePattern.Matches(currentText);
-
-            int position = 0;
-            for (int i = 0; i < sentences.Length; i++)
-            {
-                var sentence = sentences[i].Trim();
-                if (String.IsNullOrEmpty(sentence))
-                    continue;
-
-                // Add punctuation back to the sentence
-                if (i < matches.Count)
-                {
-                    sentence += matches[i].Value;
-                }
-
-                // Clean up extra whitespace
-                sentence = CleanupPattern.Replace(sentence, " ").Trim();
-
-                if (!String.IsNullOrEmpty(sentence))
-                {
-                    segments.Add(new TextSegment
-                    {
-                        Text = sentence,
-                        Position = globalPosition + position,
-                        Length = sentence.Length
-                    });
-                    position += sentence.Length;
-                }
-            }
-
-            // If no punctuation found, treat entire text as one segment
-            if (segments.Count == 0)
-            {
-                segments.Add(new TextSegment
-                {
-                    Text = currentText.Trim(),
-                    Position = globalPosition,
-                    Length = currentText.Length
-                });
-            }
-
-            allSegments.AddRange(segments);
-            globalPosition += currentText.Length;
+            return new List<TextSegment>();
         }
 
-        return allSegments;
-    }
-
-    public static List<byte[]> GetSegmentAudioData(params List<byte[]> audioSegments)
-    {
-        // Return segments for sequential playback instead of concatenation  
-        return audioSegments.Where(segment => segment.Length > 0).ToList();
-    }
-
-    public static List<TextSegment> ProcessMultipleTexts(params string[] texts)
-    {
-        // C# 13 Collection expression initialization
-        List<TextSegment> allSegments = [];
-        int globalPosition = 0;
-
-        foreach (var text in texts)
+        try
         {
-            var segments = SegmentText(text);
-            foreach (var segment in segments)
+            // 基本的なセグメント分割
+            var segments = this.SplitTextIntoSegments(text);
+
+            // 並行処理でセグメントを最適化
+            var optimizedSegments = await this.OptimizeSegmentsParallelAsync(segments, speakerId, cancellationToken);
+
+            Log.Information("テキスト処理が完了しました - 元のセグメント数: {OriginalCount}, 最適化後: {OptimizedCount}",
+                segments.Count, optimizedSegments.Count);
+
+            return optimizedSegments;
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Information("テキスト処理がキャンセルされました");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "テキスト処理中にエラーが発生しました");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// テキストをセグメントに分割（最適化された実装）
+    /// </summary>
+    private List<string> SplitTextIntoSegments(string text)
+    {
+        var segments = new List<string>();
+        var currentSegment = new StringBuilder();
+        var sentenceEndings = new[] { '。', '！', '？', '.', '!', '?' };
+        var lineBreaks = new[] { '\n', '\r' };
+
+        for (int i = 0; i < text.Length; i++)
+        {
+            var currentChar = text[i];
+            currentSegment.Append(currentChar);
+
+            // センテンス終了文字または改行でセグメント分割
+            if (sentenceEndings.Contains(currentChar) || lineBreaks.Contains(currentChar))
             {
-                segment.Position = globalPosition;
-                globalPosition += segment.Length;
-                allSegments.Add(segment);
+                var segment = currentSegment.ToString().Trim();
+                if (!String.IsNullOrWhiteSpace(segment))
+                {
+                    segments.Add(segment);
+                }
+                currentSegment.Clear();
+            }
+            // 最大長に達した場合の強制分割
+            else if (currentSegment.Length >= this._maxSegmentLength)
+            {
+                var segment = currentSegment.ToString().Trim();
+                if (!String.IsNullOrWhiteSpace(segment))
+                {
+                    segments.Add(segment);
+                }
+                currentSegment.Clear();
             }
         }
 
-        return allSegments;
-    }
-
-    public static List<TextSegment> MergeSegments(params List<TextSegment>[] segmentCollections)
-    {
-        // C# 13 Collection expression initialization
-        List<TextSegment> mergedSegments = [];
-        int position = 0;
-
-        foreach (var collection in segmentCollections)
+        // 残りのテキストを追加
+        var remainingSegment = currentSegment.ToString().Trim();
+        if (!String.IsNullOrWhiteSpace(remainingSegment))
         {
-            if (collection != null)
-            {
-                foreach (var segment in collection)
-                {
-                    var newSegment = new TextSegment
-                    {
-                        Text = segment.Text,
-                        Position = position,
-                        Length = segment.Length,
-                        IsCached = segment.IsCached,
-                        AudioData = segment.AudioData
-                    };
-                    mergedSegments.Add(newSegment);
-                    position += segment.Length;
-                }
-            }
+            segments.Add(remainingSegment);
         }
 
-        return mergedSegments;
+        return segments;
     }
+
+    /// <summary>
+    /// 並行処理でセグメントを最適化
+    /// </summary>
+    private async Task<List<TextSegment>> OptimizeSegmentsParallelAsync(List<string> segments, int speakerId, CancellationToken cancellationToken)
+    {
+        var optimizedSegments = new List<TextSegment>();
+        var tasks = new List<Task<TextSegment>>();
+
+        // セマフォを使用して並行タスク数を制限
+        foreach (var segment in segments)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                break;
+
+            var task = this.ProcessSegmentWithSemaphoreAsync(segment, speakerId, cancellationToken);
+            tasks.Add(task);
+        }
+
+        // すべてのタスクの完了を待機
+        var results = await Task.WhenAll(tasks);
+
+        // 結果を順序通りに並べ替え
+        optimizedSegments.AddRange(results);
+
+        return optimizedSegments;
+    }
+
+    /// <summary>
+    /// セマフォを使用してセグメントを処理
+    /// </summary>
+    private async Task<TextSegment> ProcessSegmentWithSemaphoreAsync(string text, int speakerId, CancellationToken cancellationToken)
+    {
+        await this._semaphore.WaitAsync(cancellationToken);
+
+        try
+        {
+            return await Task.Run(() => this.ProcessSegment(text, speakerId), cancellationToken);
+        }
+        finally
+        {
+            this._semaphore.Release();
+        }
+    }
+
+    /// <summary>
+    /// 個別セグメントの処理
+    /// </summary>
+    private TextSegment ProcessSegment(string text, int speakerId)
+    {
+        // セグメントの最適化処理
+        var optimizedText = this.OptimizeSegmentText(text);
+
+        return new TextSegment
+        {
+            Text = optimizedText,
+            Position = 0, // 位置は後で計算
+            Length = optimizedText.Length,
+            SpeakerId = speakerId,
+            IsCached = false
+        };
+    }
+
+    /// <summary>
+    /// セグメントテキストの最適化
+    /// </summary>
+    private string OptimizeSegmentText(string text)
+    {
+        if (String.IsNullOrWhiteSpace(text))
+            return text;
+
+        // 前後の空白を削除
+        var optimized = text.Trim();
+
+        // 連続する空白を単一の空白に置換
+        optimized = System.Text.RegularExpressions.Regex.Replace(optimized, @"\s+", " ");
+
+        // 空文字列の場合は最小限のテキストを返す
+        if (String.IsNullOrWhiteSpace(optimized))
+        {
+            optimized = "。";
+        }
+
+        return optimized;
+    }
+
+    /// <summary>
+    /// セグメントの位置情報を更新
+    /// </summary>
+    public void UpdateSegmentPositions(List<TextSegment> segments)
+    {
+        var currentPosition = 0;
+
+        foreach (var segment in segments)
+        {
+            segment.Position = currentPosition;
+            currentPosition += segment.Length;
+        }
+    }
+
+    /// <summary>
+    /// セグメントの統計情報を取得
+    /// </summary>
+    public SegmentStatistics GetSegmentStatistics(List<TextSegment> segments)
+    {
+        if (segments == null || segments.Count == 0)
+        {
+            return new SegmentStatistics();
+        }
+
+        var totalLength = segments.Sum(s => s.Length);
+        var averageLength = (double)totalLength / segments.Count;
+        var minLength = segments.Min(s => s.Length);
+        var maxLength = segments.Max(s => s.Length);
+
+        return new SegmentStatistics
+        {
+            TotalSegments = segments.Count,
+            TotalLength = totalLength,
+            AverageLength = averageLength,
+            MinLength = minLength,
+            MaxLength = maxLength
+        };
+    }
+
+    public void Dispose()
+    {
+        this._semaphore?.Dispose();
+    }
+}
+
+/// <summary>
+/// セグメント統計情報
+/// </summary>
+public class SegmentStatistics
+{
+    public int TotalSegments { get; set; }
+    public int TotalLength { get; set; }
+    public double AverageLength { get; set; }
+    public int MinLength { get; set; }
+    public int MaxLength { get; set; }
 }

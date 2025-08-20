@@ -337,21 +337,30 @@ public class CommandHandler
                 var segmentStartTime = DateTime.UtcNow;
                 ConsoleHelper.WriteLine("Processing segments...", this._logger);
                 cancellationToken.ThrowIfCancellationRequested();
-                var segments = await cacheManager.ProcessTextSegmentsAsync(request);
+
+                // テキストセグメントを分割
+                var textProcessor = new TextSegmentProcessor();
+                var segments = await textProcessor.ProcessTextAsync(request.Text, request.SpeakerId, cancellationToken);
+
+                // セグメントの位置情報を更新
+                textProcessor.UpdateSegmentPositions(segments);
+
+                // キャッシュからセグメントを処理
+                var processedSegments = await cacheManager.ProcessTextSegmentsAsync(segments, request, cancellationToken);
 
                 if (verbose)
                 {
                     ConsoleHelper.WriteLine($"Segment processing completed in {(DateTime.UtcNow - segmentStartTime).TotalMilliseconds:F1}ms", this._logger);
                 }
-                var cachedCount = segments.Count(s => s.IsCached);
-                var totalCount = segments.Count;
+                var cachedCount = processedSegments.Count(s => s.IsCached);
+                var totalCount = processedSegments.Count;
 
                 if (cachedCount > 0)
                 {
                     ConsoleHelper.WriteSuccess($"Found {cachedCount}/{totalCount} segments in cache!", this._logger);
                 }
 
-                var uncachedSegments = segments.Where(s => !s.IsCached).ToList();
+                var uncachedSegments = processedSegments.Where(s => !s.IsCached).ToList();
 
                 // Start background generation for uncached segments
                 AudioProcessingChannel? processingChannel = null;
@@ -372,7 +381,7 @@ public class CommandHandler
                 ConsoleHelper.WriteInfo("Playing audio...", this._logger);
                 using var audioPlayer = new AudioPlayer(this._settings.Audio);
                 var fillerManager = this._settings.Filler.Enabled ? new FillerManager(this._settings.Filler, cacheManager, this._settings.VoiceVox.DefaultSpeaker) : null;
-                await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, processingChannel, fillerManager, cancellationToken);
+                await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(processedSegments, processingChannel, fillerManager, cancellationToken);
 
                 if (verbose)
                 {

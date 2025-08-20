@@ -83,6 +83,7 @@ public class AudioPlayer : IDisposable
             using var audioStream = new MemoryStream(silentWavData);
             using var reader = new WaveFileReader(audioStream);
             using var wavePlayer = new WaveOutEvent();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)); // 5秒でタイムアウト
 
             if (this._settings.OutputDevice >= 0)
             {
@@ -113,12 +114,16 @@ public class AudioPlayer : IDisposable
             wavePlayer.Init(reader);
             wavePlayer.Play();
 
-            // Wait for pre-warming to complete or timeout after 2 seconds
-            await tcs.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            // Wait for pre-warming to complete with timeout
+            await tcs.Task.WaitAsync(cts.Token);
         }
-        catch
+        catch (OperationCanceledException)
         {
-            // Pre-warming failed, but this is not critical
+            Log.Debug("Device pre-warming timed out");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Device pre-warming failed");
         }
     }
 
@@ -657,23 +662,89 @@ public class AudioPlayer : IDisposable
     {
         if (!this._disposed)
         {
-            this.StopAudio();
-
-            // Clean up device preparation task
-            if (this._devicePreparationTask != null)
+            try
             {
+                this.StopAudio();
+
+                // Clean up device preparation task
+                if (this._devicePreparationTask != null)
+                {
+                    try
+                    {
+                        // 非同期タスクの適切な破棄
+                        if (!this._devicePreparationTask.IsCompleted)
+                        {
+                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                            this._devicePreparationTask.Wait(cts.Token);
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        Log.Debug("Device preparation task cleanup timed out");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "Error during device preparation task cleanup");
+                    }
+                }
+
+                // Clean up WASAPI device
+                if (this._wasapiDevice != null)
+                {
+                    try
+                    {
+                        this._wasapiDevice.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "Error disposing WASAPI device");
+                    }
+                    finally
+                    {
+                        this._wasapiDevice = null;
+                    }
+                }
+
+                this._disposed = true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Error during AudioPlayer disposal");
+            }
+            finally
+            {
+                GC.SuppressFinalize(this);
+            }
+        }
+    }
+
+    // Finalizer for safety
+    ~AudioPlayer()
+    {
+        this.Dispose(false);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!this._disposed)
+        {
+            if (disposing)
+            {
+                // Dispose managed resources
+                this.Dispose();
+            }
+            else
+            {
+                // Finalizer called - dispose unmanaged resources only
                 try
                 {
-                    this._devicePreparationTask.Wait(1000); // Wait up to 1 second
+                    this.StopAudio();
                 }
                 catch
                 {
-                    // Ignore cleanup errors
+                    // Ignore errors in finalizer
                 }
             }
-
-            this._disposed = true;
         }
-        GC.SuppressFinalize(this);
     }
 }

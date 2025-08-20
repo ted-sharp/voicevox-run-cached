@@ -1,10 +1,11 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
+using Serilog;
 using System.Runtime.InteropServices;
 using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services;
-using Serilog;
+using VoicevoxRunCached.Configuration.Validators;
 
 namespace VoicevoxRunCached;
 
@@ -52,10 +53,15 @@ class Program
         }
 
         // Configure logging
-        var (minLogLevel, useJsonConsole) = LoggingManager.ParseLogOptions(args, settings);
-        LoggingManager.ConfigureSerilog(configuration, args, settings, minLogLevel, useJsonConsole);
+        var loggingManager = new LoggingManager(settings.Logging, configuration);
+        loggingManager.ConfigureSerilog();
 
-        using var loggerFactory = LoggingManager.CreateLoggerFactory(minLogLevel, useJsonConsole);
+        // Create logger factory
+        var loggerFactory = LoggerFactory.Create(builder =>
+        {
+            builder.ClearProviders();
+            builder.AddSerilog(Log.Logger, dispose: false);
+        });
         var logger = loggerFactory.CreateLogger("VoicevoxRunCached");
 
         // Log application startup

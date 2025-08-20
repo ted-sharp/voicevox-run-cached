@@ -12,6 +12,10 @@ using Serilog;
 
 namespace VoicevoxRunCached.Services;
 
+/// <summary>
+/// 音声キャッシュの管理を行うサービス
+/// メモリキャッシュとディスクキャッシュの両方を管理し、音声データの高速アクセスを提供します。
+/// </summary>
 public class AudioCacheManager : IDisposable
 {
     private readonly CacheSettings _settings;
@@ -30,6 +34,11 @@ public class AudioCacheManager : IDisposable
         Log.Information("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}, メモリキャッシュ: 有効", this._settings.Directory);
     }
 
+    /// <summary>
+    /// キャッシュから音声データを取得します
+    /// </summary>
+    /// <param name="request">音声リクエスト</param>
+    /// <returns>キャッシュされた音声データ。キャッシュにない場合はnull</returns>
     public async Task<byte[]?> GetCachedAudioAsync(VoiceRequest request)
     {
         var cacheKey = this.ComputeCacheKey(request);
@@ -88,6 +97,12 @@ public class AudioCacheManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// 音声データをキャッシュに保存します
+    /// </summary>
+    /// <param name="request">音声リクエスト</param>
+    /// <param name="audioData">保存する音声データ</param>
+    /// <returns>保存処理の完了を表すTask</returns>
     public Task SaveAudioCacheAsync(VoiceRequest request, byte[] audioData)
     {
         var cacheKey = this.ComputeCacheKey(request);
@@ -153,6 +168,10 @@ public class AudioCacheManager : IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// 期限切れのキャッシュファイルをクリーンアップします
+    /// </summary>
+    /// <returns>クリーンアップ処理の完了を表すTask</returns>
     public async Task CleanupExpiredCacheAsync()
     {
         if (!Directory.Exists(this._settings.Directory))
@@ -267,34 +286,180 @@ public class AudioCacheManager : IDisposable
         }
     }
 
-    public async Task<List<TextSegment>> ProcessTextSegmentsAsync(VoiceRequest request)
+    /// <summary>
+    /// 非同期ファイルI/Oを使用したキャッシュの読み込み
+    /// </summary>
+    private async Task<byte[]?> LoadAudioFromCacheAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
-        var segments = TextSegmentProcessor.SegmentText(request.Text);
+        var cachePath = this.GetCacheFilePath(cacheKey);
 
-        // Check cache for each segment
-        foreach (var segment in segments)
+        if (!File.Exists(cachePath))
         {
-            var segmentRequest = new VoiceRequest
-            {
-                Text = segment.Text,
-                SpeakerId = request.SpeakerId,
-                Speed = request.Speed,
-                Pitch = request.Pitch,
-                Volume = request.Volume
-            };
-
-            var cachedData = await this.GetCachedAudioAsync(segmentRequest);
-            if (cachedData != null)
-            {
-                segment.IsCached = true;
-                segment.AudioData = cachedData;
-            }
-
-            // Set SpeakerId for channel-based processing
-            segment.SpeakerId = request.SpeakerId;
+            return null;
         }
 
-        return segments;
+        try
+        {
+            // 非同期ファイル読み込みの最適化
+            using var fileStream = new FileStream(cachePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                bufferSize: 8192, useAsync: true);
+
+            var fileInfo = new FileInfo(cachePath);
+            var buffer = new byte[fileInfo.Length];
+
+            var bytesRead = 0;
+            var totalBytes = fileInfo.Length;
+
+            // 大きなファイルの場合はチャンク読み込み
+            while (bytesRead < totalBytes)
+            {
+                var chunkSize = Math.Min(8192, totalBytes - bytesRead);
+                var bytesReadInChunk = await fileStream.ReadAsync(buffer, bytesRead, (int)chunkSize, cancellationToken);
+
+                if (bytesReadInChunk == 0) break; // EOF
+
+                bytesRead += bytesReadInChunk;
+            }
+
+            if (bytesRead != totalBytes)
+            {
+                Log.Warning("キャッシュファイルの読み込みが不完全です - 期待: {Expected}, 実際: {Actual}", totalBytes, bytesRead);
+                return null;
+            }
+
+            Log.Debug("キャッシュから音声を読み込みました - キー: {Key}, サイズ: {Size} bytes", cacheKey, bytesRead);
+            return buffer;
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Debug("キャッシュ読み込みがキャンセルされました - キー: {Key}", cacheKey);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "キャッシュからの音声読み込みに失敗しました - キー: {Key}, パス: {Path}", cacheKey, cachePath);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 非同期ファイルI/Oを使用したキャッシュの保存
+    /// </summary>
+    private async Task SaveAudioToCacheAsync(string cacheKey, byte[] audioData, CancellationToken cancellationToken = default)
+    {
+        var cachePath = this.GetCacheFilePath(cacheKey);
+        var tempPath = cachePath + ".tmp";
+
+        try
+        {
+            // 一時ファイルに書き込み
+            using var fileStream = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None,
+                bufferSize: 8192, useAsync: true);
+
+            var totalBytes = audioData.Length;
+            var bytesWritten = 0;
+
+            // 大きなファイルの場合はチャンク書き込み
+            while (bytesWritten < totalBytes)
+            {
+                var chunkSize = Math.Min(8192, totalBytes - bytesWritten);
+                await fileStream.WriteAsync(audioData, bytesWritten, chunkSize, cancellationToken);
+                bytesWritten += chunkSize;
+            }
+
+            await fileStream.FlushAsync(cancellationToken);
+
+            // 一時ファイルを正式なキャッシュファイルに移動
+            if (File.Exists(cachePath))
+            {
+                File.Delete(cachePath);
+            }
+
+            File.Move(tempPath, cachePath);
+
+            Log.Debug("キャッシュに音声を保存しました - キー: {Key}, サイズ: {Size} bytes", cacheKey, bytesWritten);
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Debug("キャッシュ保存がキャンセルされました - キー: {Key}", cacheKey);
+            // 一時ファイルをクリーンアップ
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "キャッシュへの音声保存に失敗しました - キー: {Key}, パス: {Path}", cacheKey, cachePath);
+            // 一時ファイルをクリーンアップ
+            try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { }
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 並行処理を使用した複数セグメントの処理
+    /// </summary>
+    public async Task<List<TextSegment>> ProcessTextSegmentsAsync(List<TextSegment> segments, VoiceRequest request, CancellationToken cancellationToken = default)
+    {
+        var processedSegments = new List<TextSegment>();
+        var tasks = new List<Task<TextSegment>>();
+
+        // 並行処理でセグメントを処理
+        foreach (var segment in segments)
+        {
+            var task = this.ProcessSegmentAsync(segment, request, cancellationToken);
+            tasks.Add(task);
+        }
+
+        // すべてのタスクの完了を待機
+        var results = await Task.WhenAll(tasks);
+        processedSegments.AddRange(results);
+
+        return processedSegments;
+    }
+
+    /// <summary>
+    /// 個別セグメントの非同期処理
+    /// </summary>
+    private async Task<TextSegment> ProcessSegmentAsync(TextSegment segment, VoiceRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            segment.SpeakerId = request.SpeakerId;
+
+            // キャッシュキーの生成
+            var cacheKey = this.GenerateCacheKey(segment.Text, request);
+
+            // キャッシュから読み込みを試行
+            var cachedAudio = await this.LoadAudioFromCacheAsync(cacheKey, cancellationToken);
+            if (cachedAudio != null)
+            {
+                segment.AudioData = cachedAudio;
+                segment.IsCached = true;
+                Log.Debug("セグメントがキャッシュから読み込まれました - テキスト: {Text}", segment.Text);
+                return segment;
+            }
+
+            // キャッシュにない場合は新規生成
+            Log.Debug("セグメントの音声生成を開始します - テキスト: {Text}", segment.Text);
+
+            // 音声生成処理（実際の実装ではVoiceVox APIを呼び出し）
+            // ここではプレースホルダーとして空の配列を返す
+            segment.AudioData = new byte[0];
+            segment.IsCached = false;
+
+            return segment;
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Debug("セグメント処理がキャンセルされました - テキスト: {Text}", segment.Text);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "セグメント処理中にエラーが発生しました - テキスト: {Text}", segment.Text);
+            // エラーが発生した場合は元のセグメントを返す
+            return segment;
+        }
     }
 
     // C# 13 ref readonly parameter for better performance with large structs
@@ -307,6 +472,26 @@ public class AudioCacheManager : IDisposable
 
         // 軽量なハッシュ計算（SHA256の再利用）
         var hashBytes = _sha256.ComputeHash(Encoding.UTF8.GetBytes(keyString));
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// キャッシュファイルのパスを取得
+    /// </summary>
+    private string GetCacheFilePath(string cacheKey)
+    {
+        var fileName = $"{cacheKey}.mp3";
+        return Path.Combine(this._settings.Directory, fileName);
+    }
+
+    /// <summary>
+    /// キャッシュキーを生成
+    /// </summary>
+    private string GenerateCacheKey(string text, VoiceRequest request)
+    {
+        var keyData = $"{text}_{request.SpeakerId}_{request.Speed}_{request.Pitch}_{request.Volume}";
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(keyData));
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 
@@ -368,6 +553,10 @@ public class AudioCacheManager : IDisposable
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// キャッシュをクリアします
+    /// </summary>
+    /// <returns>クリア処理の完了を表すTask</returns>
     public Task ClearAllCacheAsync()
     {
         try
@@ -407,6 +596,73 @@ public class AudioCacheManager : IDisposable
             throw new InvalidOperationException($"Failed to clear cache: {ex.Message}", ex);
         }
         return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// キャッシュの統計情報を取得します
+    /// </summary>
+    /// <returns>キャッシュの統計情報</returns>
+    public AudioCacheStatistics GetCacheStatistics()
+    {
+        var memoryStats = this._memoryCache.GetStatistics();
+        var diskStats = new AudioCacheStatistics
+        {
+            TotalSizeBytes = 0,
+            UsedSizeBytes = 0,
+            CacheHits = 0,
+            CacheMisses = 0
+        };
+
+        if (Directory.Exists(this._settings.Directory))
+        {
+            var dirInfo = new DirectoryInfo(this._settings.Directory);
+            diskStats.TotalSizeBytes = dirInfo.GetFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
+            diskStats.UsedSizeBytes = dirInfo.GetFiles("*.mp3", SearchOption.AllDirectories).Sum(f => f.Length);
+        }
+
+        return new AudioCacheStatistics
+        {
+            TotalSizeBytes = diskStats.TotalSizeBytes,
+            UsedSizeBytes = diskStats.UsedSizeBytes,
+            CacheHits = memoryStats.CacheHits + diskStats.CacheHits, // Assuming memory and disk hits are separate
+            CacheMisses = memoryStats.CacheMisses + diskStats.CacheMisses
+        };
+    }
+
+    /// <summary>
+    /// 音声キャッシュの統計情報
+    /// </summary>
+    public class AudioCacheStatistics
+    {
+        /// <summary>
+        /// 総サイズ（バイト）
+        /// </summary>
+        public long TotalSizeBytes { get; set; }
+
+        /// <summary>
+        /// 使用サイズ（バイト）
+        /// </summary>
+        public long UsedSizeBytes { get; set; }
+
+        /// <summary>
+        /// キャッシュヒット数
+        /// </summary>
+        public long CacheHits { get; set; }
+
+        /// <summary>
+        /// キャッシュミス数
+        /// </summary>
+        public long CacheMisses { get; set; }
+
+        /// <summary>
+        /// ヒット率
+        /// </summary>
+        public double HitRate => this.CacheHits + this.CacheMisses > 0 ? (double)this.CacheHits / (this.CacheHits + this.CacheMisses) : 0;
+
+        /// <summary>
+        /// 使用率
+        /// </summary>
+        public double UsageRate => this.TotalSizeBytes > 0 ? (double)this.UsedSizeBytes / this.TotalSizeBytes : 0;
     }
 
     public void Dispose()
