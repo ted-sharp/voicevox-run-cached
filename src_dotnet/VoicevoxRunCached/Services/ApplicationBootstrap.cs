@@ -68,7 +68,7 @@ public class ApplicationBootstrap
     /// <summary>
     /// 設定を検証します
     /// </summary>
-    private static async Task ValidateConfigurationAsync(AppSettings settings)
+    private static Task ValidateConfigurationAsync(AppSettings settings)
     {
         var validationService = new ConfigurationValidationService();
         try
@@ -81,6 +81,8 @@ public class ApplicationBootstrap
             ConsoleHelper.WriteValidationError($"設定の検証に失敗しました: {ex.Message}", null);
             throw;
         }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>
