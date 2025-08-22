@@ -74,7 +74,7 @@ public class VoiceVoxApiClient : IDisposable
         }, $"スピーカー {speakerId} 初期化");
     }
 
-        public async Task<string> GenerateAudioQueryAsync(VoiceRequest request, CancellationToken cancellationToken = default)
+    public async Task<string> GenerateAudioQueryAsync(VoiceRequest request, CancellationToken cancellationToken = default)
     {
         try
         {

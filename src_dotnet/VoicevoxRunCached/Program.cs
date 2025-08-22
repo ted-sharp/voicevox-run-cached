@@ -121,8 +121,8 @@ class Program
             var testArgs = new[] { testMessage }.Concat(remaining).ToArray();
 
             // デバッグ用のログ出力
-            logger.LogInformation("Test args constructed: {TestArgs}", string.Join(" ", testArgs));
-            ConsoleHelper.WriteLine($"Debug: Test args: {string.Join(" ", testArgs)}", logger);
+            logger.LogInformation("Test args constructed: {TestArgs}", String.Join(" ", testArgs));
+            ConsoleHelper.WriteLine($"Debug: Test args: {String.Join(" ", testArgs)}", logger);
 
             // Parse arguments and handle text-to-speech with test args
             var testRequest = ArgumentParser.ParseArguments(testArgs, settings);
