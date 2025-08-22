@@ -28,7 +28,7 @@ public class IndividualSegmentPlayer
     /// <param name="isFirstSegment">最初のセグメントかどうか</param>
     /// <param name="cancellationToken">キャンセレーショントークン</param>
     /// <returns>再生完了を表すTask</returns>
-        public async Task PlaySegmentAsync(byte[] audioData, bool isFirstSegment = false, CancellationToken cancellationToken = default)
+    public async Task PlaySegmentAsync(byte[] audioData, bool isFirstSegment = false, CancellationToken cancellationToken = default)
     {
         if (this._disposed)
             throw new ObjectDisposedException(nameof(IndividualSegmentPlayer));

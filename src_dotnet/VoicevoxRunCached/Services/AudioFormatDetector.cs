@@ -35,7 +35,7 @@ public class AudioFormatDetector
         {
             AudioFormat.WAV => new WaveFileReader(audioStream),
             AudioFormat.MP3 => new Mp3FileReader(audioStream),
-            _ => CreateFallbackWaveStream(audioStream)
+            _ => this.CreateFallbackWaveStream(audioStream)
         };
     }
 

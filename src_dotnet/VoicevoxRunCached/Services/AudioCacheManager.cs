@@ -107,10 +107,9 @@ public class AudioCacheManager : IDisposable
     /// 最大サイズ制限によるキャッシュクリーンアップを実行します
     /// </summary>
     /// <param name="cancellationToken">キャンセレーショントークン</param>
-    /// <returns>クリーンアップ処理の完了を表すTask</returns>
-    public async Task CleanupByMaxSizeAsync(CancellationToken cancellationToken = default)
+    public void CleanupByMaxSize(CancellationToken cancellationToken = default)
     {
-        await this._cleanupService.CleanupByMaxSizeAsync(cancellationToken);
+        this._cleanupService.CleanupByMaxSize(cancellationToken);
     }
 
 
@@ -212,8 +211,7 @@ public class AudioCacheManager : IDisposable
     /// <summary>
     /// キャッシュをクリアします
     /// </summary>
-    /// <returns>クリア処理の完了を表すTask</returns>
-    public async Task ClearAllCacheAsync()
+    public void ClearAllCache()
     {
         try
         {
@@ -221,7 +219,13 @@ public class AudioCacheManager : IDisposable
             this._memoryCache.Clear();
 
             // ディスクキャッシュをクリア
-            await this._diskCacheService.ClearAllCacheFilesAsync();
+            // ディスクキャッシュのクリア処理を実装
+            var cacheFiles = this._diskCacheService.GetCacheFiles();
+            foreach (var file in cacheFiles)
+            {
+                var cacheKey = Path.GetFileNameWithoutExtension(file);
+                this._diskCacheService.DeleteCacheFile(cacheKey);
+            }
 
             Log.Information("すべてのキャッシュをクリアしました - メモリ・ディスク共にクリア済み");
         }

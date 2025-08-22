@@ -29,7 +29,7 @@ public class CacheCommandHandler
             using var spinner = new ProgressSpinner("Clearing audio cache...");
             var cacheManager = new AudioCacheManager(this._settings.Cache);
 
-            await cacheManager.ClearAllCacheAsync();
+            cacheManager.ClearAllCache();
 
             // フィラーキャッシュも設定されたフィラーディレクトリを使用してクリア
             var fillerManager = new FillerManager(this._settings.Filler, cacheManager, this._settings.VoiceVox.DefaultSpeaker);

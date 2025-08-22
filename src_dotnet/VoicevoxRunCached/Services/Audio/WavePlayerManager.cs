@@ -132,7 +132,7 @@ public class WavePlayerManager : IDisposable
         }
     }
 
-        /// <summary>
+    /// <summary>
     /// 音声デバイスの情報を取得します
     /// </summary>
     /// <returns>音声デバイス情報</returns>
@@ -197,7 +197,7 @@ public class AudioDeviceInfo
 {
     public int TotalDevices { get; set; }
     public int CurrentDevice { get; set; }
-    public string CurrentDeviceName { get; set; } = string.Empty;
+    public string CurrentDeviceName { get; set; } = String.Empty;
     public double Volume { get; set; }
     public int DesiredLatency { get; set; }
     public int NumberOfBuffers { get; set; }
