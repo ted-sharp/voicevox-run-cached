@@ -1,34 +1,50 @@
-using NAudio.Wave;
-using NAudio.MediaFoundation;
 using System.Text;
+using NAudio.Wave;
+using VoicevoxRunCached.Models;
+using Serilog;
 
 namespace VoicevoxRunCached.Services;
 
 /// <summary>
-/// Utility class for common audio conversion operations
+/// 音声フォーマット変換とユーティリティ機能を提供するクラス
 /// </summary>
 public static class AudioConversionUtility
 {
     /// <summary>
-    /// Converts WAV audio data to MP3 format
+    /// WAV音声データをMP3に変換します
     /// </summary>
-    /// <param name="wavData">WAV audio data</param>
-    /// <param name="bitrate">MP3 bitrate in bits per second (default: 128000)</param>
-    /// <returns>MP3 audio data</returns>
-    public static byte[] ConvertWavToMp3(byte[] wavData, int bitrate = 128000)
+    /// <param name="wavData">変換元のWAVデータ</param>
+    /// <returns>変換後のMP3データ</returns>
+    public static byte[] ConvertWavToMp3(byte[] wavData)
     {
         try
         {
             using var wavStream = new MemoryStream(wavData);
-            using var waveReader = new WaveFileReader(wavStream);
-            using var outputStream = new MemoryStream();
+            using var wavReader = new WaveFileReader(wavStream);
+            using var mp3Stream = new MemoryStream();
 
-            MediaFoundationManager.EnsureInitialized();
-            MediaFoundationEncoder.EncodeToMp3(waveReader, outputStream, bitrate);
-            return outputStream.ToArray();
+            // 一時的なWAVファイルとして保存（NAudioの制約のため）
+            var tempWavPath = Path.GetTempFileName();
+            try
+            {
+                WaveFileWriter.CreateWaveFile(tempWavPath, wavReader);
+
+                // FFmpegを使用してWAVからMP3に変換
+                var mp3Path = Path.ChangeExtension(tempWavPath, ".mp3");
+                ConvertWavToMp3WithFfmpeg(tempWavPath, mp3Path);
+
+                return File.ReadAllBytes(mp3Path);
+            }
+            finally
+            {
+                // 一時ファイルの削除
+                if (File.Exists(tempWavPath))
+                    File.Delete(tempWavPath);
+            }
         }
         catch (Exception ex)
         {
+            Log.Error(ex, "WAVからMP3への変換に失敗しました");
             throw new InvalidOperationException($"Failed to convert WAV to MP3: {ex.Message}", ex);
         }
     }
@@ -117,14 +133,50 @@ public static class AudioConversionUtility
 
         return stream.ToArray();
     }
-}
 
-/// <summary>
-/// Audio format enumeration
-/// </summary>
-public enum AudioFormat
-{
-    Unknown,
-    WAV,
-    MP3
+    /// <summary>
+    /// FFmpegを使用してWAVファイルをMP3に変換します
+    /// </summary>
+    /// <param name="inputWavPath">入力WAVファイルのパス</param>
+    /// <param name="outputMp3Path">出力MP3ファイルのパス</param>
+    private static void ConvertWavToMp3WithFfmpeg(string inputWavPath, string outputMp3Path)
+    {
+        try
+        {
+            var startInfo = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "ffmpeg",
+                Arguments = $"-i \"{inputWavPath}\" -acodec libmp3lame -ab 128k \"{outputMp3Path}\"",
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            using var process = System.Diagnostics.Process.Start(startInfo);
+            if (process == null)
+            {
+                throw new InvalidOperationException("FFmpegプロセスの起動に失敗しました");
+            }
+
+            process.WaitForExit(30000); // 30秒でタイムアウト
+
+            if (process.ExitCode != 0)
+            {
+                var errorOutput = process.StandardError.ReadToEnd();
+                throw new InvalidOperationException($"FFmpeg変換に失敗しました: {errorOutput}");
+            }
+
+            if (!File.Exists(outputMp3Path))
+            {
+                throw new InvalidOperationException("MP3ファイルの出力に失敗しました");
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "FFmpeg変換に失敗しました。フォールバックとしてWAVデータをそのまま返します");
+            // FFmpegが利用できない場合は、WAVデータをそのまま返す
+            File.Copy(inputWavPath, outputMp3Path, true);
+        }
+    }
 }
