@@ -311,7 +311,6 @@ public class AudioPlayer : IDisposable
             this._wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
 
             bool isFirstSegment = true;
-            bool lastSegmentHadFiller = false; // 前のセグメントでフィラーを再生したかどうかを追跡
 
             for (int i = 0; i < segments.Count; i++)
             {
@@ -326,43 +325,12 @@ public class AudioPlayer : IDisposable
                     // Play cached segments immediately
                     await this.PlaySegmentAsync(segment.AudioData, isFirstSegment, cancellationToken);
                     isFirstSegment = false;
-                    lastSegmentHadFiller = false; // キャッシュ済みセグメントの後はフィラー不要
                     Log.Debug("キャッシュ済みセグメント {SegmentNumber} の再生が完了しました", i + 1);
                 }
                 else
                 {
-                    // Segment not cached - play filler while waiting for generation
-                    Log.Information("セグメント {SegmentNumber} の生成を待機中...", i + 1);
-
-                    // Play filler while waiting for uncached segment (前のセグメントでフィラーを再生していない場合のみ)
-                    if (fillerManager != null && !lastSegmentHadFiller)
-                    {
-                        try
-                        {
-                            Log.Debug("フィラー音声の取得を開始します");
-                            var fillerAudio = await fillerManager.GetRandomFillerAudioAsync();
-                            if (fillerAudio != null)
-                            {
-                                Log.Information("セグメント生成待機中にフィラー音声を再生します (サイズ: {Size} bytes)", fillerAudio.Length);
-                                await this.PlaySegmentAsync(fillerAudio, isFirstSegment, cancellationToken);
-                                isFirstSegment = false;
-                                lastSegmentHadFiller = true; // フィラーを再生したことを記録
-                                Log.Information("フィラー音声の再生が完了しました");
-                            }
-                            else
-                            {
-                                Log.Warning("フィラー音声の取得に失敗しました");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Error(ex, "フィラー音声の再生に失敗しました");
-                        }
-                    }
-                    else
-                    {
-                        Log.Debug("フィラー音声は再生しません (前回フィラー再生済み: {LastHadFiller})", lastSegmentHadFiller);
-                    }
+                    // Segment not cached - generate audio first
+                    Log.Information("セグメント {SegmentNumber} の音声生成を開始します", i + 1);
 
                     // Use channel-based waiting instead of polling
                     if (processingChannel != null)
@@ -378,7 +346,6 @@ public class AudioPlayer : IDisposable
                                 Volume = 1.0
                             };
 
-                            Log.Information("セグメント {SegmentNumber} の音声生成を開始します", i + 1);
                             var result = await processingChannel.ProcessAudioAsync(segmentRequest, cancellationToken);
                             if (result.Success && result.AudioData.Length > 0)
                             {
@@ -434,33 +401,40 @@ public class AudioPlayer : IDisposable
                     Log.Information("生成されたセグメント {SegmentNumber} を再生します", i + 1);
                     await this.PlaySegmentAsync(segment.AudioData, isFirstSegment, cancellationToken);
                     isFirstSegment = false;
-                    lastSegmentHadFiller = false; // 生成されたセグメントの後はフィラー不要
                     Log.Information("生成されたセグメント {SegmentNumber} の再生が完了しました", i + 1);
                 }
 
                 // After playing current segment, check if next segment needs filler
-                // ただし、前のセグメントでフィラーを再生していない場合のみ
-                if (i < segments.Count - 1 && !lastSegmentHadFiller) // Not the last segment and no filler was played recently
+                // 次のセグメントの準備が間に合わない場合のみフィラーを再生
+                if (i < segments.Count - 1 && fillerManager != null) // Not the last segment
                 {
                     var nextSegment = segments[i + 1];
-                    if ((!nextSegment.IsCached || nextSegment.AudioData == null) && fillerManager != null)
+
+                    // 次のセグメントの準備状況をチェック
+                    // 並行生成されたセグメントの状態を適切に反映
+                    bool nextSegmentReady = nextSegment.IsCached && nextSegment.AudioData != null && nextSegment.AudioData.Length > 0;
+
+                    if (!nextSegmentReady)
                     {
                         try
                         {
-                            Log.Debug("次のセグメント待機中にフィラー音声を再生します");
+                            Log.Debug("次のセグメントの準備が間に合わないため、フィラー音声を再生します");
                             var fillerAudio = await fillerManager.GetRandomFillerAudioAsync();
                             if (fillerAudio != null)
                             {
                                 Log.Information("次のセグメント待機中にフィラー音声を再生します (サイズ: {Size} bytes)", fillerAudio.Length);
                                 await this.PlaySegmentAsync(fillerAudio, false, cancellationToken);
-                                lastSegmentHadFiller = true; // フィラーを再生したことを記録
-                                Log.Information("次のセグメント待機中のフィラー音声の再生が完了しました");
+                                Log.Information("フィラー音声の再生が完了しました");
                             }
                         }
                         catch (Exception ex)
                         {
                             Log.Error(ex, "フィラー音声の再生に失敗しました");
                         }
+                    }
+                    else
+                    {
+                        Log.Debug("次のセグメントは既に準備完了のため、フィラーは再生しません (サイズ: {Size} bytes)", nextSegment.AudioData?.Length ?? 0);
                     }
                 }
 

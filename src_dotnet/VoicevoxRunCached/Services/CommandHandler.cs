@@ -374,6 +374,89 @@ public class CommandHandler
 
                     ConsoleHelper.WriteWarning($"Generating {uncachedSegments.Count} segments using processing channel...", this._logger);
                     processingChannel = new AudioProcessingChannel(cacheManager, new VoiceVoxApiClient(this._settings.VoiceVox));
+
+                    // 未キャッシュセグメントの生成を並行で開始
+                    var generationTasks = new List<Task>();
+                    foreach (var segment in uncachedSegments)
+                    {
+                        var generationTask = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                var segmentRequest = new VoiceRequest
+                                {
+                                    Text = segment.Text,
+                                    SpeakerId = segment.SpeakerId ?? request.SpeakerId,
+                                    Speed = request.Speed,
+                                    Pitch = request.Pitch,
+                                    Volume = request.Volume
+                                };
+
+                                var result = await processingChannel.ProcessAudioAsync(segmentRequest, cancellationToken);
+                                if (result.Success && result.AudioData.Length > 0)
+                                {
+                                    segment.AudioData = result.AudioData;
+                                    segment.IsCached = true;
+                                    if (verbose)
+                                    {
+                                        this._logger.LogInformation("セグメントの並行生成が完了: \"{Text}\" (サイズ: {Size} bytes)",
+                                            segment.Text, result.AudioData.Length);
+                                    }
+                                }
+                                else
+                                {
+                                    this._logger.LogWarning("セグメントの並行生成に失敗: \"{Text}\" - {Error}",
+                                        segment.Text, result.ErrorMessage ?? "Unknown error");
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                this._logger.LogError(ex, "セグメントの並行生成中にエラーが発生: \"{Text}\"", segment.Text);
+                            }
+                        }, cancellationToken);
+
+                        generationTasks.Add(generationTask);
+                    }
+
+                    // 生成タスクの完了を少し待機（一部のセグメントが準備完了するまで）
+                    if (generationTasks.Count > 0)
+                    {
+                        var shortDelay = Math.Min(2000, 1000 + (generationTasks.Count * 100)); // セグメント数に応じて待機時間を調整
+                        ConsoleHelper.WriteLine($"Waiting for initial segment generation ({shortDelay}ms)...", this._logger);
+                        await Task.Delay(shortDelay, cancellationToken);
+
+                        // 完了したタスクを確認
+                        var completedTasks = generationTasks.Where(t => t.IsCompleted).ToList();
+                        if (completedTasks.Count > 0)
+                        {
+                            ConsoleHelper.WriteSuccess($"{completedTasks.Count}/{generationTasks.Count} segments generated in background!", this._logger);
+                        }
+
+                        // 残りのタスクの完了を待機（最大30秒）
+                        var remainingTasks = generationTasks.Where(t => !t.IsCompleted).ToList();
+                        if (remainingTasks.Count > 0)
+                        {
+                            ConsoleHelper.WriteLine($"Waiting for remaining {remainingTasks.Count} segments to complete...", this._logger);
+                            try
+                            {
+                                using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                                await Task.WhenAll(remainingTasks).WaitAsync(timeoutCts.Token);
+                                ConsoleHelper.WriteSuccess("All remaining segments completed!", this._logger);
+                            }
+                            catch (OperationCanceledException)
+                            {
+                                ConsoleHelper.WriteWarning("Timeout waiting for remaining segments, continuing with available ones", this._logger);
+                            }
+                            catch (Exception ex)
+                            {
+                                ConsoleHelper.WriteWarning($"Error waiting for remaining segments: {ex.Message}", this._logger);
+                            }
+                        }
+
+                        // 最終的な完了状況を確認
+                        var finalCompletedTasks = generationTasks.Where(t => t.IsCompleted).ToList();
+                        ConsoleHelper.WriteSuccess($"Final status: {finalCompletedTasks.Count}/{generationTasks.Count} segments ready for playback", this._logger);
+                    }
                 }
 
                 // Start playing immediately - cached segments play right away, uncached segments wait
