@@ -297,6 +297,9 @@ public class AudioPlayer : IDisposable
         if (this._disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
+        Log.Information("PlayAudioSequentiallyWithGenerationAsync 開始 - セグメント数: {SegmentCount}, フィラーマネージャー: {HasFillerManager}",
+            segments.Count, fillerManager != null);
+
         // Ensure device is ready before starting playback
         await this.EnsureDeviceReadyAsync();
 
@@ -308,40 +311,57 @@ public class AudioPlayer : IDisposable
             this._wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
 
             bool isFirstSegment = true;
+            bool lastSegmentHadFiller = false; // 前のセグメントでフィラーを再生したかどうかを追跡
 
             for (int i = 0; i < segments.Count; i++)
             {
                 var segment = segments[i];
+                Log.Information("セグメント {SegmentNumber}/{Total} を処理中: \"{Text}\" (キャッシュ済み: {IsCached})",
+                    i + 1, segments.Count, segment.Text, segment.IsCached);
 
                 // Handle both cached and uncached segments
                 if (segment.IsCached && segment.AudioData != null)
                 {
+                    Log.Debug("キャッシュ済みセグメント {SegmentNumber} を再生します", i + 1);
                     // Play cached segments immediately
                     await this.PlaySegmentAsync(segment.AudioData, isFirstSegment, cancellationToken);
                     isFirstSegment = false;
+                    lastSegmentHadFiller = false; // キャッシュ済みセグメントの後はフィラー不要
+                    Log.Debug("キャッシュ済みセグメント {SegmentNumber} の再生が完了しました", i + 1);
                 }
                 else
                 {
                     // Segment not cached - play filler while waiting for generation
-                    Log.Debug("セグメント {SegmentNumber} の生成を待機中...", i + 1);
+                    Log.Information("セグメント {SegmentNumber} の生成を待機中...", i + 1);
 
-                    // Play filler while waiting for uncached segment
-                    if (fillerManager != null)
+                    // Play filler while waiting for uncached segment (前のセグメントでフィラーを再生していない場合のみ)
+                    if (fillerManager != null && !lastSegmentHadFiller)
                     {
                         try
                         {
+                            Log.Debug("フィラー音声の取得を開始します");
                             var fillerAudio = await fillerManager.GetRandomFillerAudioAsync();
                             if (fillerAudio != null)
                             {
-                                Log.Debug("セグメント生成待機中にフィラー音声を再生します");
+                                Log.Information("セグメント生成待機中にフィラー音声を再生します (サイズ: {Size} bytes)", fillerAudio.Length);
                                 await this.PlaySegmentAsync(fillerAudio, isFirstSegment, cancellationToken);
                                 isFirstSegment = false;
+                                lastSegmentHadFiller = true; // フィラーを再生したことを記録
+                                Log.Information("フィラー音声の再生が完了しました");
+                            }
+                            else
+                            {
+                                Log.Warning("フィラー音声の取得に失敗しました");
                             }
                         }
                         catch (Exception ex)
                         {
-                            Log.Warning(ex, "フィラー音声の再生に失敗しました");
+                            Log.Error(ex, "フィラー音声の再生に失敗しました");
                         }
+                    }
+                    else
+                    {
+                        Log.Debug("フィラー音声は再生しません (前回フィラー再生済み: {LastHadFiller})", lastSegmentHadFiller);
                     }
 
                     // Use channel-based waiting instead of polling
@@ -358,12 +378,13 @@ public class AudioPlayer : IDisposable
                                 Volume = 1.0
                             };
 
+                            Log.Information("セグメント {SegmentNumber} の音声生成を開始します", i + 1);
                             var result = await processingChannel.ProcessAudioAsync(segmentRequest, cancellationToken);
                             if (result.Success && result.AudioData.Length > 0)
                             {
                                 segment.AudioData = result.AudioData;
                                 segment.IsCached = true;
-                                Log.Debug("セグメント {SegmentNumber} の生成が完了しました", i + 1);
+                                Log.Information("セグメント {SegmentNumber} の生成が完了しました (サイズ: {Size} bytes)", i + 1, result.AudioData.Length);
                             }
                             else
                             {
@@ -378,7 +399,7 @@ public class AudioPlayer : IDisposable
                         }
                         catch (Exception ex)
                         {
-                            Log.Warning(ex, "セグメント {SegmentNumber} の生成に失敗しました。スキップします", i + 1);
+                            Log.Error(ex, "セグメント {SegmentNumber} の生成に失敗しました。スキップします", i + 1);
                             continue;
                         }
                     }
@@ -388,10 +409,17 @@ public class AudioPlayer : IDisposable
                         var waitStartTime = DateTime.UtcNow;
                         const int maxWaitTimeMs = 30000; // 30秒でタイムアウト
 
+                        Log.Information("フォールバック処理: セグメント {SegmentNumber} の準備完了を待機中...", i + 1);
                         while ((!segment.IsCached || segment.AudioData == null) &&
                                (DateTime.UtcNow - waitStartTime).TotalMilliseconds < maxWaitTimeMs)
                         {
                             await Task.Delay(100, cancellationToken);
+                            cancellationToken.ThrowIfCancellationRequested();
+                        }
+
+                        if ((DateTime.UtcNow - waitStartTime).TotalMilliseconds >= maxWaitTimeMs)
+                        {
+                            Log.Warning("セグメント {SegmentNumber} の待機がタイムアウトしました", i + 1);
                         }
                     }
 
@@ -403,38 +431,60 @@ public class AudioPlayer : IDisposable
                     }
 
                     // Play the generated segment
+                    Log.Information("生成されたセグメント {SegmentNumber} を再生します", i + 1);
                     await this.PlaySegmentAsync(segment.AudioData, isFirstSegment, cancellationToken);
                     isFirstSegment = false;
+                    lastSegmentHadFiller = false; // 生成されたセグメントの後はフィラー不要
+                    Log.Information("生成されたセグメント {SegmentNumber} の再生が完了しました", i + 1);
                 }
 
                 // After playing current segment, check if next segment needs filler
-                if (i < segments.Count - 1) // Not the last segment
+                // ただし、前のセグメントでフィラーを再生していない場合のみ
+                if (i < segments.Count - 1 && !lastSegmentHadFiller) // Not the last segment and no filler was played recently
                 {
                     var nextSegment = segments[i + 1];
                     if ((!nextSegment.IsCached || nextSegment.AudioData == null) && fillerManager != null)
                     {
                         try
                         {
+                            Log.Debug("次のセグメント待機中にフィラー音声を再生します");
                             var fillerAudio = await fillerManager.GetRandomFillerAudioAsync();
                             if (fillerAudio != null)
                             {
-                                Log.Debug("次のセグメント待機中にフィラー音声を再生します");
+                                Log.Information("次のセグメント待機中にフィラー音声を再生します (サイズ: {Size} bytes)", fillerAudio.Length);
                                 await this.PlaySegmentAsync(fillerAudio, false, cancellationToken);
+                                lastSegmentHadFiller = true; // フィラーを再生したことを記録
+                                Log.Information("次のセグメント待機中のフィラー音声の再生が完了しました");
                             }
                         }
                         catch (Exception ex)
                         {
-                            Log.Warning(ex, "フィラー音声の再生に失敗しました");
+                            Log.Error(ex, "フィラー音声の再生に失敗しました");
                         }
                     }
+                }
+
+                // セグメント間の適切な間隔を確保
+                if (i < segments.Count - 1)
+                {
+                    Log.Debug("セグメント間の間隔を確保中 (50ms)");
+                    await Task.Delay(50, cancellationToken); // 50msの間隔
                 }
             }
 
             // No need to wait for background generation - channel handles it synchronously
+            Log.Information("全セグメントの再生が完了しました");
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "PlayAudioSequentiallyWithGenerationAsync でエラーが発生しました");
+            throw;
         }
         finally
         {
+            Log.Debug("AudioPlayer の停止処理を開始します");
             this.StopAudio();
+            Log.Debug("AudioPlayer の停止処理が完了しました");
         }
     }
 
@@ -442,6 +492,8 @@ public class AudioPlayer : IDisposable
     {
         try
         {
+            Log.Debug("PlaySegmentAsync 開始 - サイズ: {Size} bytes, 最初のセグメント: {IsFirst}", audioData.Length, isFirstSegment);
+
             using var audioStream = new MemoryStream(audioData);
             WaveStream reader;
 
@@ -452,14 +504,17 @@ public class AudioPlayer : IDisposable
             audioStream.Position = 0;
 
             var format = AudioConversionUtility.DetectFormat(headerBuffer);
+            Log.Debug("音声フォーマットを検出: {Format}", format);
 
             if (format == AudioFormat.WAV)
             {
                 reader = new WaveFileReader(audioStream);
+                Log.Debug("WaveFileReader を作成しました");
             }
             else if (format == AudioFormat.MP3)
             {
                 reader = new Mp3FileReader(audioStream);
+                Log.Debug("Mp3FileReader を作成しました");
             }
             else
             {
@@ -468,12 +523,14 @@ public class AudioPlayer : IDisposable
                 {
                     audioStream.Position = 0;
                     reader = new Mp3FileReader(audioStream);
+                    Log.Debug("MP3 フォールバックで Mp3FileReader を作成しました");
                 }
                 catch
                 {
                     // Fall back to WAV if MP3 fails
                     audioStream.Position = 0;
                     reader = new WaveFileReader(audioStream);
+                    Log.Debug("WAV フォールバックで WaveFileReader を作成しました");
                 }
             }
 
@@ -484,6 +541,7 @@ public class AudioPlayer : IDisposable
                 EventHandler<StoppedEventArgs>? handler = null;
                 handler = (sender, e) =>
                 {
+                    Log.Debug("PlaybackStopped イベントが発生しました - 例外: {Exception}", e.Exception?.Message ?? "なし");
                     try { reader?.Dispose(); } catch { }
                     if (e.Exception != null)
                     {
@@ -499,8 +557,10 @@ public class AudioPlayer : IDisposable
                     }
                 };
                 this._wavePlayer.PlaybackStopped += handler;
+                Log.Debug("PlaybackStopped イベントハンドラーを登録しました");
             }
 
+            Log.Debug("WavePlayer に音声リーダーを初期化中...");
             this._wavePlayer?.Init(reader);
 
             // First segment needs longer initialization for audio device setup
@@ -508,30 +568,52 @@ public class AudioPlayer : IDisposable
             {
                 // Extended delay for first segment to ensure proper audio device initialization
                 // Wait for pre-warming to complete if still in progress
-                await Task.Delay(200); // 200ms for device initialization and stability
+                Log.Debug("最初のセグメントのため、200ms の遅延を実行中...");
+                await Task.Delay(200, cancellationToken); // 200ms for device initialization and stability
             }
             else
             {
                 // Minimal delay for subsequent segments
-                await Task.Delay(10);
+                Log.Debug("後続セグメントのため、20ms の遅延を実行中...");
+                await Task.Delay(20, cancellationToken); // 20msに増加して安定性を向上
             }
 
             cancellationToken.ThrowIfCancellationRequested();
+            Log.Debug("音声再生を開始します");
             this._wavePlayer?.Play();
 
             using (cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken)))
             {
-                await tcs.Task;
+                // タイムアウトを設定して無限待機を防ぐ
+                var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+                Log.Debug("音声再生完了を待機中 (タイムアウト: 30秒)...");
+                var completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
+
+                if (completedTask == timeoutTask)
+                {
+                    Log.Warning("セグメント再生がタイムアウトしました。強制停止します。");
+                    this._wavePlayer?.Stop();
+                    throw new TimeoutException("セグメント再生がタイムアウトしました");
+                }
+
+                Log.Debug("音声再生が完了しました。実際の完了を待機中...");
+                await tcs.Task; // 実際の完了を待機
             }
 
-            // Ensure complete audio playback - increased delay for proper segment completion
-            await Task.Delay(120, cancellationToken);
+            // Ensure complete audio playback - 適切な遅延を設定
+            var playbackDelay = isFirstSegment ? 150 : 100; // 最初のセグメントは長めの遅延
+            Log.Debug("音声再生完了後の遅延を実行中: {Delay}ms", playbackDelay);
+            await Task.Delay(playbackDelay, cancellationToken);
 
             // Stop but don't dispose the WavePlayer - reuse for next segment
+            Log.Debug("WavePlayer を停止中...");
             this._wavePlayer?.Stop();
+
+            Log.Information("セグメント再生が完了しました (遅延: {Delay}ms)", playbackDelay);
         }
         catch (Exception ex)
         {
+            Log.Error(ex, "セグメント再生中にエラーが発生しました");
             throw new InvalidOperationException($"Failed to play audio segment: {ex.Message}", ex);
         }
     }
@@ -558,39 +640,49 @@ public class AudioPlayer : IDisposable
             audioStream.Position = 0;
 
             var format = AudioConversionUtility.DetectFormat(headerBuffer);
+            Log.Information("Detected audio format: {Format}, Header: {Header}", format, BitConverter.ToString(headerBuffer));
 
             if (format == AudioFormat.WAV)
             {
+                Log.Information("Creating WaveFileReader for WAV format");
                 reader = new WaveFileReader(audioStream);
             }
             else if (format == AudioFormat.MP3)
             {
+                Log.Information("Creating Mp3FileReader for MP3 format");
                 reader = new Mp3FileReader(audioStream);
             }
             else
             {
+                Log.Information("Unknown format, trying MP3 first, then WAV fallback");
                 // Try MP3 first since we're primarily caching MP3 files now
                 try
                 {
                     audioStream.Position = 0;
                     reader = new Mp3FileReader(audioStream);
+                    Log.Information("MP3 fallback successful");
                 }
-                catch
+                catch (Exception ex)
                 {
+                    Log.Warning("MP3 fallback failed: {Error}, trying WAV", ex.Message);
                     // Fall back to WAV if MP3 fails
                     audioStream.Position = 0;
                     reader = new WaveFileReader(audioStream);
+                    Log.Information("WAV fallback successful");
                 }
             }
 
+            Log.Information("Creating WavePlayer for audio playback");
             this._wavePlayer = this.CreateWavePlayer();
 
             this._wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
+            Log.Information("WavePlayer volume set to: {Volume}", this._wavePlayer.Volume);
 
             var tcs = new TaskCompletionSource<bool>();
 
             this._wavePlayer.PlaybackStopped += (sender, e) =>
             {
+                Log.Information("PlaybackStopped event fired, Exception: {Exception}", e.Exception?.Message ?? "None");
                 reader.Dispose();
                 if (e.Exception != null)
                 {
@@ -602,17 +694,23 @@ public class AudioPlayer : IDisposable
                 }
             };
 
+            Log.Information("Initializing WavePlayer with audio reader");
             this._wavePlayer.Init(reader);
 
             // Minimal delay to ensure proper audio initialization
+            Log.Information("Waiting for audio initialization...");
             await Task.Delay(20, cancellationToken);
 
+            Log.Information("Starting audio playback");
             this._wavePlayer.Play();
 
+            Log.Information("Waiting for playback completion...");
             await tcs.Task.ConfigureAwait(false);
+            Log.Information("Playback completed, waiting for buffer flush...");
 
             // Ensure all buffered audio is played before stopping
             await Task.Delay(150, cancellationToken); // Wait for buffer to flush
+            Log.Information("Buffer flush completed");
         }
         catch (Exception ex)
         {

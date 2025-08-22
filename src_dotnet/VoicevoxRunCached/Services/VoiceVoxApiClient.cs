@@ -74,25 +74,30 @@ public class VoiceVoxApiClient : IDisposable
         }, $"スピーカー {speakerId} 初期化");
     }
 
-    public async Task<string> GenerateAudioQueryAsync(VoiceRequest request, CancellationToken cancellationToken = default)
+        public async Task<string> GenerateAudioQueryAsync(VoiceRequest request, CancellationToken cancellationToken = default)
     {
         try
         {
-            var queryRequest = new
-            {
-                text = request.Text,
-                speaker = request.SpeakerId,
-                speedScale = request.Speed,
-                pitchScale = request.Pitch,
-                volumeScale = request.Volume
-            };
+            // デバッグ用のログ出力
+            Log.Information("Generating audio query for request: Text='{Text}', SpeakerId={SpeakerId}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
+                request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
 
-            var json = JsonSerializer.Serialize(queryRequest, JsonOptions);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{this._settings.BaseUrl}/audio_query")
-            {
-                Content = content
-            };
+            // VoiceVox APIは/audio_queryエンドポイントでクエリパラメータとしてtextとspeakerを受け取る
+            var encodedText = Uri.EscapeDataString(request.Text);
+            var queryString = $"text={encodedText}&speaker={request.SpeakerId}";
+
+            // 追加パラメータがある場合は含める
+            if (request.Speed != 1.0)
+                queryString += $"&speed_scale={request.Speed}";
+            if (request.Pitch != 0.0)
+                queryString += $"&pitch_scale={request.Pitch}";
+            if (request.Volume != 1.0)
+                queryString += $"&volume_scale={request.Volume}";
+
+            var url = $"{this._settings.BaseUrl}/audio_query?{queryString}";
+            Log.Information("Request URL: {Url}", url);
+
+            var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
 
             var response = await this.SendRequestAsync(httpRequest, cancellationToken);
             return await response.Content.ReadAsStringAsync(cancellationToken);
@@ -108,20 +113,22 @@ public class VoiceVoxApiClient : IDisposable
     {
         try
         {
-            var synthesisRequest = new
-            {
-                audio_query = JsonSerializer.Deserialize<object>(audioQuery),
-                speaker = speakerId
-            };
+            // デバッグ用のログ出力
+            Log.Information("Synthesizing audio for speaker {SpeakerId} with audioQuery length: {Length}", speakerId, audioQuery.Length);
 
-            var json = JsonSerializer.Serialize(synthesisRequest, JsonOptions);
-            var content = new StringContent(json, Encoding.UTF8, "application/json");
-            var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{this._settings.BaseUrl}/synthesis")
+            // VoiceVox APIの/synthesisエンドポイントはクエリパラメータでspeakerを受け取り、ボディでaudio_queryを受け取る
+            var url = $"{this._settings.BaseUrl}/synthesis?speaker={speakerId}";
+            Log.Information("Synthesis URL: {Url}", url);
+
+            var content = new StringContent(audioQuery, Encoding.UTF8, "application/json");
+            var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = content
             };
 
+            Log.Information("Sending synthesis request to VoiceVox API...");
             var response = await this.SendRequestAsync(httpRequest, cancellationToken);
+            Log.Information("Synthesis response received, status: {StatusCode}", response.StatusCode);
             return await response.Content.ReadAsByteArrayAsync(cancellationToken);
         }
         catch (HttpRequestException ex)
@@ -152,7 +159,9 @@ public class VoiceVoxApiClient : IDisposable
     {
         try
         {
+            Log.Information("Sending HTTP request to: {Method} {RequestUri}", request.Method, request.RequestUri);
             var response = await this._httpClient.SendAsync(request, cancellationToken);
+            Log.Information("HTTP response received: {StatusCode}", response.StatusCode);
 
             // 詳細なエラーハンドリング
             if (!response.IsSuccessStatusCode)

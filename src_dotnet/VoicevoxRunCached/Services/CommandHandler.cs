@@ -380,7 +380,13 @@ public class CommandHandler
                 var playbackStartTime = DateTime.UtcNow;
                 ConsoleHelper.WriteInfo("Playing audio...", this._logger);
                 using var audioPlayer = new AudioPlayer(this._settings.Audio);
-                var fillerManager = this._settings.Filler.Enabled ? new FillerManager(this._settings.Filler, cacheManager, this._settings.VoiceVox.DefaultSpeaker) : null;
+                FillerManager? fillerManager = null;
+                if (this._settings.Filler.Enabled)
+                {
+                    fillerManager = new FillerManager(this._settings.Filler, cacheManager, this._settings.VoiceVox.DefaultSpeaker);
+                    // Initialize filler cache before use
+                    await fillerManager.InitializeFillerCacheAsync(this._settings);
+                }
                 await audioPlayer.PlayAudioSequentiallyWithGenerationAsync(processedSegments, processingChannel, fillerManager, cancellationToken);
 
                 if (verbose)

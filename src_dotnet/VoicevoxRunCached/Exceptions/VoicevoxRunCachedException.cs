@@ -1,5 +1,5 @@
 using System.Net;
-using System.Runtime.Serialization;
+using System.Text.Json;
 
 namespace VoicevoxRunCached.Exceptions;
 
@@ -49,25 +49,6 @@ public class VoicevoxRunCachedException : Exception
         this.Context = context;
     }
 
-    protected VoicevoxRunCachedException(SerializationInfo info, StreamingContext context)
-        : base(info, context)
-    {
-        this.ErrorCode = info.GetString(nameof(this.ErrorCode)) ?? "UNKNOWN_ERROR";
-        this.UserMessage = info.GetString(nameof(this.UserMessage)) ?? "An error occurred";
-        this.SuggestedSolution = info.GetString(nameof(this.SuggestedSolution));
-        this.Context = info.GetString(nameof(this.Context));
-    }
-
-    [Obsolete("This method is obsolete. Use the new serialization pattern instead.")]
-    public override void GetObjectData(SerializationInfo info, StreamingContext context)
-    {
-        base.GetObjectData(info, context);
-        info.AddValue(nameof(this.ErrorCode), this.ErrorCode);
-        info.AddValue(nameof(this.UserMessage), this.UserMessage);
-        info.AddValue(nameof(this.SuggestedSolution), this.SuggestedSolution);
-        info.AddValue(nameof(this.Context), this.Context);
-    }
-
     /// <summary>
     /// エラーの詳細情報を取得
     /// </summary>
@@ -94,6 +75,24 @@ public class VoicevoxRunCachedException : Exception
         }
 
         return info;
+    }
+
+    /// <summary>
+    /// 例外をJSON形式でシリアライズ
+    /// </summary>
+    public string ToJson()
+    {
+        var data = new
+        {
+            ErrorCode = this.ErrorCode,
+            UserMessage = this.UserMessage,
+            SuggestedSolution = this.SuggestedSolution,
+            Context = this.Context,
+            Message = this.Message,
+            InnerException = this.InnerException?.Message
+        };
+
+        return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
     }
 
     protected virtual void Dispose(bool disposing)
@@ -145,19 +144,24 @@ public class VoiceVoxApiException : VoicevoxRunCachedException
         this.ApiResponse = apiResponse;
     }
 
-    protected VoiceVoxApiException(SerializationInfo info, StreamingContext context)
-        : base(info, context)
+    /// <summary>
+    /// 例外をJSON形式でシリアライズ
+    /// </summary>
+    public new string ToJson()
     {
-        this.StatusCode = (HttpStatusCode?)info.GetValue(nameof(this.StatusCode), typeof(HttpStatusCode?));
-        this.ApiResponse = info.GetString(nameof(this.ApiResponse));
-    }
+        var data = new
+        {
+            ErrorCode = this.ErrorCode,
+            UserMessage = this.UserMessage,
+            SuggestedSolution = this.SuggestedSolution,
+            Context = this.Context,
+            Message = this.Message,
+            StatusCode = this.StatusCode,
+            ApiResponse = this.ApiResponse,
+            InnerException = this.InnerException?.Message
+        };
 
-    [Obsolete("This method is obsolete. Use the new serialization pattern instead.")]
-    public override void GetObjectData(SerializationInfo info, StreamingContext context)
-    {
-        base.GetObjectData(info, context);
-        info.AddValue(nameof(this.StatusCode), this.StatusCode);
-        info.AddValue(nameof(this.ApiResponse), this.ApiResponse);
+        return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
     }
 }
 
@@ -181,17 +185,23 @@ public class ConfigurationException : VoicevoxRunCachedException
         this.SettingPath = settingPath;
     }
 
-    protected ConfigurationException(SerializationInfo info, StreamingContext context)
-        : base(info, context)
+    /// <summary>
+    /// 例外をJSON形式でシリアライズ
+    /// </summary>
+    public new string ToJson()
     {
-        this.SettingPath = info.GetString(nameof(this.SettingPath));
-    }
+        var data = new
+        {
+            ErrorCode = this.ErrorCode,
+            UserMessage = this.UserMessage,
+            SuggestedSolution = this.SuggestedSolution,
+            Context = this.Context,
+            Message = this.Message,
+            SettingPath = this.SettingPath,
+            InnerException = this.InnerException?.Message
+        };
 
-    [Obsolete("This method is obsolete. Use the new serialization pattern instead.")]
-    public override void GetObjectData(SerializationInfo info, StreamingContext context)
-    {
-        base.GetObjectData(info, context);
-        info.AddValue(nameof(this.SettingPath), this.SettingPath);
+        return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
     }
 }
 
@@ -218,19 +228,24 @@ public class CacheException : VoicevoxRunCachedException
         this.CachePath = cachePath;
     }
 
-    protected CacheException(SerializationInfo info, StreamingContext context)
-        : base(info, context)
+    /// <summary>
+    /// 例外をJSON形式でシリアライズ
+    /// </summary>
+    public new string ToJson()
     {
-        this.CacheKey = info.GetString(nameof(this.CacheKey));
-        this.CachePath = info.GetString(nameof(this.CachePath));
-    }
+        var data = new
+        {
+            ErrorCode = this.ErrorCode,
+            UserMessage = this.UserMessage,
+            SuggestedSolution = this.SuggestedSolution,
+            Context = this.Context,
+            Message = this.Message,
+            CacheKey = this.CacheKey,
+            CachePath = this.CachePath,
+            InnerException = this.InnerException?.Message
+        };
 
-    [Obsolete("This method is obsolete. Use the new serialization pattern instead.")]
-    public override void GetObjectData(SerializationInfo info, StreamingContext context)
-    {
-        base.GetObjectData(info, context);
-        info.AddValue(nameof(this.CacheKey), this.CacheKey);
-        info.AddValue(nameof(this.CachePath), this.CachePath);
+        return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
     }
 }
 

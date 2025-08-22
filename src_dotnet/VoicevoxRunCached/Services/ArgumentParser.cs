@@ -66,6 +66,9 @@ public static class ArgumentParser
             Volume = 1.0
         };
 
+        // デバッグ用のログ出力
+        Console.WriteLine($"Debug: Parsed request - Text='{request.Text}', SpeakerId={request.SpeakerId}, Speed={request.Speed}, Pitch={request.Pitch}, Volume={request.Volume}");
+
         // 前処理された引数を解析
         var processedArgs = PreprocessArgs(args);
 

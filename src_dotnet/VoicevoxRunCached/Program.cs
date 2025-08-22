@@ -113,12 +113,55 @@ class Program
                 return 1;
             }
 
+            logger.LogInformation("Test command executed with message: {TestMessage}", testMessage);
+            ConsoleHelper.WriteLine($"テストメッセージ: {testMessage}", logger);
+
             // Replace first arg with the configured message and keep other options
             var remaining = args.Skip(1).Where(arg => arg != null).Cast<string>().ToArray();
-            args = new[] { testMessage }.Concat(remaining).ToArray();
+            var testArgs = new[] { testMessage }.Concat(remaining).ToArray();
+
+            // デバッグ用のログ出力
+            logger.LogInformation("Test args constructed: {TestArgs}", string.Join(" ", testArgs));
+            ConsoleHelper.WriteLine($"Debug: Test args: {string.Join(" ", testArgs)}", logger);
+
+            // Parse arguments and handle text-to-speech with test args
+            var testRequest = ArgumentParser.ParseArguments(testArgs, settings);
+            if (testRequest == null)
+            {
+                Console.WriteLine($"\e[31mError: Invalid arguments\e[0m");
+                ArgumentParser.ShowUsage();
+                return 1;
+            }
+
+            string? testOutPath = ArgumentParser.GetStringOption(testArgs, "--out") ?? ArgumentParser.GetStringOption(testArgs, "-o");
+            bool testNoPlay = ArgumentParser.GetBoolOption(testArgs, "--no-play");
+
+            // Setup cancellation (Ctrl+C)
+            using var testCts = new CancellationTokenSource();
+            Console.CancelKeyPress += (s, e) =>
+            {
+                e.Cancel = true;
+                logger.LogWarning("Cancellation requested (Ctrl+C). Attempting graceful shutdown...");
+                Log.Warning("ユーザーによるキャンセル要求 (Ctrl+C)。正常終了を試行します...");
+                testCts.Cancel();
+            };
+
+            var testResult = await commandHandler.HandleTextToSpeechAsync(
+                testRequest,
+                ArgumentParser.GetBoolOption(testArgs, "--no-cache"),
+                ArgumentParser.GetBoolOption(testArgs, "--cache-only"),
+                ArgumentParser.GetBoolOption(testArgs, "--verbose"),
+                testOutPath,
+                testNoPlay,
+                testCts.Token);
+
+            // Cleanup Serilog before exit
+            ProgramExtensions.CleanupSerilog();
+
+            return testResult;
         }
 
-        // Parse arguments and handle text-to-speech
+        // Parse arguments and handle text-to-speech (only for non-test commands)
         var request = ArgumentParser.ParseArguments(args, settings);
         if (request == null)
         {
