@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Services.Commands;
+using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Services;
 
@@ -50,12 +51,79 @@ public class CommandRouter
                 _ => await this.HandleTextToSpeechCommandAsync(args, cancellationToken)
             };
         }
-        catch (Exception ex)
+        catch (VoicevoxRunCachedException ex)
         {
-            this._logger.LogError(ex, "コマンド実行中にエラーが発生しました: {Command}", command);
+            // カスタム例外は適切に処理
+            this._logger.LogError(ex, "コマンド実行中にエラーが発生しました: {Command}, ErrorCode: {ErrorCode}", command, ex.ErrorCode);
+            ConsoleHelper.WriteError($"Error: {ex.UserMessage}", this._logger);
+
+            if (!String.IsNullOrEmpty(ex.SuggestedSolution))
+            {
+                ConsoleHelper.WriteLine($"解決策: {ex.SuggestedSolution}", this._logger);
+            }
+
+            return this.GetExitCodeFromErrorCode(ex.ErrorCode);
+        }
+        catch (OperationCanceledException)
+        {
+            this._logger.LogInformation("コマンド実行がキャンセルされました: {Command}", command);
+            ConsoleHelper.WriteLine("操作がキャンセルされました。", this._logger);
+            return 0;
+        }
+        catch (ArgumentException ex)
+        {
+            this._logger.LogError(ex, "コマンドの引数が無効です: {Command}, Args: {Args}", command, String.Join(" ", subArgs));
+            ConsoleHelper.WriteError($"Error: 無効な引数が指定されました - {ex.Message}", this._logger);
+            ConsoleHelper.WriteLine("使用方法を確認するには --help オプションを使用してください。", this._logger);
+            return 1;
+        }
+        catch (InvalidOperationException ex)
+        {
+            this._logger.LogError(ex, "コマンドの実行に必要な前提条件が満たされていません: {Command}", command);
             ConsoleHelper.WriteError($"Error: {ex.Message}", this._logger);
             return 1;
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            this._logger.LogError(ex, "コマンド実行に必要な権限がありません: {Command}", command);
+            ConsoleHelper.WriteError($"Error: アクセス権限がありません - {ex.Message}", this._logger);
+            ConsoleHelper.WriteLine("管理者権限で実行するか、必要な権限を確認してください。", this._logger);
+            return 1;
+        }
+        catch (IOException ex)
+        {
+            this._logger.LogError(ex, "ファイルまたはディレクトリの操作に失敗しました: {Command}", command);
+            ConsoleHelper.WriteError($"Error: ファイル操作に失敗しました - {ex.Message}", this._logger);
+            return 1;
+        }
+        catch (Exception ex)
+        {
+            this._logger.LogError(ex, "コマンド実行中に予期しないエラーが発生しました: {Command}", command);
+            ConsoleHelper.WriteError($"Error: 予期しないエラーが発生しました - {ex.Message}", this._logger);
+            ConsoleHelper.WriteLine("アプリケーションを再起動し、問題が続く場合はログを確認してください。", this._logger);
+            return 1;
+        }
+    }
+
+    /// <summary>
+    /// エラーコードから終了コードを取得します
+    /// </summary>
+    private int GetExitCodeFromErrorCode(string errorCode)
+    {
+        if (String.IsNullOrEmpty(errorCode))
+            return 1;
+
+        var category = ErrorCodes.GetCategory(errorCode);
+        return category switch
+        {
+            "Configuration" => 2,
+            "Engine" => 3,
+            "Cache" => 4,
+            "Audio" => 5,
+            "API" => 6,
+            "General" => 1,
+            _ => 1
+        };
     }
 
     /// <summary>
@@ -63,8 +131,8 @@ public class CommandRouter
     /// </summary>
     private async Task<int> HandleTestCommandAsync(string[] args, CancellationToken cancellationToken)
     {
-        var testMessage = this._settings.Test?.Message ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(testMessage))
+        var testMessage = this._settings.Test?.Message ?? String.Empty;
+        if (String.IsNullOrWhiteSpace(testMessage))
         {
             Console.WriteLine("\e[31mError: Test.Message is empty in configuration\e[0m");
             return 1;
@@ -77,8 +145,8 @@ public class CommandRouter
         var remaining = args.Where(arg => arg != null).Cast<string>().ToArray();
         var testArgs = new[] { testMessage }.Concat(remaining).ToArray();
 
-        this._logger.LogInformation("Test args constructed: {TestArgs}", string.Join(" ", testArgs));
-        ConsoleHelper.WriteLine($"Debug: Test args: {string.Join(" ", testArgs)}", this._logger);
+        this._logger.LogInformation("Test args constructed: {TestArgs}", String.Join(" ", testArgs));
+        ConsoleHelper.WriteLine($"Debug: Test args: {String.Join(" ", testArgs)}", this._logger);
 
         return await this.ExecuteTextToSpeechCommandAsync(testArgs, cancellationToken);
     }
@@ -99,21 +167,18 @@ public class CommandRouter
         var request = ArgumentParser.ParseArguments(args, this._settings);
         if (request == null)
         {
-            Console.WriteLine($"\e[31mError: Invalid arguments\e[0m");
+            ConsoleHelper.WriteError("Error: Invalid arguments", this._logger);
             ArgumentParser.ShowUsage();
             return 1;
         }
 
-        string? outPath = ArgumentParser.GetStringOption(args, "--out") ?? ArgumentParser.GetStringOption(args, "-o");
-        bool noPlay = ArgumentParser.GetBoolOption(args, "--no-play");
+        var noCache = args.Contains("--no-cache");
+        var cacheOnly = args.Contains("--cache-only");
+        var verbose = args.Contains("--verbose");
+        var outPath = args.FirstOrDefault(arg => arg.StartsWith("--out="))?.Substring("--out=".Length);
+        var noPlay = args.Contains("--no-play");
 
         return await this._commandHandler.HandleTextToSpeechAsync(
-            request,
-            ArgumentParser.GetBoolOption(args, "--no-cache"),
-            ArgumentParser.GetBoolOption(args, "--cache-only"),
-            ArgumentParser.GetBoolOption(args, "--verbose"),
-            outPath,
-            noPlay,
-            cancellationToken);
+            request, noCache, cacheOnly, verbose, outPath, noPlay, cancellationToken);
     }
 }

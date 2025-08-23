@@ -3,6 +3,7 @@ using System.Text;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Cache;
+using VoicevoxRunCached.Exceptions;
 using Serilog;
 
 namespace VoicevoxRunCached.Services;
@@ -44,23 +45,62 @@ public class AudioCacheManager : IDisposable
     {
         var cacheKey = this.ComputeCacheKey(request);
 
-        // まずメモリキャッシュをチェック
-        var memoryCached = this._memoryCache.Get<byte[]>(cacheKey);
-        if (memoryCached != null)
+        try
         {
-            Log.Debug("メモリキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, memoryCached.Length);
-            return memoryCached;
-        }
+            // まずメモリキャッシュをチェック
+            var memoryCached = this._memoryCache.Get<byte[]>(cacheKey);
+            if (memoryCached != null)
+            {
+                Log.Debug("メモリキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, memoryCached.Length);
+                return memoryCached;
+            }
 
-        // メモリキャッシュにない場合はディスクキャッシュをチェック
-        var audioData = await this._diskCacheService.LoadAudioFromDiskAsync(cacheKey);
-        if (audioData != null)
+            // メモリキャッシュにない場合はディスクキャッシュをチェック
+            var audioData = await this._diskCacheService.LoadAudioFromDiskAsync(cacheKey);
+            if (audioData != null)
+            {
+                // ディスクから読み込めた場合はメモリキャッシュに保存（次回は高速アクセス）
+                this._memoryCache.Set(cacheKey, audioData);
+            }
+
+            return audioData;
+        }
+        catch (UnauthorizedAccessException ex)
         {
-            // ディスクから読み込めた場合はメモリキャッシュに保存（次回は高速アクセス）
-            this._memoryCache.Set(cacheKey, audioData);
+            Log.Error(ex, "キャッシュファイルへのアクセス権限がありません: {CacheKey}", cacheKey);
+            throw new CacheException(
+                ErrorCodes.Cache.CACHE_PERMISSION_DENIED,
+                $"Access denied to cache file: {ex.Message}",
+                "キャッシュファイルへのアクセス権限がありません。",
+                cacheKey,
+                this._settings.Directory,
+                "キャッシュディレクトリのアクセス権限を確認してください。"
+            );
         }
-
-        return audioData;
+        catch (IOException ex)
+        {
+            Log.Error(ex, "キャッシュファイルの読み込みに失敗しました: {CacheKey}", cacheKey);
+            throw new CacheException(
+                ErrorCodes.Cache.CACHE_READ_ERROR,
+                $"Failed to read cache file: {ex.Message}",
+                "キャッシュファイルの読み込みに失敗しました。",
+                cacheKey,
+                this._settings.Directory,
+                "キャッシュディレクトリの状態を確認し、必要に応じてキャッシュをクリアしてください。"
+            );
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "キャッシュからの音声データ取得中に予期しないエラーが発生しました: {CacheKey}", cacheKey);
+            throw new CacheException(
+                ErrorCodes.General.UNKNOWN_ERROR,
+                $"Unexpected error while retrieving cached audio: {ex.Message}",
+                "キャッシュからの音声データ取得中に予期しないエラーが発生しました。",
+                cacheKey,
+                this._settings.Directory,
+                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
+            );
+        }
     }
 
     /// <summary>
@@ -87,10 +127,53 @@ public class AudioCacheManager : IDisposable
             // 保存後、バックグラウンドでサイズ制限ポリシーを適用
             _ = this._cleanupService.RunBackgroundCleanupAsync();
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            Log.Error(ex, "キャッシュディレクトリへの書き込み権限がありません: {CacheKey}", cacheKey);
+            throw new CacheException(
+                ErrorCodes.Cache.CACHE_PERMISSION_DENIED,
+                $"Access denied to cache directory: {ex.Message}",
+                "キャッシュディレクトリへの書き込み権限がありません。",
+                cacheKey,
+                this._settings.Directory,
+                "キャッシュディレクトリの書き込み権限を確認してください。"
+            );
+        }
+        catch (IOException ex) when (ex.Message.Contains("There is not enough space"))
+        {
+            Log.Error(ex, "キャッシュディレクトリの容量が不足しています: {CacheKey}", cacheKey);
+            throw new CacheException(
+                ErrorCodes.Cache.CACHE_FULL,
+                $"Cache directory is full: {ex.Message}",
+                "キャッシュディレクトリの容量が不足しています。",
+                cacheKey,
+                this._settings.Directory,
+                "古いキャッシュファイルを削除するか、キャッシュディレクトリの容量を増やしてください。"
+            );
+        }
+        catch (IOException ex)
+        {
+            Log.Error(ex, "キャッシュファイルの書き込みに失敗しました: {CacheKey}", cacheKey);
+            throw new CacheException(
+                ErrorCodes.Cache.CACHE_WRITE_ERROR,
+                $"Failed to write cache file: {ex.Message}",
+                "キャッシュファイルの書き込みに失敗しました。",
+                cacheKey,
+                this._settings.Directory,
+                "ディスクの空き容量とキャッシュディレクトリの状態を確認してください。"
+            );
+        }
         catch (Exception ex)
         {
             Log.Error(ex, "キャッシュの保存に失敗: {CacheKey}", cacheKey);
-            throw new InvalidOperationException($"Failed to save audio cache: {ex.Message}", ex);
+            throw new CacheException(
+                ErrorCodes.Cache.CACHE_WRITE_ERROR,
+                $"Failed to save audio cache: {ex.Message}",
+                "キャッシュの保存に失敗しました。",
+                cacheKey,
+                this._settings.Directory,
+                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
+            );
         }
     }
 
@@ -100,7 +183,58 @@ public class AudioCacheManager : IDisposable
     /// <returns>クリーンアップ処理の完了を表すTask</returns>
     public async Task CleanupExpiredCacheAsync()
     {
-        await this._cleanupService.CleanupExpiredCacheAsync();
+        try
+        {
+            await this._cleanupService.CleanupExpiredCacheAsync();
+            Log.Information("期限切れキャッシュのクリーンアップが完了しました");
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Information("キャッシュクリーンアップがキャンセルされました");
+            throw new VoicevoxRunCachedException(
+                ErrorCodes.General.OPERATION_CANCELLED,
+                "Cache cleanup was cancelled",
+                "キャッシュクリーンアップがキャンセルされました。",
+                null,
+                "操作を再実行してください。"
+            );
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Log.Error(ex, "キャッシュクリーンアップ中にアクセス権限エラーが発生しました");
+            throw new CacheException(
+                ErrorCodes.Cache.CACHE_PERMISSION_DENIED,
+                $"Access denied during cache cleanup: {ex.Message}",
+                "キャッシュクリーンアップ中にアクセス権限エラーが発生しました。",
+                null,
+                this._settings.Directory,
+                "キャッシュディレクトリのアクセス権限を確認してください。"
+            );
+        }
+        catch (IOException ex)
+        {
+            Log.Error(ex, "キャッシュクリーンアップ中にI/Oエラーが発生しました");
+            throw new CacheException(
+                ErrorCodes.Cache.CACHE_READ_ERROR,
+                $"I/O error during cache cleanup: {ex.Message}",
+                "キャッシュクリーンアップ中にI/Oエラーが発生しました。",
+                null,
+                this._settings.Directory,
+                "ディスクの状態とキャッシュディレクトリの権限を確認してください。"
+            );
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "キャッシュクリーンアップ中に予期しないエラーが発生しました");
+            throw new CacheException(
+                ErrorCodes.General.UNKNOWN_ERROR,
+                $"Unexpected error during cache cleanup: {ex.Message}",
+                "キャッシュクリーンアップ中に予期しないエラーが発生しました。",
+                null,
+                this._settings.Directory,
+                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
+            );
+        }
     }
 
     /// <summary>

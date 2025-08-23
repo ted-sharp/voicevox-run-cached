@@ -65,7 +65,7 @@ public class AudioExportService
     private async Task WriteOutputFileAsync(byte[] audioData, string outPath, CancellationToken cancellationToken)
     {
         var directory = Path.GetDirectoryName(outPath);
-        if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
+        if (!String.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
         }

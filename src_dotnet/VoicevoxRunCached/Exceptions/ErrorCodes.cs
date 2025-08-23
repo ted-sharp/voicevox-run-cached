@@ -65,6 +65,7 @@ public static class ErrorCodes
         public const string PERMISSION_DENIED = "GEN_005";
         public const string NETWORK_ERROR = "GEN_006";
         public const string TIMEOUT_ERROR = "GEN_007";
+        public const string INVALID_OPERATION = "GEN_008";
     }
 
     /// <summary>
@@ -138,6 +139,7 @@ public static class ErrorCodes
             General.PERMISSION_DENIED => "アクセス権限がありません",
             General.NETWORK_ERROR => "ネットワークエラーが発生しました",
             General.TIMEOUT_ERROR => "タイムアウトが発生しました",
+            General.INVALID_OPERATION => "無効な操作が試行されました",
 
             _ => "不明なエラーコードです"
         };

@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services;
+using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -57,7 +58,7 @@ public class TextToSpeechProcessor
 
             // 出力ファイルが指定されている場合、バックグラウンドエクスポートタスクを開始
             Task? exportTask = null;
-            if (!string.IsNullOrWhiteSpace(outPath))
+            if (!String.IsNullOrWhiteSpace(outPath))
             {
                 exportTask = Task.Run(async () =>
                 {
@@ -98,86 +99,107 @@ public class TextToSpeechProcessor
                 return 1;
             }
 
-            // キャッシュのみモードの場合、キャッシュされていないセグメントがあるかチェック
-            if (cacheOnly)
+            // 音声再生処理
+            var formatDetector = new AudioFormatDetector();
+            var playbackController = new AudioPlaybackController(this._settings.Audio, formatDetector);
+
+            // 各セグメントを順次再生
+            foreach (var segment in segments)
             {
-                var uncachedSegments = segments.Where(s => !s.IsCached).ToList();
-                if (uncachedSegments.Count > 0)
+                if (segment.AudioData != null)
                 {
-                    ConsoleHelper.WriteWarning($"Warning: {uncachedSegments.Count} segments are not cached", this._logger);
-                    return 1;
+                    await playbackController.PlayAudioAsync(segment.AudioData, cancellationToken);
                 }
             }
 
-            // 音声再生処理
-            var playbackResult = await this.ProcessAudioPlaybackAsync(segments, verbose, cancellationToken);
-            if (playbackResult != 0)
-            {
-                return playbackResult;
-            }
-
-            // 出力ファイルの処理完了を待機
+            // エクスポートタスクの完了を待機
             if (exportTask != null)
             {
-                await exportTask;
+                try
+                {
+                    await exportTask;
+                }
+                catch (OperationCanceledException)
+                {
+                    this._logger.LogInformation("音声ファイルの出力がキャンセルされました");
+                }
+                catch (Exception ex)
+                {
+                    this._logger.LogWarning(ex, "音声ファイルの出力に失敗しました");
+                }
             }
 
             if (verbose)
             {
-                var totalElapsed = (DateTime.UtcNow - totalStartTime).TotalMilliseconds;
-                ConsoleHelper.WriteLine($"Total execution time: {totalElapsed:F1}ms", this._logger);
+                ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms", this._logger);
             }
 
             return 0;
         }
         catch (OperationCanceledException)
         {
-            ConsoleHelper.WriteLine("Text-to-speech processing was cancelled", this._logger);
-            return 1;
+            this._logger.LogInformation("テキスト読み上げ処理がキャンセルされました");
+            throw new VoicevoxRunCachedException(
+                ErrorCodes.General.OPERATION_CANCELLED,
+                "Text-to-speech processing was cancelled",
+                "テキスト読み上げ処理がキャンセルされました。",
+                null,
+                "操作を再実行してください。"
+            );
+        }
+        catch (VoicevoxRunCachedException)
+        {
+            // 既に適切に処理された例外は再スロー
+            throw;
         }
         catch (Exception ex)
         {
-            this._logger.LogError(ex, "テキスト読み上げ処理中にエラーが発生しました");
-            ConsoleHelper.WriteError($"Error: {ex.Message}", this._logger);
-            return 1;
+            this._logger.LogError(ex, "テキスト読み上げ処理中に予期しないエラーが発生しました");
+            throw new VoicevoxRunCachedException(
+                ErrorCodes.General.UNKNOWN_ERROR,
+                $"Unexpected error during text-to-speech processing: {ex.Message}",
+                "テキスト読み上げ処理中に予期しないエラーが発生しました。",
+                ex,
+                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
+            );
         }
     }
 
     /// <summary>
-    /// 音声再生処理を実行します
+    /// セグメント処理を実行します
     /// </summary>
-    /// <param name="segments">セグメントのリスト</param>
-    /// <param name="verbose">詳細出力フラグ</param>
-    /// <param name="cancellationToken">キャンセレーショントークン</param>
-    /// <returns>処理結果の終了コード</returns>
-    private async Task<int> ProcessAudioPlaybackAsync(List<TextSegment> segments, bool verbose, CancellationToken cancellationToken)
+    private async Task<List<TextSegment>> ProcessSegmentsAsync(VoiceRequest request, bool noCache, CancellationToken cancellationToken)
     {
         try
         {
-            var playbackStartTime = DateTime.UtcNow;
-
-            // 音声再生処理
-            var audioSegmentPlayer = new AudioSegmentPlayer(this._settings.Audio, new AudioFormatDetector());
-            var cacheManager = new AudioCacheManager(this._settings.Cache);
-            using var processingChannel = new AudioProcessingChannel(cacheManager, new VoiceVoxApiClient(this._settings.VoiceVox));
-            var fillerManager = new FillerManager(this._settings.Filler, cacheManager, this._settings.VoiceVox.DefaultSpeaker);
-
-            await audioSegmentPlayer.PlayAudioSequentiallyWithGenerationAsync(
-                segments, processingChannel, fillerManager, cancellationToken);
-
-            var playbackElapsed = (DateTime.UtcNow - playbackStartTime).TotalMilliseconds;
-            if (verbose)
-            {
-                ConsoleHelper.WriteLine($"Audio playback completed in {playbackElapsed:F1}ms", this._logger);
-            }
-
-            return 0;
+            return await this._segmentProcessor.ProcessSegmentsAsync(request, noCache, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            this._logger.LogInformation("セグメント処理がキャンセルされました");
+            throw new VoicevoxRunCachedException(
+                ErrorCodes.General.OPERATION_CANCELLED,
+                "Segment processing was cancelled",
+                "セグメント処理がキャンセルされました。",
+                null,
+                "操作を再実行してください。"
+            );
+        }
+        catch (VoicevoxRunCachedException)
+        {
+            // 既に適切に処理された例外は再スロー
+            throw;
         }
         catch (Exception ex)
         {
-            this._logger.LogError(ex, "音声再生処理中にエラーが発生しました");
-            ConsoleHelper.WriteError($"Error: Failed to play audio: {ex.Message}", this._logger);
-            return 1;
+            this._logger.LogError(ex, "セグメント処理中に予期しないエラーが発生しました");
+            throw new VoicevoxRunCachedException(
+                ErrorCodes.General.UNKNOWN_ERROR,
+                $"Unexpected error during segment processing: {ex.Message}",
+                "セグメント処理中に予期しないエラーが発生しました。",
+                ex,
+                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
+            );
         }
     }
 }
