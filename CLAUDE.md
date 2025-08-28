@@ -26,11 +26,20 @@ dotnet run devices --full
 # Build release version
 dotnet build -c Release
 
+# Run benchmarks (requires Release build)
+dotnet run -c Release -- benchmark
+
+# Use test message from appsettings.json
+dotnet run -- test
+
 # Publish standalone executable
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o ./publish
 
 # Use the publish script (Windows)
 src_dotnet/_publish.cmd
+
+# Format code
+dotnet format
 ```
 
 ## Architecture Overview
@@ -47,11 +56,16 @@ src_dotnet/_publish.cmd
 - **Configuration/AppSettings.cs**: Strongly-typed configuration management
 
 ### Technology Stack
-- **.NET 9.0**: Primary framework
+- **.NET 9.0**: Primary framework with C# 13 features
 - **NAudio + NAudio.Lame**: Audio playback and MP3 encoding/decoding
 - **HttpClient**: REST API communication
 - **Microsoft.Extensions.Configuration**: JSON configuration management
-- **System.Text.Json**: JSON serialization
+- **Microsoft.Extensions.Logging**: Structured logging
+- **Serilog**: Advanced logging with console and file outputs
+- **FluentValidation**: Configuration validation
+- **Polly**: Retry policies and resilience patterns
+- **BenchmarkDotNet**: Performance benchmarking
+- **Microsoft.Extensions.Caching.Memory**: In-memory caching
 
 ### Data Flow Architecture
 1. **Text Segmentation**: Input text split into sentences for optimal caching
@@ -71,20 +85,33 @@ src_dotnet/_publish.cmd
 
 ```
 src_dotnet/VoicevoxRunCached/
-├── Program.cs                      # Entry point and CLI handling
+├── Program.cs                      # Entry point with ApplicationBootstrap
 ├── Configuration/
-│   └── AppSettings.cs             # Configuration models
+│   ├── AppSettings.cs             # Configuration models
+│   └── Validators.cs              # FluentValidation rules
 ├── Models/
 │   ├── VoiceRequest.cs           # Request parameters
-│   └── TextSegment.cs            # Segment processing model
+│   ├── TextSegment.cs            # Segment processing model
+│   └── AudioFormat.cs            # Audio format detection
 ├── Services/
+│   ├── ApplicationBootstrap.cs   # App initialization
+│   ├── CommandRouter.cs          # Command dispatching
+│   ├── ArgumentParser.cs         # CLI argument parsing
 │   ├── VoiceVoxApiClient.cs      # VOICEVOX API client
 │   ├── AudioCacheManager.cs      # Caching logic
-│   ├── AudioPlayer.cs            # NAudio playback
+│   ├── AudioPlayer.cs            # NAudio playback orchestration
 │   ├── TextSegmentProcessor.cs   # Text segmentation
 │   ├── VoiceVoxEngineManager.cs  # Engine lifecycle management
 │   ├── FillerManager.cs          # Filler audio management
-│   └── ProgressSpinner.cs        # Console progress indication
+│   ├── ProgressSpinner.cs        # Console progress indication
+│   ├── Audio/                    # Audio-specific services
+│   ├── Cache/                    # Cache management services  
+│   └── Commands/                 # Command handlers
+├── Benchmarks/
+│   └── AudioProcessingBenchmarks.cs # Performance benchmarks
+├── Exceptions/
+│   ├── VoicevoxRunCachedException.cs # Custom exceptions
+│   └── ErrorCodes.cs             # Error code definitions
 └── appsettings.json              # Configuration file
 ```
 
@@ -95,7 +122,9 @@ The application uses `appsettings.json` with these sections:
 - **Cache**: Directory, UseExecutableBaseDirectory, ExpirationDays, MaxSizeGB
 - **Audio**: OutputDevice (-1 for default), Volume, PrepareDevice, PreparationDurationMs, PreparationVolume, OutputDeviceId
 - **Filler**: Enabled, Directory, UseExecutableBaseDirectory, FillerTexts
-- **Logging**: Level, Format
+- **Logging**: Level, Format (legacy - mostly replaced by Serilog)
+- **Serilog**: MinimumLevel, WriteTo (Console/File), OutputTemplate, Enrichers
+- **Test**: Message (comprehensive test text for development)
 
 ## Command Interface
 
@@ -105,6 +134,8 @@ VoicevoxRunCached speakers
 VoicevoxRunCached devices [--full] [--json]
 VoicevoxRunCached --init
 VoicevoxRunCached --clear
+VoicevoxRunCached benchmark
+VoicevoxRunCached test
 
 Options:
 --speaker, -s <id>    Speaker ID (default: 1)
@@ -125,10 +156,19 @@ speakers             List available speakers
 devices              List audio output devices
 --init               Initialize filler audio cache
 --clear              Clear all audio cache files
+benchmark            Run performance benchmarks (requires Release build)
+test                 Run test with comprehensive message from appsettings.json
 ```
 
 ## Development Notes
 
+### Architecture Patterns
+- **Command Pattern**: Commands handled through CommandRouter and specific command handlers
+- **Service Locator**: ApplicationBootstrap centralizes service initialization
+- **Repository Pattern**: AudioCacheManager abstracts caching operations
+- **Chain of Responsibility**: Audio processing pipeline with multiple stages
+
+### Technical Constraints
 - All VOICEVOX API calls must be serial (no parallel requests)
 - Speaker initialization required before first use of each speaker
 - Cache files use SHA256 hashing for unique identification
@@ -137,4 +177,11 @@ devices              List audio output devices
 - Engine auto-start functionality checks for existing processes before launching
 - Filler audio uses separate cache directory for interval management
 - ProgressSpinner provides non-blocking console feedback during operations
+
+### Code Standards
 - All services use primary constructors and modern C# 13 patterns
+- FluentValidation for configuration validation
+- Serilog for structured logging with multiple sinks
+- Polly for retry policies and resilience
+- BenchmarkDotNet for performance measurement
+- Custom exception handling with VoicevoxRunCachedException
