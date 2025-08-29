@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using VoicevoxRunCached.Configuration;
 using Serilog;
 
@@ -6,22 +5,30 @@ namespace VoicevoxRunCached.Services;
 
 /// <summary>
 /// LRU（Least Recently Used）キャッシュを実装したメモリキャッシュサービス
+/// スレッドセーフな二重連結リストとハッシュマップを使用した効率的なO(1)実装
 /// </summary>
 public class MemoryCacheService : IDisposable
 {
-    private readonly ConcurrentDictionary<string, CacheItem> _cache;
-    private readonly ConcurrentQueue<string> _accessOrder;
-    private readonly object _lockObject = new();
-    private readonly int _maxSize;
+    private readonly Dictionary<string, LinkedListNode<CacheItem>> _cache;
+    private readonly LinkedList<CacheItem> _lruList;
+    private readonly ReaderWriterLockSlim _lock;
+    private readonly long _maxSizeBytes;
     private readonly TimeSpan _defaultExpiration;
+    private long _currentSizeBytes;
+    private long _hitCount;
+    private long _missCount;
     private bool _disposed;
 
     public MemoryCacheService(CacheSettings settings)
     {
-        this._maxSize = settings.MemoryCacheSizeMB * 1024 * 1024; // MB to bytes
+        this._maxSizeBytes = settings.MemoryCacheSizeMB * 1024L * 1024L; // MB to bytes
         this._defaultExpiration = TimeSpan.FromDays(settings.ExpirationDays);
-        this._cache = new ConcurrentDictionary<string, CacheItem>();
-        this._accessOrder = new ConcurrentQueue<string>();
+        this._cache = new Dictionary<string, LinkedListNode<CacheItem>>();
+        this._lruList = new LinkedList<CacheItem>();
+        this._lock = new ReaderWriterLockSlim(LockRecursionPolicy.NoRecursion);
+        this._currentSizeBytes = 0;
+        this._hitCount = 0;
+        this._missCount = 0;
 
         Log.Information("MemoryCacheService を初期化しました - 最大サイズ: {MaxSizeMB}MB, デフォルト有効期限: {ExpirationDays}日",
             settings.MemoryCacheSizeMB, settings.ExpirationDays);
@@ -33,29 +40,44 @@ public class MemoryCacheService : IDisposable
     public void Set<T>(string key, T value, TimeSpan? expiration = null)
     {
         if (this._disposed) return;
+        ArgumentNullException.ThrowIfNull(key);
 
         var expirationTime = DateTime.UtcNow.Add(expiration ?? this._defaultExpiration);
-        var item = new CacheItem<T>(value, expirationTime);
+        var item = new CacheItem(key, value, expirationTime);
+        var estimatedSize = this.EstimateSize(value);
 
-        // 既存のアイテムを更新する場合
-        if (this._cache.TryGetValue(key, out var existingItem))
+        this._lock.EnterWriteLock();
+        try
         {
-            this._cache[key] = item;
-            this.UpdateAccessOrder(key);
+            // 既存のアイテムを更新する場合
+            if (this._cache.TryGetValue(key, out var existingNode))
+            {
+                // 古いサイズを引いて新しいサイズを追加
+                this._currentSizeBytes -= this.EstimateSize(existingNode.Value.Value);
+                this._currentSizeBytes += estimatedSize;
+
+                // ノードの値を更新して最前面に移動
+                existingNode.Value = item;
+                this._lruList.Remove(existingNode);
+                this._lruList.AddFirst(existingNode);
+            }
+            else
+            {
+                // 新しいアイテムを追加
+                this._currentSizeBytes += estimatedSize;
+                var newNode = this._lruList.AddFirst(item);
+                this._cache[key] = newNode;
+            }
+
+            // サイズ制限を適用（LRUに基づいて古いアイテムを削除）
+            this.EnforceSizeLimitLocked();
+
+            Log.Debug("キャッシュにアイテムを追加/更新しました - キー: {Key}, サイズ: {Size} bytes", key, estimatedSize);
         }
-        else
+        finally
         {
-            // 新しいアイテムを追加
-            this._cache[key] = item;
-            this._accessOrder.Enqueue(key);
-            this.UpdateAccessOrder(key);
-
-            // サイズ制限をチェック
-            this.EnforceSizeLimit();
+            this._lock.ExitWriteLock();
         }
-
-        Log.Debug("キャッシュにアイテムを追加/更新しました - キー: {Key}, サイズ: {Size} bytes",
-            key, this.EstimateSize(value));
     }
 
     /// <summary>
@@ -65,23 +87,53 @@ public class MemoryCacheService : IDisposable
     {
         if (this._disposed) return default;
 
-        if (this._cache.TryGetValue(key, out var item))
+        this._lock.EnterUpgradeableReadLock();
+        try
         {
-            // 有効期限チェック
-            if (item.ExpirationTime <= DateTime.UtcNow)
+            if (this._cache.TryGetValue(key, out var node))
             {
-                this._cache.TryRemove(key, out _);
-                Log.Debug("キャッシュアイテムの有効期限が切れました - キー: {Key}", key);
-                return default;
+                // 有効期限チェック
+                if (node.Value.ExpirationTime <= DateTime.UtcNow)
+                {
+                    this._lock.EnterWriteLock();
+                    try
+                    {
+                        this.RemoveNodeLocked(node);
+                        Interlocked.Increment(ref this._missCount);
+                    }
+                    finally
+                    {
+                        this._lock.ExitWriteLock();
+                    }
+
+                    Log.Debug("キャッシュアイテムの有効期限が切れました - キー: {Key}", key);
+                    return default;
+                }
+
+                // アクセス順序を更新（最前面に移動）
+                this._lock.EnterWriteLock();
+                try
+                {
+                    this._lruList.Remove(node);
+                    this._lruList.AddFirst(node);
+                    Interlocked.Increment(ref this._hitCount);
+                }
+                finally
+                {
+                    this._lock.ExitWriteLock();
+                }
+
+                Log.Debug("キャッシュからアイテムを取得しました - キー: {Key}", key);
+                return node.Value.Value is T result ? result : default;
             }
 
-            // アクセス順序を更新
-            this.UpdateAccessOrder(key);
-            Log.Debug("キャッシュからアイテムを取得しました - キー: {Key}", key);
-            return ((CacheItem<T>)item).Value;
+            Interlocked.Increment(ref this._missCount);
+            return default;
         }
-
-        return default;
+        finally
+        {
+            this._lock.ExitUpgradeableReadLock();
+        }
     }
 
     /// <summary>
@@ -91,16 +143,24 @@ public class MemoryCacheService : IDisposable
     {
         if (this._disposed) return false;
 
-        if (this._cache.TryGetValue(key, out var item))
+        this._lock.EnterReadLock();
+        try
         {
-            if (item.ExpirationTime <= DateTime.UtcNow)
+            if (this._cache.TryGetValue(key, out var node))
             {
-                this._cache.TryRemove(key, out _);
-                return false;
+                if (node.Value.ExpirationTime <= DateTime.UtcNow)
+                {
+                    // 有効期限切れのアイテムは存在しないものとして扱う
+                    return false;
+                }
+                return true;
             }
-            return true;
+            return false;
         }
-        return false;
+        finally
+        {
+            this._lock.ExitReadLock();
+        }
     }
 
     /// <summary>
@@ -110,12 +170,21 @@ public class MemoryCacheService : IDisposable
     {
         if (this._disposed) return false;
 
-        var removed = this._cache.TryRemove(key, out _);
-        if (removed)
+        this._lock.EnterWriteLock();
+        try
         {
-            Log.Debug("キャッシュからアイテムを削除しました - キー: {Key}", key);
+            if (this._cache.TryGetValue(key, out var node))
+            {
+                this.RemoveNodeLocked(node);
+                Log.Debug("キャッシュからアイテムを削除しました - キー: {Key}", key);
+                return true;
+            }
+            return false;
         }
-        return removed;
+        finally
+        {
+            this._lock.ExitWriteLock();
+        }
     }
 
     /// <summary>
@@ -125,11 +194,17 @@ public class MemoryCacheService : IDisposable
     {
         if (this._disposed) return;
 
-        lock (this._lockObject)
+        this._lock.EnterWriteLock();
+        try
         {
             this._cache.Clear();
-            while (this._accessOrder.TryDequeue(out _)) { }
+            this._lruList.Clear();
+            this._currentSizeBytes = 0;
             Log.Information("キャッシュをクリアしました");
+        }
+        finally
+        {
+            this._lock.ExitWriteLock();
         }
     }
 
@@ -138,17 +213,29 @@ public class MemoryCacheService : IDisposable
     /// </summary>
     public CacheStatistics GetStatistics()
     {
-        var currentSize = this._cache.Values.Sum(item => this.EstimateSize(item));
-        var expiredItems = this._cache.Values.Count(item => item.ExpirationTime <= DateTime.UtcNow);
-
-        return new CacheStatistics
+        this._lock.EnterReadLock();
+        try
         {
-            TotalItems = this._cache.Count,
-            ExpiredItems = expiredItems,
-            CurrentSizeBytes = currentSize,
-            MaxSizeBytes = this._maxSize,
-            HitRate = this.CalculateHitRate()
-        };
+            var expiredItems = this._cache.Values.Count(node => node.Value.ExpirationTime <= DateTime.UtcNow);
+            var totalHits = Interlocked.Read(ref this._hitCount);
+            var totalMisses = Interlocked.Read(ref this._missCount);
+            var totalRequests = totalHits + totalMisses;
+
+            return new CacheStatistics
+            {
+                TotalItems = this._cache.Count,
+                ExpiredItems = expiredItems,
+                CurrentSizeBytes = this._currentSizeBytes,
+                MaxSizeBytes = this._maxSizeBytes,
+                CacheHits = totalHits,
+                CacheMisses = totalMisses,
+                HitRate = totalRequests > 0 ? (double)totalHits / totalRequests : 0.0
+            };
+        }
+        finally
+        {
+            this._lock.ExitReadLock();
+        }
     }
 
     /// <summary>
@@ -158,94 +245,100 @@ public class MemoryCacheService : IDisposable
     {
         if (this._disposed) return;
 
-        var expiredKeys = this._cache
-            .Where(kvp => kvp.Value.ExpirationTime <= DateTime.UtcNow)
-            .Select(kvp => kvp.Key)
-            .ToList();
+        var expiredNodes = new List<LinkedListNode<CacheItem>>();
 
-        var removedCount = 0;
-        foreach (var key in expiredKeys)
+        this._lock.EnterReadLock();
+        try
         {
-            if (this._cache.TryRemove(key, out _))
+            foreach (var node in this._cache.Values)
             {
+                if (node.Value.ExpirationTime <= DateTime.UtcNow)
+                {
+                    expiredNodes.Add(node);
+                }
+            }
+        }
+        finally
+        {
+            this._lock.ExitReadLock();
+        }
+
+        if (expiredNodes.Count > 0)
+        {
+            this._lock.EnterWriteLock();
+            try
+            {
+                foreach (var node in expiredNodes)
+                {
+                    this.RemoveNodeLocked(node);
+                }
+            }
+            finally
+            {
+                this._lock.ExitWriteLock();
+            }
+
+            Log.Information("期限切れアイテムを {Count} 件クリーンアップしました", expiredNodes.Count);
+        }
+    }
+
+    /// <summary>
+    /// サイズ制限を適用（書き込みロック内で呼び出される）
+    /// </summary>
+    private void EnforceSizeLimitLocked()
+    {
+        if (this._currentSizeBytes <= this._maxSizeBytes) return;
+
+        Log.Debug("キャッシュサイズ制限に達しました - 現在: {CurrentSize} bytes, 制限: {MaxSize} bytes",
+            this._currentSizeBytes, this._maxSizeBytes);
+
+        // LRU順序で古いアイテムを削除（リストの末尾から）
+        var removedCount = 0;
+        while (this._currentSizeBytes > this._maxSizeBytes && this._lruList.Count > 0)
+        {
+            var lastNode = this._lruList.Last;
+            if (lastNode != null)
+            {
+                this.RemoveNodeLocked(lastNode);
                 removedCount++;
+                Log.Debug("LRUキャッシュから古いアイテムを削除しました - キー: {Key}", lastNode.Value.Key);
             }
         }
 
         if (removedCount > 0)
         {
-            Log.Information("期限切れアイテムを {Count} 件クリーンアップしました", removedCount);
+            Log.Information("LRU制限により {Count} 件のアイテムを削除しました", removedCount);
         }
     }
 
-    private void UpdateAccessOrder(string key)
+    /// <summary>
+    /// ノードを削除（書き込みロック内で呼び出される）
+    /// </summary>
+    private void RemoveNodeLocked(LinkedListNode<CacheItem> node)
     {
-        // アクセス順序を更新（LRUの実装）
-        lock (this._lockObject)
-        {
-            // 既存のキーを削除
-            var tempQueue = new ConcurrentQueue<string>();
-            while (this._accessOrder.TryDequeue(out var item))
-            {
-                if (item != key)
-                {
-                    tempQueue.Enqueue(item);
-                }
-            }
-
-            // キーを最後に追加（最も最近使用された）
-            while (tempQueue.TryDequeue(out var item))
-            {
-                this._accessOrder.Enqueue(item);
-            }
-            this._accessOrder.Enqueue(key);
-        }
+        this._cache.Remove(node.Value.Key);
+        this._lruList.Remove(node);
+        this._currentSizeBytes -= this.EstimateSize(node.Value.Value);
     }
 
-    private void EnforceSizeLimit()
-    {
-        var currentSize = this._cache.Values.Sum(item => this.EstimateSize(item));
-
-        if (currentSize <= this._maxSize) return;
-
-        Log.Debug("キャッシュサイズ制限に達しました - 現在: {CurrentSize} bytes, 制限: {MaxSize} bytes",
-            currentSize, this._maxSize);
-
-        // LRU順序で古いアイテムを削除
-        lock (this._lockObject)
-        {
-            while (currentSize > this._maxSize && this._accessOrder.TryDequeue(out var key))
-            {
-                if (this._cache.TryRemove(key, out var removedItem))
-                {
-                    currentSize -= this.EstimateSize(removedItem);
-                    Log.Debug("LRUキャッシュから古いアイテムを削除しました - キー: {Key}", key);
-                }
-            }
-        }
-    }
-
+    /// <summary>
+    /// オブジェクトのサイズを推定
+    /// </summary>
     private long EstimateSize(object? value)
     {
         if (value == null) return 0;
 
-        // 簡易的なサイズ推定
+        // より正確なサイズ推定
         return value switch
         {
-            byte[] bytes => bytes.Length,
-            string str => str.Length * 2, // UTF-16
-            int => 4,
-            long => 8,
-            double => 8,
-            bool => 1,
+            byte[] bytes => bytes.Length + 24, // 配列のオーバーヘッド
+            string str => (str.Length * 2) + 26, // UTF-16 + 文字列のオーバーヘッド
+            int => 4 + 16, // 値 + オブジェクトヘッダ
+            long => 8 + 16,
+            double => 8 + 16,
+            bool => 1 + 16,
             _ => 64 // デフォルト推定値
         };
-    }
-
-    private double CalculateHitRate()
-    {
-        // 簡易的なヒット率計算（実際の実装ではより詳細な統計が必要）
-        return 0.85; // 仮の値
     }
 
     public void Dispose()
@@ -253,6 +346,7 @@ public class MemoryCacheService : IDisposable
         if (!this._disposed)
         {
             this.Clear();
+            this._lock?.Dispose();
             this._disposed = true;
             GC.SuppressFinalize(this);
         }
@@ -260,28 +354,19 @@ public class MemoryCacheService : IDisposable
 }
 
 /// <summary>
-/// キャッシュアイテムの基底クラス
+/// キャッシュアイテム
 /// </summary>
-public abstract class CacheItem
+public class CacheItem
 {
+    public string Key { get; }
+    public object? Value { get; set; }
     public DateTime ExpirationTime { get; }
 
-    protected CacheItem(DateTime expirationTime)
+    public CacheItem(string key, object? value, DateTime expirationTime)
     {
-        this.ExpirationTime = expirationTime;
-    }
-}
-
-/// <summary>
-/// 型付きキャッシュアイテム
-/// </summary>
-public class CacheItem<T> : CacheItem
-{
-    public T Value { get; }
-
-    public CacheItem(T value, DateTime expirationTime) : base(expirationTime)
-    {
+        this.Key = key;
         this.Value = value;
+        this.ExpirationTime = expirationTime;
     }
 }
 
@@ -294,11 +379,9 @@ public class CacheStatistics
     public int ExpiredItems { get; set; }
     public long CurrentSizeBytes { get; set; }
     public long MaxSizeBytes { get; set; }
-    public double HitRate { get; set; }
-
-    // 音声キャッシュとの互換性のためのプロパティ
     public long CacheHits { get; set; }
     public long CacheMisses { get; set; }
+    public double HitRate { get; set; }
 
     public double UsagePercentage => this.MaxSizeBytes > 0 ? (double)this.CurrentSizeBytes / this.MaxSizeBytes * 100 : 0;
     public int ValidItems => this.TotalItems - this.ExpiredItems;
