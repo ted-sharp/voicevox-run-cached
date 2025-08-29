@@ -98,10 +98,13 @@ public static class ProgramExtensions
     {
         try
         {
+            // Serilogの CloseAndFlush を直接呼び出す
+            // 通常は瞬時に完了し、内部でタイムアウト処理も実装されている
             Serilog.Log.CloseAndFlush();
         }
         catch (Exception ex)
         {
+            // クリーンアップが失敗しても致命的ではない
             Console.WriteLine($"Warning: Failed to cleanup Serilog: {ex.Message}");
         }
     }
