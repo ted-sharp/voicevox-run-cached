@@ -146,7 +146,7 @@ public class CommandRouter
         var testArgs = new[] { testMessage }.Concat(remaining).ToArray();
 
         this._logger.LogInformation("Test args constructed: {TestArgs}", String.Join(" ", testArgs));
-        ConsoleHelper.WriteLine($"Debug: Test args: {String.Join(" ", testArgs)}", this._logger);
+        this._logger.LogDebug("テストコマンド引数の詳細: {TestArgs}", String.Join(" ", testArgs));
 
         return await this.ExecuteTextToSpeechCommandAsync(testArgs, cancellationToken);
     }
@@ -164,7 +164,7 @@ public class CommandRouter
     /// </summary>
     private async Task<int> ExecuteTextToSpeechCommandAsync(string[] args, CancellationToken cancellationToken)
     {
-        var request = ArgumentParser.ParseArguments(args, this._settings);
+        var request = ArgumentParser.ParseArguments(args, this._settings, this._logger);
         if (request == null)
         {
             ConsoleHelper.WriteError("Error: Invalid arguments", this._logger);

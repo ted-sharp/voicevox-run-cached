@@ -2,6 +2,7 @@ using NAudio.Wave;
 using NAudio.MediaFoundation;
 using NAudio.CoreAudioApi;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Constants;
 using Serilog;
 
 namespace VoicevoxRunCached.Services;
@@ -92,7 +93,7 @@ public class AudioDeviceManager : IDisposable
             using var audioStream = new MemoryStream(silentWavData);
             using var reader = new WaveFileReader(audioStream);
             using var wavePlayer = new WaveOutEvent();
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5)); // 5秒でタイムアウト
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(AudioConstants.DevicePreparationTimeoutSeconds)); // デバイス準備のタイムアウト
 
             if (this._settings.OutputDevice >= 0)
             {
@@ -188,7 +189,7 @@ public class AudioDeviceManager : IDisposable
                         // 非同期タスクの適切な破棄
                         if (!this._devicePreparationTask.IsCompleted)
                         {
-                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(AudioConstants.DevicePreparationCleanupTimeoutSeconds));
                             this._devicePreparationTask.Wait(cts.Token);
                         }
                     }

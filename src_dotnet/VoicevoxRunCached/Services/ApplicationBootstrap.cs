@@ -42,7 +42,7 @@ public class ApplicationBootstrap
         var logger = loggerFactory.CreateLogger("VoicevoxRunCached");
 
         // Media Foundation初期化（ロガー作成後）
-        var mediaFoundationInitializer = new MediaFoundationInitializer(logger);
+        var mediaFoundationInitializer = MediaFoundationInitializer.GetInstance(logger);
         mediaFoundationInitializer.Initialize();
 
         // アプリケーション開始をログ出力

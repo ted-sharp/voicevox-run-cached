@@ -4,37 +4,70 @@ using VoicevoxRunCached.Exceptions;
 namespace VoicevoxRunCached.Services;
 
 /// <summary>
-/// MediaFoundation初期化の専用サービス
+/// MediaFoundation初期化の専用サービス（シングルトンパターンで参照カウンタ付き）
 /// </summary>
 public class MediaFoundationInitializer
 {
+    private static readonly object _lock = new object();
+    private static MediaFoundationInitializer? _instance;
+    private static int _referenceCount = 0;
+    private static bool _isInitialized = false;
+
     private readonly ILogger? _logger;
 
-    public MediaFoundationInitializer(ILogger? logger = null)
+    private MediaFoundationInitializer(ILogger? logger = null)
     {
         this._logger = logger;
     }
 
     /// <summary>
-    /// MediaFoundationを初期化します
+    /// シングルトンインスタンスを取得します
+    /// </summary>
+    public static MediaFoundationInitializer GetInstance(ILogger? logger = null)
+    {
+        lock (_lock)
+        {
+            if (_instance == null)
+            {
+                _instance = new MediaFoundationInitializer(logger);
+            }
+            return _instance;
+        }
+    }
+
+    /// <summary>
+    /// MediaFoundationを初期化します（参照カウンタ付き）
     /// </summary>
     public void Initialize()
     {
-        try
+        lock (_lock)
         {
-            MediaFoundationManager.Initialize();
-            this._logger?.LogDebug("MediaFoundation の初期化が完了しました");
-        }
-        catch (Exception ex)
-        {
-            this._logger?.LogError(ex, "MediaFoundation の初期化に失敗しました");
-            throw new VoicevoxRunCachedException(
-                ErrorCodes.Audio.MediaFoundationInitFailed,
-                "MediaFoundation initialization failed",
-                "音声システムの初期化に失敗しました",
-                "NAudioライブラリが正常にインストールされているか確認してください",
-                "MediaFoundation initialization"
-            );
+            _referenceCount++;
+
+            if (_isInitialized)
+            {
+                this._logger?.LogDebug("MediaFoundation は既に初期化済みです。参照カウント: {ReferenceCount}", _referenceCount);
+                return;
+            }
+
+            try
+            {
+                MediaFoundationManager.Initialize();
+                _isInitialized = true;
+                this._logger?.LogDebug("MediaFoundation の初期化が完了しました。参照カウント: {ReferenceCount}", _referenceCount);
+            }
+            catch (Exception ex)
+            {
+                _referenceCount--; // 初期化失敗時は参照カウントを戻す
+                this._logger?.LogError(ex, "MediaFoundation の初期化に失敗しました");
+                throw new VoicevoxRunCachedException(
+                    ErrorCodes.Audio.MediaFoundationInitFailed,
+                    "MediaFoundation initialization failed",
+                    "音声システムの初期化に失敗しました",
+                    "NAudioライブラリが正常にインストールされているか確認してください",
+                    "MediaFoundation initialization"
+                );
+            }
         }
     }
 
@@ -43,38 +76,85 @@ public class MediaFoundationInitializer
     /// </summary>
     public void EnsureInitialized()
     {
-        try
+        lock (_lock)
         {
-            MediaFoundationManager.EnsureInitialized();
-            this._logger?.LogDebug("MediaFoundation の初期化状態を確認しました");
-        }
-        catch (Exception ex)
-        {
-            this._logger?.LogError(ex, "MediaFoundation の初期化状態確認に失敗しました");
-            throw new VoicevoxRunCachedException(
-                ErrorCodes.Audio.MediaFoundationInitFailed,
-                "MediaFoundation ensure initialized failed",
-                "音声システムの状態確認に失敗しました",
-                "アプリケーションを再起動してください",
-                "MediaFoundation initialization check"
-            );
+            if (!_isInitialized)
+            {
+                this.Initialize();
+                return;
+            }
+
+            try
+            {
+                MediaFoundationManager.EnsureInitialized();
+                this._logger?.LogDebug("MediaFoundation の初期化状態を確認しました。参照カウント: {ReferenceCount}", _referenceCount);
+            }
+            catch (Exception ex)
+            {
+                this._logger?.LogError(ex, "MediaFoundation の初期化状態確認に失敗しました");
+                throw new VoicevoxRunCachedException(
+                    ErrorCodes.Audio.MediaFoundationInitFailed,
+                    "MediaFoundation ensure initialized failed",
+                    "音声システムの状態確認に失敗しました",
+                    "アプリケーションを再起動してください",
+                    "MediaFoundation initialization check"
+                );
+            }
         }
     }
 
     /// <summary>
-    /// MediaFoundationをシャットダウンします（通常はアプリケーション終了時）
+    /// MediaFoundationをシャットダウンします（参照カウンタ付き）
     /// </summary>
     public void Shutdown()
     {
-        try
+        lock (_lock)
         {
-            MediaFoundationManager.Shutdown();
-            this._logger?.LogDebug("MediaFoundation のシャットダウンが完了しました");
+            if (_referenceCount <= 0)
+            {
+                this._logger?.LogDebug("MediaFoundation は既にシャットダウン済みです");
+                return;
+            }
+
+            _referenceCount--;
+            this._logger?.LogDebug("MediaFoundation の参照カウントを減らしました: {ReferenceCount}", _referenceCount);
+
+            if (_referenceCount == 0 && _isInitialized)
+            {
+                try
+                {
+                    MediaFoundationManager.Shutdown();
+                    _isInitialized = false;
+                    this._logger?.LogDebug("MediaFoundation のシャットダウンが完了しました");
+                }
+                catch (Exception ex)
+                {
+                    this._logger?.LogWarning(ex, "MediaFoundation のシャットダウン中にエラーが発生しました");
+                    // シャットダウン時のエラーは例外をスローしない
+                }
+            }
         }
-        catch (Exception ex)
+    }
+
+    /// <summary>
+    /// 現在の参照カウントを取得します（デバッグ用）
+    /// </summary>
+    public int GetReferenceCount()
+    {
+        lock (_lock)
         {
-            this._logger?.LogWarning(ex, "MediaFoundation のシャットダウン中にエラーが発生しました");
-            // シャットダウン時のエラーは例外をスローしない
+            return _referenceCount;
+        }
+    }
+
+    /// <summary>
+    /// 初期化状態を取得します（デバッグ用）
+    /// </summary>
+    public bool IsInitialized()
+    {
+        lock (_lock)
+        {
+            return _isInitialized;
         }
     }
 }

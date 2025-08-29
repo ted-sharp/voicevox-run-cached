@@ -1,4 +1,5 @@
 using System.Globalization;
+using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using Aloe.Utils.CommandLine;
@@ -52,7 +53,7 @@ public static class ArgumentParser
     /// <summary>
     /// 前処理された引数からVoiceRequestを解析
     /// </summary>
-    public static VoiceRequest? ParseArguments(string[] args, AppSettings settings)
+    public static VoiceRequest? ParseArguments(string[] args, AppSettings settings, ILogger? logger = null)
     {
         if (args.Length == 0)
             return null;
@@ -67,7 +68,8 @@ public static class ArgumentParser
         };
 
         // デバッグ用のログ出力
-        Console.WriteLine($"Debug: Parsed request - Text='{request.Text}', SpeakerId={request.SpeakerId}, Speed={request.Speed}, Pitch={request.Pitch}, Volume={request.Volume}");
+        logger?.LogDebug("引数解析結果 - Text='{Text}', SpeakerId={SpeakerId}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
+            request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
 
         // 前処理された引数を解析
         var processedArgs = PreprocessArgs(args);

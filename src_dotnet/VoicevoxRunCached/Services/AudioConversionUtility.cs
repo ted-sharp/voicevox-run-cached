@@ -1,5 +1,6 @@
 using System.Text;
 using NAudio.Wave;
+using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Models;
 using Serilog;
 
@@ -42,10 +43,25 @@ public static class AudioConversionUtility
                     File.Delete(tempWavPath);
             }
         }
+        catch (ArgumentException ex) when (ex.Source == "NAudio.Wave")
+        {
+            Log.Error(ex, "NAudio処理中にエラーが発生しました");
+            throw new InvalidOperationException($"Failed to process audio with NAudio: {ex.Message}", ex);
+        }
+        catch (IOException ex)
+        {
+            Log.Error(ex, "音声ファイルの読み書き中にエラーが発生しました");
+            throw new InvalidOperationException($"Failed to access audio file: {ex.Message}", ex);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            Log.Error(ex, "音声ファイルへのアクセスが拒否されました");
+            throw new InvalidOperationException($"Access denied to audio file: {ex.Message}", ex);
+        }
         catch (Exception ex)
         {
-            Log.Error(ex, "WAVからMP3への変換に失敗しました");
-            throw new InvalidOperationException($"Failed to convert WAV to MP3: {ex.Message}", ex);
+            Log.Error(ex, "WAVからMP3への変換中に予期しないエラーが発生しました");
+            throw new InvalidOperationException($"Unexpected error during WAV to MP3 conversion: {ex.Message}", ex);
         }
     }
 
@@ -83,7 +99,7 @@ public static class AudioConversionUtility
     /// <param name="bitsPerSample">Bits per sample (default: 16)</param>
     /// <param name="generateSilence">Whether to generate silence (true) or low tone (false)</param>
     /// <returns>WAV audio data</returns>
-    public static byte[] CreateMinimalWavData(int durationMs, int sampleRate = 22050, int channels = 1, int bitsPerSample = 16, bool generateSilence = false)
+    public static byte[] CreateMinimalWavData(int durationMs, int sampleRate = AudioConstants.DefaultSampleRate, int channels = AudioConstants.DefaultChannels, int bitsPerSample = AudioConstants.DefaultBitsPerSample, bool generateSilence = false)
     {
         var samplesCount = (sampleRate * durationMs) / 1000;
         var dataSize = samplesCount * channels * (bitsPerSample / 8);
@@ -119,8 +135,8 @@ public static class AudioConversionUtility
         else
         {
             // Very low amplitude sine wave for device warming
-            const double frequency = 440.0; // A4 note
-            const short amplitude = 32; // Very low amplitude
+            const double frequency = AudioConstants.FillerFrequencyHz; // A4 note
+            const short amplitude = AudioConstants.FillerAmplitude; // Very low amplitude
 
             for (int i = 0; i < samplesCount; i++)
             {
@@ -159,7 +175,7 @@ public static class AudioConversionUtility
                 throw new InvalidOperationException("FFmpegプロセスの起動に失敗しました");
             }
 
-            process.WaitForExit(30000); // 30秒でタイムアウト
+            process.WaitForExit(AudioConstants.FfmpegTimeoutMs); // FFmpeg変換のタイムアウト
 
             if (process.ExitCode != 0)
             {
@@ -172,10 +188,25 @@ public static class AudioConversionUtility
                 throw new InvalidOperationException("MP3ファイルの出力に失敗しました");
             }
         }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            Log.Warning(ex, "FFmpegが見つかりません。フォールバックとしてWAVデータをそのまま返します");
+            // FFmpegが利用できない場合は、WAVデータをそのまま返す
+            File.Copy(inputWavPath, outputMp3Path, true);
+        }
+        catch (TimeoutException ex)
+        {
+            Log.Warning(ex, "FFmpeg変換がタイムアウトしました。フォールバックとしてWAVデータをそのまま返します");
+            File.Copy(inputWavPath, outputMp3Path, true);
+        }
+        catch (IOException ex)
+        {
+            Log.Warning(ex, "FFmpeg変換中にファイルアクセスエラーが発生しました。フォールバックとしてWAVデータをそのまま返します");
+            File.Copy(inputWavPath, outputMp3Path, true);
+        }
         catch (Exception ex)
         {
-            Log.Warning(ex, "FFmpeg変換に失敗しました。フォールバックとしてWAVデータをそのまま返します");
-            // FFmpegが利用できない場合は、WAVデータをそのまま返す
+            Log.Warning(ex, "FFmpeg変換中に予期しないエラーが発生しました。フォールバックとしてWAVデータをそのまま返します");
             File.Copy(inputWavPath, outputMp3Path, true);
         }
     }

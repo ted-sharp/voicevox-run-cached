@@ -1,5 +1,6 @@
 using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Services;
 using Serilog;
 
@@ -81,8 +82,8 @@ public class IndividualSegmentPlayer
             using (cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken)))
             {
                 // タイムアウトを設定して無限待機を防ぐ
-                var timeoutTask = Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
-                Log.Debug("音声再生完了を待機中 (タイムアウト: 30秒)...");
+                var timeoutTask = Task.Delay(TimeSpan.FromMilliseconds(AudioConstants.DefaultPlaybackTimeoutMs), cancellationToken);
+                Log.Debug("音声再生完了を待機中 (タイムアウト: {Timeout}秒)...", AudioConstants.DefaultPlaybackTimeoutMs / 1000);
                 var completedTask = await Task.WhenAny(tcs.Task, timeoutTask);
 
                 if (completedTask == timeoutTask)
@@ -130,14 +131,14 @@ public class IndividualSegmentPlayer
         if (isFirstSegment)
         {
             // 最初のセグメントのため、音声デバイス初期化と安定性のための延長遅延
-            Log.Debug("最初のセグメントのため、200ms の遅延を実行中...");
-            await Task.Delay(200, cancellationToken); // 200ms for device initialization and stability
+            Log.Debug("最初のセグメントのため、{Delay}ms の遅延を実行中...", AudioConstants.FirstSegmentDelayMs);
+            await Task.Delay(AudioConstants.FirstSegmentDelayMs, cancellationToken);
         }
         else
         {
             // 後続セグメントのための最小遅延
-            Log.Debug("後続セグメントのため、20ms の遅延を実行中...");
-            await Task.Delay(20, cancellationToken); // 20msに増加して安定性を向上
+            Log.Debug("後続セグメントのため、{Delay}ms の遅延を実行中...", AudioConstants.SubsequentSegmentDelayMs);
+            await Task.Delay(AudioConstants.SubsequentSegmentDelayMs, cancellationToken);
         }
     }
 
