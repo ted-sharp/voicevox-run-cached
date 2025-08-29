@@ -43,6 +43,7 @@ public static class ErrorCodes
         public const string AUDIO_FORMAT_ERROR = "AUDIO_003";
         public const string AUDIO_DEVICE_ERROR = "AUDIO_004";
         public const string AUDIO_ENCODING_FAILED = "AUDIO_005";
+        public const string MediaFoundationInitFailed = "AUDIO_006";
     }
 
     // API関連のエラーコード
@@ -123,6 +124,7 @@ public static class ErrorCodes
             Audio.AUDIO_FORMAT_ERROR => "音声フォーマットが無効です",
             Audio.AUDIO_DEVICE_ERROR => "音声デバイスでエラーが発生しました",
             Audio.AUDIO_ENCODING_FAILED => "音声のエンコードに失敗しました",
+            Audio.MediaFoundationInitFailed => "MediaFoundationの初期化に失敗しました",
 
             // API
             Api.API_REQUEST_FAILED => "APIリクエストに失敗しました",

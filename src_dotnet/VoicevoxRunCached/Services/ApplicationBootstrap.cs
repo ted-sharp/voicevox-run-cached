@@ -22,9 +22,6 @@ public class ApplicationBootstrap
         // ANSIカラーを有効化
         EnableAnsiColors();
 
-        // Media Foundationを初期化
-        MediaFoundationManager.Initialize();
-
         // 設定を構築
         var configuration = ConfigurationManager.BuildConfigurationWithCommandLine(args);
         var settings = BuildAppSettings(configuration);
@@ -43,6 +40,10 @@ public class ApplicationBootstrap
             builder.AddSerilog(Log.Logger, dispose: false);
         });
         var logger = loggerFactory.CreateLogger("VoicevoxRunCached");
+
+        // Media Foundation初期化（ロガー作成後）
+        var mediaFoundationInitializer = new MediaFoundationInitializer(logger);
+        mediaFoundationInitializer.Initialize();
 
         // アプリケーション開始をログ出力
         logger.LogInformation("VoicevoxRunCached アプリケーションを開始します - バージョン {Version}", GetVersion());
