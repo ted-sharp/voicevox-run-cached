@@ -29,8 +29,6 @@ public class VoicevoxRunCachedException : Exception
     /// </summary>
     public string? Context { get; }
 
-    private bool _disposed = false;
-
     public VoicevoxRunCachedException(string errorCode, string message, string userMessage, string? suggestedSolution = null, string? context = null)
         : base(message)
     {
@@ -93,31 +91,6 @@ public class VoicevoxRunCachedException : Exception
         };
 
         return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (!this._disposed)
-        {
-            if (disposing)
-            {
-                // Dispose managed resources
-                // 何もしない（基底クラスで既に処理済み）
-            }
-            else
-            {
-                // Finalizer called - dispose unmanaged resources only
-                try
-                {
-                    // 非管理リソースの破棄（このクラスにはない）
-                }
-                catch
-                {
-                    // Ignore errors in finalizer
-                }
-            }
-            this._disposed = true;
-        }
     }
 }
 
