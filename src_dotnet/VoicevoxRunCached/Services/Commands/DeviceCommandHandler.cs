@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Utilities;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -102,7 +103,7 @@ public class DeviceCommandHandler
             @default = new { id = defaultId, name = defaultName },
             devices = deviceList
         };
-        var json = JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true });
+        var json = JsonSerializer.Serialize(payload, JsonSerializerOptionsCache.Indented);
         Console.WriteLine(json);
     }
 

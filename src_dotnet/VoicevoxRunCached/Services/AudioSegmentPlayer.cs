@@ -151,7 +151,7 @@ public class AudioSegmentPlayer : IDisposable
         catch (Exception ex)
         {
             Log.Error(ex, "PlayAudioSequentiallyWithGenerationAsync でエラーが発生しました");
-            throw;
+            throw new InvalidOperationException("音声シーケンシャル再生中にエラーが発生しました", ex);
         }
         finally
         {

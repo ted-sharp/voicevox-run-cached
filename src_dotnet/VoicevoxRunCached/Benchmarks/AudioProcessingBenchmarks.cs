@@ -78,7 +78,7 @@ public class AudioProcessingBenchmarks
         await Task.CompletedTask;
     }
 
-    private byte[] GenerateSampleWavData()
+    private static byte[] GenerateSampleWavData()
     {
         // 1秒間の44.1kHz 16bit モノラルWAVデータを生成
         var sampleRate = 44100;
@@ -124,7 +124,7 @@ public class AudioProcessingBenchmarks
         return wavData;
     }
 
-    private byte[] ConvertWavToMp3(byte[] wavData)
+    private static byte[] ConvertWavToMp3(byte[] wavData)
     {
         try
         {

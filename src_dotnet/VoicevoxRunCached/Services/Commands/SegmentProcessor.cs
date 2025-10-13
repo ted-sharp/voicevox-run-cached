@@ -58,7 +58,7 @@ public class SegmentProcessor
         catch (Exception ex)
         {
             _logger.LogError(ex, "セグメント処理中にエラーが発生しました");
-            throw;
+            throw new InvalidOperationException("セグメント処理中にエラーが発生しました", ex);
         }
     }
 

@@ -31,7 +31,7 @@ public class Speaker(string name = "", string speakerUuid = "", string version =
 {
     [JsonPropertyName("name")] public string Name { get; set; } = name;
     [JsonPropertyName("speaker_uuid")] public string SpeakerUuid { get; set; } = speakerUuid;
-    [JsonPropertyName("styles")] public List<SpeakerStyle> Styles { get; set; } = [];
+    [JsonPropertyName("styles")] public List<SpeakerStyle> Styles { get; init; } = [];
     [JsonPropertyName("version")] public string Version { get; set; } = version;
 }
 

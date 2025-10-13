@@ -66,7 +66,7 @@ public class TextSegmentProcessor : IDisposable
         catch (Exception ex)
         {
             Log.Error(ex, "テキスト処理中にエラーが発生しました");
-            throw;
+            throw new InvalidOperationException("テキスト処理中にエラーが発生しました", ex);
         }
     }
 
@@ -85,36 +85,32 @@ public class TextSegmentProcessor : IDisposable
             var currentChar = text[i];
             currentSegment.Append(currentChar);
 
-            // センテンス終了文字または改行でセグメント分割
-            if (sentenceEndings.Contains(currentChar) || lineBreaks.Contains(currentChar))
+            // センテンス終了文字、改行、または最大長に達した場合の分割
+            if (sentenceEndings.Contains(currentChar) ||
+                lineBreaks.Contains(currentChar) ||
+                currentSegment.Length >= _maxSegmentLength)
             {
-                var segment = currentSegment.ToString().Trim();
-                if (!String.IsNullOrWhiteSpace(segment))
-                {
-                    segments.Add(segment);
-                }
-                currentSegment.Clear();
-            }
-            // 最大長に達した場合の強制分割
-            else if (currentSegment.Length >= _maxSegmentLength)
-            {
-                var segment = currentSegment.ToString().Trim();
-                if (!String.IsNullOrWhiteSpace(segment))
-                {
-                    segments.Add(segment);
-                }
-                currentSegment.Clear();
+                AddSegmentIfNotEmpty(segments, currentSegment);
             }
         }
 
         // 残りのテキストを追加
-        var remainingSegment = currentSegment.ToString().Trim();
-        if (!String.IsNullOrWhiteSpace(remainingSegment))
-        {
-            segments.Add(remainingSegment);
-        }
+        AddSegmentIfNotEmpty(segments, currentSegment);
 
         return segments;
+    }
+
+    /// <summary>
+    /// 空でない場合にセグメントをリストに追加
+    /// </summary>
+    private static void AddSegmentIfNotEmpty(List<string> segments, StringBuilder currentSegment)
+    {
+        var segment = currentSegment.ToString().Trim();
+        if (!String.IsNullOrWhiteSpace(segment))
+        {
+            segments.Add(segment);
+        }
+        currentSegment.Clear();
     }
 
     /// <summary>

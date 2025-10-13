@@ -50,7 +50,7 @@ public class AudioExportService
         {
             _logger.LogError(ex, "音声ファイルの出力に失敗しました: {OutPath}", outPath);
             ConsoleHelper.WriteWarning($"Failed to save output to '{outPath}': {ex.Message}", _logger);
-            throw;
+            throw new InvalidOperationException($"音声ファイルの出力に失敗しました: {outPath}", ex);
         }
     }
 

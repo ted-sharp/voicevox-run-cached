@@ -70,7 +70,7 @@ public class RetryPolicyService
     public async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> operation, string operationName, CancellationToken cancellationToken = default)
     {
         var retryCount = 0;
-        var lastException = default(Exception);
+        Exception? lastException = null;
 
         while (retryCount < _maxRetryAttempts)
         {
@@ -78,68 +78,73 @@ public class RetryPolicyService
             {
                 return await operation();
             }
+            catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException($"Operation '{operationName}' was cancelled", null, cancellationToken);
+            }
             catch (HttpRequestException ex) when (ShouldRetryHttpError(ex))
             {
                 lastException = ex;
                 retryCount++;
-
-                if (retryCount < _maxRetryAttempts)
-                {
-                    var delay = CalculateDelay(retryCount, ex.StatusCode);
-                    Log.Warning(ex, "HTTP error during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
-                        operationName, delay, retryCount, _maxRetryAttempts);
-
-                    await Task.Delay(delay, cancellationToken);
-                }
-            }
-            catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw new OperationCanceledException($"Operation '{operationName}' was cancelled", null, cancellationToken);
+                await HandleRetryableErrorAsync(ex, operationName, retryCount, ex.StatusCode, cancellationToken);
             }
             catch (TaskCanceledException ex)
             {
                 lastException = ex;
                 retryCount++;
-
-                if (retryCount < _maxRetryAttempts)
-                {
-                    var delay = CalculateDelay(retryCount, null);
-                    Log.Warning(ex, "Timeout during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
-                        operationName, delay, retryCount, _maxRetryAttempts);
-
-                    await Task.Delay(delay, cancellationToken);
-                }
+                await HandleRetryableErrorAsync(ex, operationName, retryCount, null, cancellationToken);
             }
             catch (Exception ex) when (ShouldRetryException(ex))
             {
                 lastException = ex;
                 retryCount++;
-
-                if (retryCount < _maxRetryAttempts)
-                {
-                    var delay = CalculateDelay(retryCount, null);
-                    Log.Warning(ex, "Retryable error during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
-                        operationName, delay, retryCount, _maxRetryAttempts);
-
-                    await Task.Delay(delay, cancellationToken);
-                }
+                await HandleRetryableErrorAsync(ex, operationName, retryCount, null, cancellationToken);
             }
             catch (Exception ex)
             {
-                // Non-retryable error
                 Log.Error(ex, "Non-retryable error during {OperationName}", operationName);
                 throw;
             }
         }
 
-        // All retries exhausted
-        var errorMessage = $"Operation '{operationName}' failed after {_maxRetryAttempts} attempts";
-        if (lastException != null)
+        return ThrowMaxRetriesExceeded<T>(operationName, lastException);
+    }
+
+    private async Task HandleRetryableErrorAsync(
+        Exception exception,
+        string operationName,
+        int retryCount,
+        HttpStatusCode? statusCode,
+        CancellationToken cancellationToken)
+    {
+        if (retryCount >= _maxRetryAttempts)
         {
-            throw new InvalidOperationException(errorMessage, lastException);
+            return;
         }
 
-        throw new InvalidOperationException(errorMessage);
+        var delay = CalculateDelay(retryCount, statusCode);
+        var errorType = GetErrorType(exception);
+
+        Log.Warning(exception, "{ErrorType} during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
+            errorType, operationName, delay, retryCount, _maxRetryAttempts);
+
+        await Task.Delay(delay, cancellationToken);
+    }
+
+    private static string GetErrorType(Exception exception)
+    {
+        return exception switch
+        {
+            HttpRequestException => "HTTP error",
+            TaskCanceledException => "Timeout",
+            _ => "Retryable error"
+        };
+    }
+
+    private static T ThrowMaxRetriesExceeded<T>(string operationName, Exception? lastException)
+    {
+        var errorMessage = $"Operation '{operationName}' failed after maximum retry attempts";
+        throw new InvalidOperationException(errorMessage, lastException);
     }
 
     private bool ShouldRetryHttpError(HttpRequestException ex)

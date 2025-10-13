@@ -116,7 +116,7 @@ public class TextToSpeechProcessor
         return true;
     }
 
-    private Task? StartExportTaskIfNeeded(VoiceRequest request, string? outPath, CancellationToken cancellationToken)
+    private Task StartExportTaskIfNeeded(VoiceRequest request, string? outPath, CancellationToken cancellationToken)
     {
         if (String.IsNullOrWhiteSpace(outPath))
         {

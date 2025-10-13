@@ -1,5 +1,6 @@
 ﻿using System.Net;
 using System.Text.Json;
+using VoicevoxRunCached.Utilities;
 
 namespace VoicevoxRunCached.Exceptions;
 
@@ -89,7 +90,7 @@ public class VoicevoxRunCachedException : Exception
             InnerException = InnerException?.Message
         };
 
-        return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+        return JsonSerializer.Serialize(data, JsonSerializerOptionsCache.Indented);
     }
 }
 
@@ -132,7 +133,7 @@ public class VoiceVoxApiException : VoicevoxRunCachedException
             InnerException = InnerException?.Message
         };
 
-        return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+        return JsonSerializer.Serialize(data, JsonSerializerOptionsCache.Indented);
     }
 }
 
@@ -171,7 +172,7 @@ public class ConfigurationException : VoicevoxRunCachedException
             InnerException = InnerException?.Message
         };
 
-        return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+        return JsonSerializer.Serialize(data, JsonSerializerOptionsCache.Indented);
     }
 }
 
@@ -214,7 +215,7 @@ public class CacheException : VoicevoxRunCachedException
             InnerException = InnerException?.Message
         };
 
-        return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
+        return JsonSerializer.Serialize(data, JsonSerializerOptionsCache.Indented);
     }
 }
 

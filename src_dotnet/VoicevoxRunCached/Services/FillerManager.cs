@@ -199,7 +199,7 @@ public class FillerManager
         await File.WriteAllBytesAsync(targetPath, converted);
     }
 
-    private async Task<byte[]> ConvertWavToMp3Async(byte[] wavData)
+    private static async Task<byte[]> ConvertWavToMp3Async(byte[] wavData)
     {
         try
         {
