@@ -20,6 +20,26 @@ public class IndividualSegmentPlayer : IDisposable
         _formatDetector = formatDetector ?? throw new ArgumentNullException(nameof(formatDetector));
     }
 
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            try
+            {
+                StopAudio();
+                _disposed = true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "IndividualSegmentPlayerの破棄中にエラーが発生しました");
+            }
+            finally
+            {
+                GC.SuppressFinalize(this);
+            }
+        }
+    }
+
     /// <summary>
     /// 個別のセグメントを再生します
     /// </summary>
@@ -198,25 +218,5 @@ public class IndividualSegmentPlayer : IDisposable
     public bool IsPlaying()
     {
         return _wavePlayer?.PlaybackState == PlaybackState.Playing;
-    }
-
-    public void Dispose()
-    {
-        if (!_disposed)
-        {
-            try
-            {
-                StopAudio();
-                _disposed = true;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "IndividualSegmentPlayerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
-        }
     }
 }

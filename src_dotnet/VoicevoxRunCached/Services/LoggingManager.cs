@@ -153,24 +153,15 @@ public class LoggingManager
     /// </summary>
     public static void LogPerformanceMetric(string operation, TimeSpan duration, Dictionary<string, object>? additionalData = null)
     {
-        var properties = new Dictionary<string, object>
-        {
-            ["PerformanceMetric"] = true,
-            ["Operation"] = operation,
-            ["DurationMs"] = duration.TotalMilliseconds,
-            ["Duration"] = duration.ToString(@"mm\:ss\.fff")
-        };
+        var additionalInfo = additionalData != null && additionalData.Count > 0
+            ? String.Join(", ", additionalData.Select(kvp => $"{kvp.Key}={kvp.Value}"))
+            : "";
 
-        if (additionalData != null)
-        {
-            foreach (var kvp in additionalData)
-            {
-                properties[kvp.Key] = kvp.Value;
-            }
-        }
+        var message = String.IsNullOrEmpty(additionalInfo)
+            ? $"パフォーマンスメトリクス - {operation} 完了: {duration:mm\\:ss\\.fff} ({duration.TotalMilliseconds:F2}ms)"
+            : $"パフォーマンスメトリクス - {operation} 完了: {duration:mm\\:ss\\.fff} ({duration.TotalMilliseconds:F2}ms) [{additionalInfo}]";
 
-        Log.Information("パフォーマンスメトリクス - {Operation} 完了: {Duration} ({DurationMs:F2}ms)",
-            operation, duration.ToString(@"mm\:ss\.fff"), duration.TotalMilliseconds);
+        Log.Information(message);
     }
 
     /// <summary>
@@ -217,20 +208,15 @@ public class LoggingManager
     /// </summary>
     public static void LogErrorStatistics(string errorType, string context, Exception? exception = null)
     {
-        var properties = new Dictionary<string, object>
-        {
-            ["ErrorType"] = errorType,
-            ["Context"] = context,
-            ["Timestamp"] = DateTime.UtcNow
-        };
-
         if (exception != null)
         {
-            properties["ExceptionType"] = exception.GetType().Name;
-            properties["ExceptionMessage"] = exception.Message;
+            Log.Warning("エラー統計 - タイプ: {ErrorType}, コンテキスト: {Context}, 例外: {ExceptionType} - {ExceptionMessage}",
+                errorType, context, exception.GetType().Name, exception.Message);
         }
-
-        Log.Warning("エラー統計 - タイプ: {ErrorType}, コンテキスト: {Context}", errorType, context);
+        else
+        {
+            Log.Warning("エラー統計 - タイプ: {ErrorType}, コンテキスト: {Context}", errorType, context);
+        }
     }
 
     /// <summary>

@@ -11,24 +11,22 @@ namespace VoicevoxRunCached.Services;
 public class AudioPlayer : IDisposable
 {
     private readonly AudioDeviceManager _deviceManager;
-    private readonly AudioFormatDetector _formatDetector;
     private readonly AudioPlaybackController _playbackController;
     private readonly AudioSegmentPlayer _segmentPlayer;
-    private readonly AudioSettings _settings;
     private bool _disposed;
 
     public AudioPlayer(AudioSettings settings)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        ArgumentNullException.ThrowIfNull(settings);
 
         // 各専門クラスのインスタンスを作成
+        var formatDetector = new AudioFormatDetector();
         _deviceManager = new AudioDeviceManager(settings);
-        _formatDetector = new AudioFormatDetector();
-        _playbackController = new AudioPlaybackController(settings, _formatDetector);
-        _segmentPlayer = new AudioSegmentPlayer(settings, _formatDetector);
+        _playbackController = new AudioPlaybackController(settings, formatDetector);
+        _segmentPlayer = new AudioSegmentPlayer(settings, formatDetector);
 
         Log.Information("AudioPlayer を初期化しました - 音量: {Volume}, デバイス: {Device}",
-            _settings.Volume, _settings.OutputDevice);
+            settings.Volume, settings.OutputDevice);
     }
 
     public void Dispose()

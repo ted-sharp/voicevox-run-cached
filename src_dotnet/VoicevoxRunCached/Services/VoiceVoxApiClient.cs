@@ -167,12 +167,12 @@ public class VoiceVoxApiClient : IDisposable
             var encodedText = Uri.EscapeDataString(request.Text);
             var queryString = $"text={encodedText}&speaker={request.SpeakerId}";
 
-            // 追加パラメータがある場合は含める
-            if (request.Speed != 1.0)
+            // 追加パラメータがある場合は含める（浮動小数点の誤差を考慮）
+            if (Math.Abs(request.Speed - 1.0) > 0.0001)
                 queryString += $"&speed_scale={request.Speed}";
-            if (request.Pitch != 0.0)
+            if (Math.Abs(request.Pitch - 0.0) > 0.0001)
                 queryString += $"&pitch_scale={request.Pitch}";
-            if (request.Volume != 1.0)
+            if (Math.Abs(request.Volume - 1.0) > 0.0001)
                 queryString += $"&volume_scale={request.Volume}";
 
             var url = $"{_settings.BaseUrl}/audio_query?{queryString}";
@@ -450,31 +450,5 @@ public class VoiceVoxApiClient : IDisposable
             HttpStatusCode.GatewayTimeout => "VoiceVox API request timed out. Please try again later.",
             _ => $"VoiceVox API error (HTTP {statusCode}). Details: {errorContent}"
         };
-    }
-
-    private static string ApplyVoiceParametersToAudioQueryJson(string audioQueryJson, VoiceRequest request)
-    {
-        try
-        {
-            var node = JsonNode.Parse(audioQueryJson) as JsonObject;
-            if (node == null)
-                return audioQueryJson;
-
-            static double Clamp(double v, double min, double max) => v < min ? min : (v > max ? max : v);
-
-            var speed = Clamp(request.Speed, 0.5, 2.0);
-            var pitch = Clamp(request.Pitch, -0.15, 0.15);
-            var volume = Clamp(request.Volume, 0.0, 2.0);
-
-            node["speedScale"] = speed;
-            node["pitchScale"] = pitch;
-            node["volumeScale"] = volume;
-
-            return node.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
-        }
-        catch
-        {
-            return audioQueryJson;
-        }
     }
 }

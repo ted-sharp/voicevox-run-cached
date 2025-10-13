@@ -51,11 +51,6 @@ public class ConfigurationValidationService
 
     public List<string> GetValidationErrors(AppSettings settings)
     {
-        if (settings == null)
-        {
-            return ["設定がnullです"];
-        }
-
         var result = _validator.Validate(settings);
         return result.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}").ToList();
     }

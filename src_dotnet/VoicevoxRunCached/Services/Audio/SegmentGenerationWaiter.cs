@@ -68,7 +68,7 @@ public class SegmentGenerationWaiter
             };
 
             var result = await _processingChannel.ProcessAudioAsync(segmentRequest, cancellationToken);
-            if (result.Success && result.AudioData != null && result.AudioData.Length > 0)
+            if (result.Success && result.AudioData.Length > 0)
             {
                 segment.AudioData = result.AudioData;
                 segment.IsCached = true;

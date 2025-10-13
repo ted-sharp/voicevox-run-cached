@@ -55,7 +55,7 @@ public class AudioPlaybackController : IDisposable
             handler = (_, e) =>
             {
                 try
-                { reader?.Dispose(); }
+                { reader.Dispose(); }
                 catch (Exception ex)
                 { Log.Debug(ex, "Failed to dispose audio reader in PlaybackStopped handler"); }
                 if (e.Exception != null)
@@ -145,7 +145,7 @@ public class AudioPlaybackController : IDisposable
             handler = (_, e) =>
             {
                 try
-                { reader?.Dispose(); }
+                { reader.Dispose(); }
                 catch (Exception ex)
                 { Log.Debug(ex, "Failed to dispose audio reader in PlaybackStopped handler"); }
                 if (e.Exception != null)

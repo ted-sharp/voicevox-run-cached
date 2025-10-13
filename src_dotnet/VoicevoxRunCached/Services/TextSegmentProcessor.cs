@@ -21,6 +21,11 @@ public class TextSegmentProcessor : IDisposable
             maxSegmentLength, maxConcurrentTasks);
     }
 
+    public void Dispose()
+    {
+        _semaphore.Dispose();
+    }
+
     /// <summary>
     /// テキストを最適化された方法でセグメントに分割
     /// </summary>
@@ -207,7 +212,7 @@ public class TextSegmentProcessor : IDisposable
     /// </summary>
     public SegmentStatistics GetSegmentStatistics(List<TextSegment> segments)
     {
-        if (segments == null || segments.Count == 0)
+        if (segments.Count == 0)
         {
             return new SegmentStatistics();
         }
@@ -225,11 +230,6 @@ public class TextSegmentProcessor : IDisposable
             MinLength = minLength,
             MaxLength = maxLength
         };
-    }
-
-    public void Dispose()
-    {
-        _semaphore.Dispose();
     }
 }
 

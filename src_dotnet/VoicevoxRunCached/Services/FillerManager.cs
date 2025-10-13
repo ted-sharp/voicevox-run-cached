@@ -90,7 +90,6 @@ public class FillerManager
             }
         }
 
-        spinner.Dispose();
         Log.Information("フィラーキャッシュの初期化が完了しました - 項目数: {Count}", _settings.FillerTexts.Length);
     }
 

@@ -39,10 +39,8 @@ public class VoiceVoxEngineManager : IDisposable
     {
         try
         {
-            using var client = new HttpClient
-            {
-                Timeout = TimeSpan.FromSeconds(5)
-            };
+            using var client = new HttpClient();
+            client.Timeout = TimeSpan.FromSeconds(5);
             var response = await client.GetAsync($"{_settings.BaseUrl}/version");
             return response.IsSuccessStatusCode;
         }
@@ -103,7 +101,6 @@ public class VoiceVoxEngineManager : IDisposable
             {
                 if (await IsEngineRunningAsync())
                 {
-                    spinner.Dispose();
                     Log.Information("VOICEVOXエンジンが正常に起動しました");
                     return true;
                 }
@@ -111,7 +108,6 @@ public class VoiceVoxEngineManager : IDisposable
                 await Task.Delay(1000);
             }
 
-            spinner.Dispose();
             Log.Error("VOICEVOXエンジンの起動タイムアウトが発生しました");
             return false;
         }

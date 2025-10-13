@@ -63,7 +63,7 @@ public class TextToSpeechProcessor
                 {
                     try
                     {
-                        await _audioExportService.ExportAudioAsync(request, outPath!, cancellationToken);
+                        await _audioExportService.ExportAudioAsync(request, outPath, cancellationToken);
                     }
                     catch (OperationCanceledException)
                     {
@@ -158,44 +158,6 @@ public class TextToSpeechProcessor
                 ErrorCodes.General.UnknownError,
                 $"Unexpected error during text-to-speech processing: {ex.Message}",
                 "テキスト読み上げ処理中に予期しないエラーが発生しました。",
-                ex,
-                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
-            );
-        }
-    }
-
-    /// <summary>
-    /// セグメント処理を実行します
-    /// </summary>
-    private async Task<List<TextSegment>> ProcessSegmentsAsync(VoiceRequest request, bool noCache, CancellationToken cancellationToken)
-    {
-        try
-        {
-            return await _segmentProcessor.ProcessSegmentsAsync(request, noCache, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogInformation("セグメント処理がキャンセルされました");
-            throw new VoicevoxRunCachedException(
-                ErrorCodes.General.OperationCancelled,
-                "Segment processing was cancelled",
-                "セグメント処理がキャンセルされました。",
-                null,
-                "操作を再実行してください。"
-            );
-        }
-        catch (VoicevoxRunCachedException)
-        {
-            // 既に適切に処理された例外は再スロー
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "セグメント処理中に予期しないエラーが発生しました");
-            throw new VoicevoxRunCachedException(
-                ErrorCodes.General.UnknownError,
-                $"Unexpected error during segment processing: {ex.Message}",
-                "セグメント処理中に予期しないエラーが発生しました。",
                 ex,
                 "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
             );

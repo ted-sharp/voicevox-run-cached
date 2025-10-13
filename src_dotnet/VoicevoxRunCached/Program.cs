@@ -85,7 +85,6 @@ class Program
             "Cache" => 4,
             "Audio" => 5,
             "API" => 6,
-            "General" => 1,
             _ => 1
         };
     }

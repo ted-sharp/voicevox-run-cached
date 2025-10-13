@@ -120,7 +120,6 @@ public class CommandRouter
             "Cache" => 4,
             "Audio" => 5,
             "API" => 6,
-            "General" => 1,
             _ => 1
         };
     }
@@ -130,7 +129,7 @@ public class CommandRouter
     /// </summary>
     private async Task<int> HandleTestCommandAsync(string[] args, CancellationToken cancellationToken)
     {
-        var testMessage = _settings.Test.Message ?? String.Empty;
+        var testMessage = _settings.Test.Message;
         if (String.IsNullOrWhiteSpace(testMessage))
         {
             Console.WriteLine("\e[31mError: Test.Message is empty in configuration\e[0m");
@@ -141,8 +140,7 @@ public class CommandRouter
         ConsoleHelper.WriteLine($"テストメッセージ: {testMessage}", _logger);
 
         // 設定されたメッセージで最初の引数を置き換え
-        var remaining = args.Where(arg => arg != null).Cast<string>().ToArray();
-        var testArgs = new[] { testMessage }.Concat(remaining).ToArray();
+        var testArgs = new[] { testMessage }.Concat(args).ToArray();
 
         _logger.LogInformation("Test args constructed: {TestArgs}", String.Join(" ", testArgs));
         _logger.LogDebug("テストコマンド引数の詳細: {TestArgs}", String.Join(" ", testArgs));

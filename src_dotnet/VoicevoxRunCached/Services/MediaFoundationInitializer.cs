@@ -8,7 +8,7 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class MediaFoundationInitializer
 {
-    private static readonly object _lock = new object();
+    private static readonly object Lock = new object();
     private static MediaFoundationInitializer? _instance;
     private static int _referenceCount;
     private static bool _isInitialized;
@@ -25,7 +25,7 @@ public class MediaFoundationInitializer
     /// </summary>
     public static MediaFoundationInitializer GetInstance(ILogger? logger = null)
     {
-        lock (_lock)
+        lock (Lock)
         {
             if (_instance == null)
             {
@@ -40,7 +40,7 @@ public class MediaFoundationInitializer
     /// </summary>
     public void Initialize()
     {
-        lock (_lock)
+        lock (Lock)
         {
             _referenceCount++;
 
@@ -76,7 +76,7 @@ public class MediaFoundationInitializer
     /// </summary>
     public void EnsureInitialized()
     {
-        lock (_lock)
+        lock (Lock)
         {
             if (!_isInitialized)
             {
@@ -108,7 +108,7 @@ public class MediaFoundationInitializer
     /// </summary>
     public void Shutdown()
     {
-        lock (_lock)
+        lock (Lock)
         {
             if (_referenceCount <= 0)
             {
@@ -141,7 +141,7 @@ public class MediaFoundationInitializer
     /// </summary>
     public int GetReferenceCount()
     {
-        lock (_lock)
+        lock (Lock)
         {
             return _referenceCount;
         }
@@ -152,7 +152,7 @@ public class MediaFoundationInitializer
     /// </summary>
     public bool IsInitialized()
     {
-        lock (_lock)
+        lock (Lock)
         {
             return _isInitialized;
         }
