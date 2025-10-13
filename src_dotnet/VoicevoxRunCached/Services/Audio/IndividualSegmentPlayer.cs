@@ -8,7 +8,7 @@ namespace VoicevoxRunCached.Services.Audio;
 /// <summary>
 /// 個別の音声セグメントを再生するクラス
 /// </summary>
-public class IndividualSegmentPlayer
+public class IndividualSegmentPlayer : IDisposable
 {
     private readonly AudioFormatDetector _formatDetector;
     private bool _disposed;

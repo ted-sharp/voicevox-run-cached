@@ -22,22 +22,8 @@ public class AudioPlaybackController : IDisposable
 
     public void Dispose()
     {
-        if (!_disposed)
-        {
-            try
-            {
-                StopAudio();
-                _disposed = true;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "AudioPlaybackControllerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
-        }
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -263,21 +249,17 @@ public class AudioPlaybackController : IDisposable
         {
             if (disposing)
             {
-                // マネージドリソースの破棄
-                Dispose();
-            }
-            else
-            {
-                // ファイナライザーが呼ばれた場合 - アンマネージドリソースのみ破棄
                 try
                 {
-                    // アンマネージドリソースの破棄
+                    StopAudio();
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // ファイナライザーでのエラーは無視
+                    Log.Error(ex, "AudioPlaybackControllerの破棄中にエラーが発生しました");
                 }
             }
+
+            _disposed = true;
         }
     }
 }

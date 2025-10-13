@@ -41,60 +41,8 @@ public class AudioDeviceManager : IDisposable
 
     public void Dispose()
     {
-        if (!_disposed)
-        {
-            try
-            {
-                // デバイス準備タスクのクリーンアップ
-                if (_devicePreparationTask != null)
-                {
-                    try
-                    {
-                        // 非同期タスクの適切な破棄
-                        if (!_devicePreparationTask.IsCompleted)
-                        {
-                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(AudioConstants.DevicePreparationCleanupTimeoutSeconds));
-                            _devicePreparationTask.Wait(cts.Token);
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        Log.Debug("デバイス準備タスクのクリーンアップがタイムアウトしました");
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warning(ex, "デバイス準備タスクのクリーンアップ中にエラーが発生しました");
-                    }
-                }
-
-                // WASAPIデバイスのクリーンアップ
-                if (_wasapiDevice != null)
-                {
-                    try
-                    {
-                        _wasapiDevice.Dispose();
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warning(ex, "WASAPIデバイスの破棄中にエラーが発生しました");
-                    }
-                    finally
-                    {
-                        _wasapiDevice = null;
-                    }
-                }
-
-                _disposed = true;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "AudioDeviceManagerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
-        }
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -244,21 +192,53 @@ public class AudioDeviceManager : IDisposable
         {
             if (disposing)
             {
-                // マネージドリソースの破棄
-                Dispose();
-            }
-            else
-            {
-                // ファイナライザーが呼ばれた場合 - アンマネージドリソースのみ破棄
                 try
                 {
-                    // アンマネージドリソースの破棄
+                    // デバイス準備タスクのクリーンアップ
+                    if (_devicePreparationTask != null)
+                    {
+                        try
+                        {
+                            if (!_devicePreparationTask.IsCompleted)
+                            {
+                                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(AudioConstants.DevicePreparationCleanupTimeoutSeconds));
+                                _devicePreparationTask.Wait(cts.Token);
+                            }
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            Log.Debug("デバイス準備タスクのクリーンアップがタイムアウトしました");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warning(ex, "デバイス準備タスクのクリーンアップ中にエラーが発生しました");
+                        }
+                    }
+
+                    // WASAPIデバイスのクリーンアップ
+                    if (_wasapiDevice != null)
+                    {
+                        try
+                        {
+                            _wasapiDevice.Dispose();
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Warning(ex, "WASAPIデバイスの破棄中にエラーが発生しました");
+                        }
+                        finally
+                        {
+                            _wasapiDevice = null;
+                        }
+                    }
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // ファイナライザーでのエラーは無視
+                    Log.Error(ex, "AudioDeviceManagerの破棄中にエラーが発生しました");
                 }
             }
+
+            _disposed = true;
         }
     }
 }

@@ -7,7 +7,7 @@ namespace VoicevoxRunCached.Services;
 /// <summary>
 /// テキストセグメント処理の最適化された実装
 /// </summary>
-public class TextSegmentProcessor
+public class TextSegmentProcessor : IDisposable
 {
     private readonly int _maxSegmentLength;
     private readonly SemaphoreSlim _semaphore;

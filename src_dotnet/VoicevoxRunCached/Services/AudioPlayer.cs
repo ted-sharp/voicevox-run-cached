@@ -33,25 +33,8 @@ public class AudioPlayer : IDisposable
 
     public void Dispose()
     {
-        if (!_disposed)
-        {
-            try
-            {
-                // 各専門クラスの破棄
-                _deviceManager.Dispose();
-                _playbackController.Dispose();
-                _segmentPlayer.Dispose();
-                _disposed = true;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "AudioPlayerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
-        }
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 
     /// <summary>
@@ -166,21 +149,20 @@ public class AudioPlayer : IDisposable
         {
             if (disposing)
             {
-                // マネージドリソースの破棄
-                Dispose();
-            }
-            else
-            {
-                // ファイナライザーが呼ばれた場合 - アンマネージドリソースのみ破棄
                 try
                 {
-                    // アンマネージドリソースの破棄
+                    // 各専門クラスの破棄
+                    _deviceManager.Dispose();
+                    _playbackController.Dispose();
+                    _segmentPlayer.Dispose();
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // ファイナライザーでのエラーは無視
+                    Log.Error(ex, "AudioPlayerの破棄中にエラーが発生しました");
                 }
             }
+
+            _disposed = true;
         }
     }
 }
