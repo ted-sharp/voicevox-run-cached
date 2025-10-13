@@ -6,7 +6,7 @@ namespace VoicevoxRunCached;
 /// <summary>
 /// VoicevoxRunCached アプリケーションのメインエントリーポイント
 /// </summary>
-class Program
+static class Program
 {
     static async Task<int> Main(string[] args)
     {

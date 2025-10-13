@@ -9,7 +9,7 @@ namespace VoicevoxRunCached.Services;
 /// <summary>
 /// アプリケーションの初期化と設定を行うクラス
 /// </summary>
-public class ApplicationBootstrap
+public static class ApplicationBootstrap
 {
     private const int StdOutputHandle = -11;
     private const uint EnableVirtualTerminalProcessing = 0x0004;

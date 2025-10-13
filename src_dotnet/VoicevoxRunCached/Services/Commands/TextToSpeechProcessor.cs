@@ -120,7 +120,7 @@ public class TextToSpeechProcessor
     {
         if (String.IsNullOrWhiteSpace(outPath))
         {
-            return null;
+            return Task.CompletedTask;
         }
 
         return Task.Run(async () =>

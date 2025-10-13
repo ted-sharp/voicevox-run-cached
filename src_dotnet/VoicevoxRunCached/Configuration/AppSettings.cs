@@ -10,20 +10,18 @@ public class AppSettings
     public TestSettings Test { get; set; } = new();
 }
 
-// C# 13 Primary constructor for VoiceVoxSettings
-public class VoiceVoxSettings(string baseUrl = "http://127.0.0.1:50021", int defaultSpeaker = 1, int connectionTimeout = 30, bool autoStartEngine = false, string enginePath = "", int startupTimeoutSeconds = 30, string engineArguments = "", EngineType engineType = EngineType.Voicevox, bool keepEngineRunning = true)
+// VoiceVox engine settings
+public class VoiceVoxSettings
 {
-    public string BaseUrl { get; set; } = baseUrl;
-    public int DefaultSpeaker { get; set; } = defaultSpeaker;
-    public int ConnectionTimeout { get; set; } = connectionTimeout;
-    public bool AutoStartEngine { get; set; } = autoStartEngine;
-    public string EnginePath { get; set; } = enginePath;
-    public int StartupTimeoutSeconds { get; set; } = startupTimeoutSeconds;
-    public string EngineArguments { get; set; } = engineArguments;
-    public EngineType EngineType { get; set; } = engineType;
-    public bool KeepEngineRunning { get; set; } = keepEngineRunning;
-
-    // 新しいプロパティ
+    public string BaseUrl { get; set; } = "http://127.0.0.1:50021";
+    public int DefaultSpeaker { get; set; } = 1;
+    public int ConnectionTimeout { get; set; } = 30;
+    public bool AutoStartEngine { get; set; } = false;
+    public string EnginePath { get; set; } = "";
+    public int StartupTimeoutSeconds { get; set; } = 30;
+    public string EngineArguments { get; set; } = "";
+    public EngineType EngineType { get; set; } = EngineType.Voicevox;
+    public bool KeepEngineRunning { get; set; } = true;
     public int TimeoutMs { get; set; } = 30000; // 30秒
     public bool ValidateConnection { get; set; } = false;
 }
@@ -34,46 +32,37 @@ public enum EngineType
     AivisSpeech
 }
 
-// C# 13 Primary constructor for CacheSettings
-public class CacheSettings(string directory = "./cache/audio/", int expirationDays = 30, double maxSizeGb = 1.0, bool useExecutableBaseDirectory = false)
+// Cache settings
+public class CacheSettings
 {
-    public string Directory { get; set; } = directory;
-    public int ExpirationDays { get; set; } = expirationDays;
-    public double MaxSizeGb { get; set; } = maxSizeGb;
-
-    // When true and Directory is relative, resolve it under the executable directory
-    public bool UseExecutableBaseDirectory { get; set; } = useExecutableBaseDirectory;
-
-    // 新しいプロパティ
+    public string Directory { get; set; } = "./cache/audio/";
+    public int ExpirationDays { get; set; } = 30;
+    public double MaxSizeGb { get; set; } = 1.0;
+    public bool UseExecutableBaseDirectory { get; set; }
     public int MemoryCacheSizeMb { get; set; } = 100; // 100MB
 }
 
-// C# 13 Primary constructor for AudioSettings with device preparation
-public class AudioSettings(int outputDevice = -1, double volume = 1.0, bool prepareDevice = false, int preparationDurationMs = 200, double preparationVolume = 0.01, string outputDeviceId = "")
+// Audio output settings
+public class AudioSettings
 {
-    public int OutputDevice { get; set; } = outputDevice;
-    public double Volume { get; set; } = volume;
-
-    // Device preparation settings to prevent audio dropouts
-    public bool PrepareDevice { get; set; } = prepareDevice;
-    public int PreparationDurationMs { get; set; } = preparationDurationMs;
-    public double PreparationVolume { get; set; } = preparationVolume; // Very low but audible volume for device warming
-
-    // WASAPI endpoint ID preference. When set, WasapiOut will be used instead of WaveOutEvent.
-    public string OutputDeviceId { get; set; } = outputDeviceId;
-
-    // 新しいプロパティ
+    public int OutputDevice { get; set; } = -1;
+    public double Volume { get; set; } = 1.0;
+    public bool PrepareDevice { get; set; } = false;
+    public int PreparationDurationMs { get; set; } = 200;
+    public double PreparationVolume { get; set; } = 0.01;
+    public string OutputDeviceId { get; set; } = "";
     public int DesiredLatency { get; set; } = 100; // 100ms
     public int NumberOfBuffers { get; set; } = 3;
 }
 
-// C# 13 Primary constructor for FillerSettings
-public class FillerSettings(bool enabled = false, string directory = "./cache/filler/", string[]? fillerTexts = null, bool useExecutableBaseDirectory = false)
+// Filler sound settings
+public class FillerSettings
 {
-    public bool Enabled { get; set; } = enabled;
-    public string Directory { get; set; } = directory;
+    public bool Enabled { get; set; } = false;
+    public string Directory { get; set; } = "./cache/filler/";
 
-    public string[] FillerTexts { get; set; } = fillerTexts ?? [
+    public string[] FillerTexts { get; set; } =
+    [
         "えーっと、",
         "あのー、",
         "あのう、",
@@ -82,9 +71,7 @@ public class FillerSettings(bool enabled = false, string directory = "./cache/fi
         "えとえと、"
     ];
 
-    public bool UseExecutableBaseDirectory { get; set; } = useExecutableBaseDirectory;
-
-    // 新しいプロパティ
+    public bool UseExecutableBaseDirectory { get; set; } = false;
     public int MaxCacheSizeMb { get; set; } = 100; // 100MB
 }
 
@@ -100,23 +87,18 @@ public enum LogLevel
     None
 }
 
-// Logging settings (appsettings.json)
-public class LoggingSettings(string level = "Information", string format = "simple")
+// Logging settings
+public class LoggingSettings
 {
-    // Level: Trace|Debug|Information|Warning|Error|Critical|None
-    public string Level { get; set; } = level;
-
-    // Format: simple|json
-    public string Format { get; set; } = format;
-
-    // 新しいプロパティ
+    public string Level { get; set; } = "Information";
+    public string Format { get; set; } = "simple";
     public bool EnableFileLogging { get; set; } = false;
     public int MaxFileSizeMb { get; set; } = 10; // 10MB
     public int MaxFileCount { get; set; } = 5;
 }
 
-// Test settings (appsettings.json)
-public class TestSettings(string message = "テストメッセージです。")
+// Test settings
+public class TestSettings
 {
-    public string Message { get; set; } = message;
+    public string Message { get; set; } = "テストメッセージです。";
 }

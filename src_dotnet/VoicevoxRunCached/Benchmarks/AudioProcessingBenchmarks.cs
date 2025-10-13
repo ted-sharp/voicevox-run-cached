@@ -21,7 +21,13 @@ public class AudioProcessingBenchmarks
         // サンプルWAVデータを生成（1秒間の44.1kHz 16bit モノラル）
         _sampleWavData = GenerateSampleWavData();
 
-        var cacheSettings = new CacheSettings("./benchmark-cache/", 30, 1.0, true);
+        var cacheSettings = new CacheSettings
+        {
+            Directory = "./benchmark-cache/",
+            ExpirationDays = 30,
+            MaxSizeGb = 1.0,
+            UseExecutableBaseDirectory = true
+        };
         _memoryCache = new MemoryCacheService(cacheSettings);
         _cacheManager = new AudioCacheManager(cacheSettings, _memoryCache);
 

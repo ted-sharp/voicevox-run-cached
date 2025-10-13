@@ -79,39 +79,42 @@ public static class ArgumentParser
         var processedArgs = PreprocessArgs(args);
 
         // C# 13 Enhanced pattern matching for cleaner argument parsing
-        for (int i = 1; i < processedArgs.Length; i++)
+        int i = 1;
+        while (i < processedArgs.Length)
         {
             switch (processedArgs[i])
             {
                 case "--speaker" or "-s" when i + 1 < processedArgs.Length && Int32.TryParse(processedArgs[i + 1], out int speaker):
                     request.SpeakerId = speaker;
-                    i++;
+                    i += 2;
                     break;
                 case "--speed" when i + 1 < processedArgs.Length && Double.TryParse(processedArgs[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double speed):
                     request.Speed = speed;
-                    i++;
+                    i += 2;
                     break;
                 case "--pitch" when i + 1 < processedArgs.Length && Double.TryParse(processedArgs[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double pitch):
                     request.Pitch = pitch;
-                    i++;
+                    i += 2;
                     break;
                 case "--volume" when i + 1 < processedArgs.Length && Double.TryParse(processedArgs[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double volume):
                     request.Volume = volume;
-                    i++;
+                    i += 2;
                     break;
                 case "--no-cache" or "--cache-only" or "--verbose" or "--help" or "-h" or "--no-play":
+                    i++;
                     break;
                 case "--out" or "-o" when i + 1 < processedArgs.Length:
-                    i++;
+                    i += 2;
                     break;
                 case "--log-level" when i + 1 < processedArgs.Length:
-                    i++;
+                    i += 2;
                     break;
                 case "--log-format" when i + 1 < processedArgs.Length:
-                    i++;
+                    i += 2;
                     break;
                 default:
                     Console.WriteLine($"Warning: Unknown option '{processedArgs[i]}'");
+                    i++;
                     break;
             }
         }

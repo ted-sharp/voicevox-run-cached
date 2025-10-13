@@ -6,7 +6,6 @@ namespace VoicevoxRunCached.Exceptions;
 /// <summary>
 /// VoicevoxRunCachedアプリケーションの基本例外クラス
 /// </summary>
-[Serializable]
 public class VoicevoxRunCachedException : Exception
 {
     public VoicevoxRunCachedException(string errorCode, string message, string userMessage, string? suggestedSolution = null, string? context = null)
@@ -97,7 +96,6 @@ public class VoicevoxRunCachedException : Exception
 /// <summary>
 /// VoiceVox API関連の例外
 /// </summary>
-[Serializable]
 public class VoiceVoxApiException : VoicevoxRunCachedException
 {
     public VoiceVoxApiException(string errorCode, string message, string userMessage, HttpStatusCode? statusCode = null, string? apiResponse = null, string? suggestedSolution = null)
@@ -141,7 +139,6 @@ public class VoiceVoxApiException : VoicevoxRunCachedException
 /// <summary>
 /// 設定関連の例外
 /// </summary>
-[Serializable]
 public class ConfigurationException : VoicevoxRunCachedException
 {
     public ConfigurationException(string errorCode, string message, string userMessage, string? settingPath = null, string? suggestedSolution = null)
@@ -181,7 +178,6 @@ public class ConfigurationException : VoicevoxRunCachedException
 /// <summary>
 /// キャッシュ関連の例外
 /// </summary>
-[Serializable]
 public class CacheException : VoicevoxRunCachedException
 {
     public CacheException(string errorCode, string message, string userMessage, string? cacheKey = null, string? cachePath = null, string? suggestedSolution = null)

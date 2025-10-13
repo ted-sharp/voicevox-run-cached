@@ -287,10 +287,12 @@ public class AudioCacheManager : IDisposable
     /// <summary>
     /// 個別セグメントの非同期処理
     /// </summary>
-    private async Task<TextSegment> ProcessSegmentAsync(TextSegment segment, VoiceRequest request, CancellationToken _)
+    private async Task<TextSegment> ProcessSegmentAsync(TextSegment segment, VoiceRequest request, CancellationToken cancellationToken)
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             segment.SpeakerId = request.SpeakerId;
 
             // キャッシュから音声データを取得
