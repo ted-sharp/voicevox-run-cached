@@ -1,7 +1,6 @@
 ﻿using System.Net;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using Serilog;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
@@ -41,7 +40,16 @@ public class VoiceVoxApiClient : IDisposable
 
     public void Dispose()
     {
-        _httpClient.Dispose();
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _httpClient.Dispose();
+        }
     }
 
     public async Task<List<Speaker>> GetSpeakersAsync(CancellationToken cancellationToken = default)

@@ -1,4 +1,5 @@
-﻿using System.Globalization;
+﻿using System.Collections.Frozen;
+using System.Globalization;
 using Aloe.Utils.CommandLine;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
@@ -9,7 +10,8 @@ namespace VoicevoxRunCached.Services;
 public static class ArgumentParser
 {
     // フラグ引数の定義（--flag → --flag true）
-    public static readonly List<string> FlagArgs = new()
+    // S3887対応: FrozenSetを使用して不変コレクションに
+    public static readonly FrozenSet<string> FlagArgs = new[]
     {
         "--verbose",
         "--no-cache",
@@ -19,17 +21,19 @@ public static class ArgumentParser
         "--full",
         "--help",
         "-h"
-    };
+    }.ToFrozenSet();
 
     // ショート引数の定義（-uadmin → -u admin）
-    public static readonly List<string> ShortArgs = new()
+    // S3887対応: FrozenSetを使用して不変コレクションに
+    public static readonly FrozenSet<string> ShortArgs = new[]
     {
         "-s",
         "-o"
-    };
+    }.ToFrozenSet();
 
     // コマンドライン引数と設定プロパティのマッピング（現在は使用されていないが将来の拡張用）
-    public static readonly Dictionary<string, string> Aliases = new()
+    // S3887対応: FrozenDictionaryを使用して不変コレクションに
+    public static readonly FrozenDictionary<string, string> Aliases = new Dictionary<string, string>
     {
         // Note: These mappings are currently not used but kept for future configuration integration
         // { "--verbose", "Logging:Verbose" },
@@ -40,7 +44,7 @@ public static class ArgumentParser
         // { "--full", "Output:Full" },
         // { "-s", "VoiceVox:SpeakerId" },
         // { "-o", "Output:Path" }
-    };
+    }.ToFrozenDictionary();
 
     /// <summary>
     /// コマンドライン引数を前処理して、IConfigurationで使用できる形式に変換

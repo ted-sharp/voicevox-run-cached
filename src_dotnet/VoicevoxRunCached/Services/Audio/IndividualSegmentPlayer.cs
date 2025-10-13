@@ -22,21 +22,26 @@ public class IndividualSegmentPlayer : IDisposable
 
     public void Dispose()
     {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
         if (!_disposed)
         {
-            try
+            if (disposing)
             {
-                StopAudio();
-                _disposed = true;
+                try
+                {
+                    StopAudio();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "IndividualSegmentPlayerの破棄中にエラーが発生しました");
+                }
             }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "IndividualSegmentPlayerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
+            _disposed = true;
         }
     }
 

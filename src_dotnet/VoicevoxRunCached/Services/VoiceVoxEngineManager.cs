@@ -16,11 +16,20 @@ public class VoiceVoxEngineManager : IDisposable
 
     public void Dispose()
     {
-        if (!_settings.KeepEngineRunning)
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
         {
-            StopEngine();
+            if (!_settings.KeepEngineRunning)
+            {
+                StopEngine();
+            }
+            _engineProcess?.Dispose();
         }
-        _engineProcess?.Dispose();
     }
 
     public async Task<bool> EnsureEngineRunningAsync()

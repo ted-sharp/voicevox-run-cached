@@ -20,21 +20,26 @@ public class WavePlayerManager : IDisposable
 
     public void Dispose()
     {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
         if (!_disposed)
         {
-            try
+            if (disposing)
             {
-                DisposeSharedWavePlayer();
-                _disposed = true;
+                try
+                {
+                    DisposeSharedWavePlayer();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "WavePlayerManagerの破棄中にエラーが発生しました");
+                }
             }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "WavePlayerManagerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
+            _disposed = true;
         }
     }
 

@@ -36,12 +36,20 @@ public class MemoryCacheService : IDisposable
 
     public void Dispose()
     {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
         if (!_disposed)
         {
-            Clear();
-            _lock.Dispose();
+            if (disposing)
+            {
+                Clear();
+                _lock.Dispose();
+            }
             _disposed = true;
-            GC.SuppressFinalize(this);
         }
     }
 

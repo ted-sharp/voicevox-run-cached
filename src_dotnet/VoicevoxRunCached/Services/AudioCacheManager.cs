@@ -40,21 +40,26 @@ public class AudioCacheManager : IDisposable
 
     public void Dispose()
     {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
         if (!_disposed)
         {
-            try
+            if (disposing)
             {
-                _memoryCache.Dispose();
-                _disposed = true;
+                try
+                {
+                    _memoryCache.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "AudioCacheManagerの破棄中にエラーが発生しました");
+                }
             }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "AudioCacheManagerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
+            _disposed = true;
         }
     }
 

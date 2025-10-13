@@ -31,23 +31,28 @@ public class AudioSegmentPlayer : IDisposable
 
     public void Dispose()
     {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
         if (!_disposed)
         {
-            try
+            if (disposing)
             {
-                StopAudio();
-                _individualPlayer.Dispose();
-                _wavePlayerManager.Dispose();
-                _disposed = true;
+                try
+                {
+                    StopAudio();
+                    _individualPlayer.Dispose();
+                    _wavePlayerManager.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    Log.Error(ex, "AudioSegmentPlayerの破棄中にエラーが発生しました");
+                }
             }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "AudioSegmentPlayerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
+            _disposed = true;
         }
     }
 

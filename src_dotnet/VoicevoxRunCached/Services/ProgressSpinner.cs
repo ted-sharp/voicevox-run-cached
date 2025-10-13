@@ -20,18 +20,27 @@ public class ProgressSpinner : IDisposable
 
     public void Dispose()
     {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
         if (!_isDisposed)
         {
-            _cancellationTokenSource.Cancel();
-            try
+            if (disposing)
             {
-                _animationTask.Wait(1000); // Wait up to 1 second for cleanup
+                _cancellationTokenSource.Cancel();
+                try
+                {
+                    _animationTask.Wait(1000); // Wait up to 1 second for cleanup
+                }
+                catch (AggregateException)
+                {
+                    // Ignore cleanup timeout
+                }
+                _cancellationTokenSource.Dispose();
             }
-            catch (AggregateException)
-            {
-                // Ignore cleanup timeout
-            }
-            _cancellationTokenSource.Dispose();
             _isDisposed = true;
         }
     }

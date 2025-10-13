@@ -23,7 +23,16 @@ public class TextSegmentProcessor : IDisposable
 
     public void Dispose()
     {
-        _semaphore.Dispose();
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            _semaphore.Dispose();
+        }
     }
 
     /// <summary>

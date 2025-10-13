@@ -19,24 +19,29 @@ public class AudioProcessingChannel : IDisposable
 
     public void Dispose()
     {
-        if (_disposed)
-            return;
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
 
-        try
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!_disposed)
         {
-            // 同期処理なので特別なクリーンアップは不要
-            Log.Debug("AudioProcessingChannel の破棄処理を開始");
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "AudioProcessingChannel の破棄中にエラーが発生しました");
-        }
-        finally
-        {
+            if (disposing)
+            {
+                try
+                {
+                    // 同期処理なので特別なクリーンアップは不要
+                    Log.Debug("AudioProcessingChannel の破棄処理を開始");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "AudioProcessingChannel の破棄中にエラーが発生しました");
+                }
+            }
             _disposed = true;
+            Log.Debug("AudioProcessingChannel を破棄しました");
         }
-
-        Log.Debug("AudioProcessingChannel を破棄しました");
     }
 
     public async Task<AudioProcessingResult> ProcessAudioAsync(VoiceRequest request, CancellationToken cancellationToken = default)

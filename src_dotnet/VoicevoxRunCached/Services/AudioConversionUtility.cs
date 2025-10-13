@@ -25,13 +25,14 @@ public static class AudioConversionUtility
             using var mp3Stream = new MemoryStream();
 
             // 一時的なWAVファイルとして保存（NAudioの制約のため）
-            var tempWavPath = Path.GetTempFileName();
+            // セキュアなランダムファイル名を生成（S5445対応）
+            var tempWavPath = Path.Combine(Path.GetTempPath(), $"{Path.GetRandomFileName()}.wav");
+            var mp3Path = Path.ChangeExtension(tempWavPath, ".mp3");
             try
             {
                 WaveFileWriter.CreateWaveFile(tempWavPath, wavReader);
 
                 // FFmpegを使用してWAVからMP3に変換
-                var mp3Path = Path.ChangeExtension(tempWavPath, ".mp3");
                 ConvertWavToMp3WithFfmpeg(tempWavPath, mp3Path);
 
                 return File.ReadAllBytes(mp3Path);
@@ -39,8 +40,17 @@ public static class AudioConversionUtility
             finally
             {
                 // 一時ファイルの削除
-                if (File.Exists(tempWavPath))
-                    File.Delete(tempWavPath);
+                try
+                {
+                    if (File.Exists(tempWavPath))
+                        File.Delete(tempWavPath);
+                    if (File.Exists(mp3Path))
+                        File.Delete(mp3Path);
+                }
+                catch (IOException ex)
+                {
+                    Log.Debug(ex, "一時ファイルの削除に失敗しました: {TempWavPath}, {Mp3Path}", tempWavPath, mp3Path);
+                }
             }
         }
         catch (ArgumentException ex) when (ex.Source == "NAudio.Wave")
