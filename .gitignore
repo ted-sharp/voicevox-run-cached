@@ -139,9 +139,9 @@ _ReSharper*/
 *.DotSettings.user
 
 # Code quality reports (ReSharper, SonarQube, etc.)
-src_dotnet/quality-reports/
-src_dotnet/.sonarqube/
-src_dotnet/.scannerwork/
+**/quality-reports/
+**/.sonarqube/
+**/.scannerwork/
 
 # TeamCity is a build add-in
 _TeamCity*
