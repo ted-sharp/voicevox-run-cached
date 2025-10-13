@@ -38,12 +38,12 @@ public class CancellationManager : IDisposable
         {
             try
             {
-                _cancellationTokenSource?.Dispose();
+                _cancellationTokenSource.Dispose();
                 _disposed = true;
             }
             catch (Exception ex)
             {
-                _logger?.LogError(ex, "CancellationManagerの破棄中にエラーが発生しました");
+                _logger.LogError(ex, "CancellationManagerの破棄中にエラーが発生しました");
             }
             finally
             {

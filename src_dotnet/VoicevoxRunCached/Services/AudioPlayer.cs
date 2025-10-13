@@ -38,9 +38,9 @@ public class AudioPlayer : IDisposable
             try
             {
                 // 各専門クラスの破棄
-                _deviceManager?.Dispose();
-                _playbackController?.Dispose();
-                _segmentPlayer?.Dispose();
+                _deviceManager.Dispose();
+                _playbackController.Dispose();
+                _segmentPlayer.Dispose();
                 _disposed = true;
             }
             catch (Exception ex)

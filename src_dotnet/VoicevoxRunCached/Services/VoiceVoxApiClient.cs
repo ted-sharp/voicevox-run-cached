@@ -41,7 +41,7 @@ public class VoiceVoxApiClient : IDisposable
 
     public void Dispose()
     {
-        _httpClient?.Dispose();
+        _httpClient.Dispose();
     }
 
     public async Task<List<Speaker>> GetSpeakersAsync(CancellationToken cancellationToken = default)

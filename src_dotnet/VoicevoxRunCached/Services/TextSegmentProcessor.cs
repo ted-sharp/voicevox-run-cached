@@ -9,14 +9,12 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class TextSegmentProcessor
 {
-    private readonly int _maxConcurrentTasks;
     private readonly int _maxSegmentLength;
     private readonly SemaphoreSlim _semaphore;
 
     public TextSegmentProcessor(int maxSegmentLength = 100, int maxConcurrentTasks = 4)
     {
         _maxSegmentLength = maxSegmentLength;
-        _maxConcurrentTasks = maxConcurrentTasks;
         _semaphore = new SemaphoreSlim(maxConcurrentTasks, maxConcurrentTasks);
 
         Log.Information("TextSegmentProcessor を初期化しました - 最大セグメント長: {MaxLength}, 最大並行タスク数: {MaxConcurrent}",
@@ -231,7 +229,7 @@ public class TextSegmentProcessor
 
     public void Dispose()
     {
-        _semaphore?.Dispose();
+        _semaphore.Dispose();
     }
 }
 

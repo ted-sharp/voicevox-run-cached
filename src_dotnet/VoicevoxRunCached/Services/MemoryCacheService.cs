@@ -39,7 +39,7 @@ public class MemoryCacheService : IDisposable
         if (!_disposed)
         {
             Clear();
-            _lock?.Dispose();
+            _lock.Dispose();
             _disposed = true;
             GC.SuppressFinalize(this);
         }

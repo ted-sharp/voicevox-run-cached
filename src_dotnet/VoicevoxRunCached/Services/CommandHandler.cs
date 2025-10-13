@@ -15,15 +15,13 @@ public class CommandHandler
     private readonly CacheCommandHandler _cacheHandler;
     private readonly DeviceCommandHandler _deviceHandler;
     private readonly InitCommandHandler _initHandler;
-    private readonly ILogger _logger;
-    private readonly AppSettings _settings;
     private readonly SpeakerCommandHandler _speakerHandler;
     private readonly TextToSpeechCommandHandler _ttsHandler;
 
     public CommandHandler(AppSettings settings, ILogger logger)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(logger);
 
         // 各専門クラスのインスタンスを作成
         _speakerHandler = new SpeakerCommandHandler(settings, logger);

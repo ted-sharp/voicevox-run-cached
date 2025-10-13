@@ -70,7 +70,8 @@ public class AudioPlaybackController : IDisposable
             {
                 try
                 { reader?.Dispose(); }
-                catch { }
+                catch (Exception ex)
+                { Log.Debug(ex, "Failed to dispose audio reader in PlaybackStopped handler"); }
                 if (e.Exception != null)
                 {
                     tcs.TrySetException(e.Exception);
@@ -159,7 +160,8 @@ public class AudioPlaybackController : IDisposable
             {
                 try
                 { reader?.Dispose(); }
-                catch { }
+                catch (Exception ex)
+                { Log.Debug(ex, "Failed to dispose audio reader in PlaybackStopped handler"); }
                 if (e.Exception != null)
                 {
                     tcs.TrySetException(e.Exception);

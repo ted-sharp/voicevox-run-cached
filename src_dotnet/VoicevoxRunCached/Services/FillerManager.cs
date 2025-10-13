@@ -228,12 +228,14 @@ public class FillerManager
                 {
                     try
                     { File.Delete(file); }
-                    catch { }
+                    catch (Exception ex)
+                    { Log.Debug(ex, "Failed to delete file: {File}", file); }
                 }
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Debug(ex, "Failed to clear filler cache directory");
         }
         return Task.CompletedTask;
     }
@@ -250,8 +252,9 @@ public class FillerManager
                 _settings.Directory = Path.GetFullPath(combined);
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Debug(ex, "Failed to resolve filler base directory");
         }
     }
 }

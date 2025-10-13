@@ -67,7 +67,7 @@ public class BenchmarkCommandHandler
                 };
 
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(request, CancellationToken.None);
-                var audioData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId, CancellationToken.None);
+                _ = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId, CancellationToken.None);
             }
 
             var elapsedTime = (DateTime.UtcNow - totalStartTime).TotalMilliseconds;

@@ -11,13 +11,12 @@ namespace VoicevoxRunCached.Services.Audio;
 public class IndividualSegmentPlayer
 {
     private readonly AudioFormatDetector _formatDetector;
-    private readonly AudioSettings _settings;
     private bool _disposed;
     private IWavePlayer? _wavePlayer;
 
     public IndividualSegmentPlayer(AudioSettings settings, AudioFormatDetector formatDetector)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        ArgumentNullException.ThrowIfNull(settings);
         _formatDetector = formatDetector ?? throw new ArgumentNullException(nameof(formatDetector));
     }
 
@@ -117,7 +116,8 @@ public class IndividualSegmentPlayer
             // 再生が完了してからリーダーを破棄
             try
             { reader?.Dispose(); }
-            catch { }
+            catch (Exception ex)
+            { Log.Debug(ex, "Failed to dispose audio reader"); }
         }
     }
 

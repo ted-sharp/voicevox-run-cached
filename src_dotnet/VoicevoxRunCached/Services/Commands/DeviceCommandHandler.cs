@@ -11,11 +11,10 @@ namespace VoicevoxRunCached.Services.Commands;
 public class DeviceCommandHandler
 {
     private readonly ILogger _logger;
-    private readonly AppSettings _settings;
 
     public DeviceCommandHandler(AppSettings settings, ILogger logger)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        ArgumentNullException.ThrowIfNull(settings);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 

@@ -11,14 +11,13 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class LoggingManager
 {
-    private readonly IConfiguration _configuration;
     private readonly LoggingSettings _settings;
-    private bool _isInitialized = false;
+    private bool _isInitialized;
 
     public LoggingManager(LoggingSettings settings, IConfiguration configuration)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        ArgumentNullException.ThrowIfNull(configuration);
     }
 
     /// <summary>
@@ -179,7 +178,7 @@ public class LoggingManager
     /// </summary>
     public static void LogMemoryUsage(string context = "Current")
     {
-        var gc = GC.GetGCMemoryInfo();
+        _ = GC.GetGCMemoryInfo();
         var totalMemory = GC.GetTotalMemory(false);
         var workingSet = Environment.WorkingSet;
 

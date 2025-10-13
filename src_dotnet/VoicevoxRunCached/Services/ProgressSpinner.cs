@@ -9,7 +9,7 @@ public class ProgressSpinner : IDisposable
 
     // Use .NET 9 C# 13 System.Threading.Lock for better lock semantics/perf
     private readonly Lock _lock = new();
-    private bool _isDisposed = false;
+    private bool _isDisposed;
     private string _message = "";
 
     public ProgressSpinner(string message = "")

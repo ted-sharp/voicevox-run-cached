@@ -10,8 +10,8 @@ public class MediaFoundationInitializer
 {
     private static readonly object _lock = new object();
     private static MediaFoundationInitializer? _instance;
-    private static int _referenceCount = 0;
-    private static bool _isInitialized = false;
+    private static int _referenceCount;
+    private static bool _isInitialized;
 
     private readonly ILogger? _logger;
 

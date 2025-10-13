@@ -130,7 +130,7 @@ public class CommandRouter
     /// </summary>
     private async Task<int> HandleTestCommandAsync(string[] args, CancellationToken cancellationToken)
     {
-        var testMessage = _settings.Test?.Message ?? String.Empty;
+        var testMessage = _settings.Test.Message ?? String.Empty;
         if (String.IsNullOrWhiteSpace(testMessage))
         {
             Console.WriteLine("\e[31mError: Test.Message is empty in configuration\e[0m");

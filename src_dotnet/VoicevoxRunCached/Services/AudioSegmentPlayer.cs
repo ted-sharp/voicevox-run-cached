@@ -11,9 +11,7 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class AudioSegmentPlayer : IDisposable
 {
-    private readonly AudioFormatDetector _formatDetector;
     private readonly IndividualSegmentPlayer _individualPlayer;
-    private readonly AudioSettings _settings;
     private readonly WavePlayerManager _wavePlayerManager;
     private bool _disposed;
     private FillerInsertionService _fillerService;
@@ -21,8 +19,8 @@ public class AudioSegmentPlayer : IDisposable
 
     public AudioSegmentPlayer(AudioSettings settings, AudioFormatDetector formatDetector, FillerManager? fillerManager = null, AudioProcessingChannel? processingChannel = null)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _formatDetector = formatDetector ?? throw new ArgumentNullException(nameof(formatDetector));
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(formatDetector);
 
         // 各専門クラスのインスタンスを作成
         _wavePlayerManager = new WavePlayerManager(settings);
@@ -38,8 +36,8 @@ public class AudioSegmentPlayer : IDisposable
             try
             {
                 StopAudio();
-                _individualPlayer?.Dispose();
-                _wavePlayerManager?.Dispose();
+                _individualPlayer.Dispose();
+                _wavePlayerManager.Dispose();
                 _disposed = true;
             }
             catch (Exception ex)

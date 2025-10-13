@@ -1,10 +1,11 @@
 ﻿using NAudio.MediaFoundation;
+using Serilog;
 
 namespace VoicevoxRunCached.Services;
 
 public static class MediaFoundationManager
 {
-    private static int _initialized = 0;
+    private static int _initialized;
 
     public static void Initialize()
     {
@@ -34,7 +35,8 @@ public static class MediaFoundationManager
         {
             try
             { MediaFoundationApi.Shutdown(); }
-            catch { }
+            catch (Exception ex)
+            { Log.Debug(ex, "Failed to shutdown MediaFoundation"); }
         }
     }
 }

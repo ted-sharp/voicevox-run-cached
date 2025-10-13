@@ -11,11 +11,10 @@ public class TextToSpeechCommandHandler
 {
     private readonly ILogger _logger;
     private readonly TextToSpeechProcessor _processor;
-    private readonly AppSettings _settings;
 
     public TextToSpeechCommandHandler(AppSettings settings, ILogger logger)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        ArgumentNullException.ThrowIfNull(settings);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _processor = new TextToSpeechProcessor(settings, logger);
     }

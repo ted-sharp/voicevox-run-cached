@@ -44,7 +44,7 @@ public class AudioCacheManager : IDisposable
         {
             try
             {
-                _memoryCache?.Dispose();
+                _memoryCache.Dispose();
                 _disposed = true;
             }
             catch (Exception ex)
