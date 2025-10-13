@@ -42,23 +42,23 @@ public class MediaFoundationInitializer
     {
         lock (Lock)
         {
-            _referenceCount++;
+            IncrementReferenceCount();
 
-            if (_isInitialized)
+            if (IsInitializedInternal())
             {
-                _logger?.LogDebug("MediaFoundation は既に初期化済みです。参照カウント: {ReferenceCount}", _referenceCount);
+                _logger?.LogDebug("MediaFoundation は既に初期化済みです。参照カウント: {ReferenceCount}", GetReferenceCountInternal());
                 return;
             }
 
             try
             {
                 MediaFoundationManager.Initialize();
-                _isInitialized = true;
-                _logger?.LogDebug("MediaFoundation の初期化が完了しました。参照カウント: {ReferenceCount}", _referenceCount);
+                SetInitialized(true);
+                _logger?.LogDebug("MediaFoundation の初期化が完了しました。参照カウント: {ReferenceCount}", GetReferenceCountInternal());
             }
             catch (Exception ex)
             {
-                _referenceCount--; // 初期化失敗時は参照カウントを戻す
+                DecrementReferenceCount(); // 初期化失敗時は参照カウントを戻す
                 _logger?.LogError(ex, "MediaFoundation の初期化に失敗しました");
                 throw new VoicevoxRunCachedException(
                     ErrorCodes.Audio.MediaFoundationInitFailed,
@@ -71,6 +71,12 @@ public class MediaFoundationInitializer
         }
     }
 
+    private static void IncrementReferenceCount() => _referenceCount++;
+    private static void DecrementReferenceCount() => _referenceCount--;
+    private static void SetInitialized(bool value) => _isInitialized = value;
+    private static bool IsInitializedInternal() => _isInitialized;
+    private static int GetReferenceCountInternal() => _referenceCount;
+
     /// <summary>
     /// 初期化済みであることを確認します
     /// </summary>
@@ -78,7 +84,7 @@ public class MediaFoundationInitializer
     {
         lock (Lock)
         {
-            if (!_isInitialized)
+            if (!IsInitializedInternal())
             {
                 Initialize();
                 return;
@@ -87,7 +93,7 @@ public class MediaFoundationInitializer
             try
             {
                 MediaFoundationManager.EnsureInitialized();
-                _logger?.LogDebug("MediaFoundation の初期化状態を確認しました。参照カウント: {ReferenceCount}", _referenceCount);
+                _logger?.LogDebug("MediaFoundation の初期化状態を確認しました。参照カウント: {ReferenceCount}", GetReferenceCountInternal());
             }
             catch (Exception ex)
             {
@@ -110,21 +116,21 @@ public class MediaFoundationInitializer
     {
         lock (Lock)
         {
-            if (_referenceCount <= 0)
+            if (GetReferenceCountInternal() <= 0)
             {
                 _logger?.LogDebug("MediaFoundation は既にシャットダウン済みです");
                 return;
             }
 
-            _referenceCount--;
-            _logger?.LogDebug("MediaFoundation の参照カウントを減らしました: {ReferenceCount}", _referenceCount);
+            DecrementReferenceCount();
+            _logger?.LogDebug("MediaFoundation の参照カウントを減らしました: {ReferenceCount}", GetReferenceCountInternal());
 
-            if (_referenceCount == 0 && _isInitialized)
+            if (GetReferenceCountInternal() == 0 && IsInitializedInternal())
             {
                 try
                 {
                     MediaFoundationManager.Shutdown();
-                    _isInitialized = false;
+                    SetInitialized(false);
                     _logger?.LogDebug("MediaFoundation のシャットダウンが完了しました");
                 }
                 catch (Exception ex)
@@ -143,7 +149,7 @@ public class MediaFoundationInitializer
     {
         lock (Lock)
         {
-            return _referenceCount;
+            return GetReferenceCountInternal();
         }
     }
 
@@ -154,7 +160,7 @@ public class MediaFoundationInitializer
     {
         lock (Lock)
         {
-            return _isInitialized;
+            return IsInitializedInternal();
         }
     }
 }

@@ -194,43 +194,8 @@ public class AudioDeviceManager : IDisposable
             {
                 try
                 {
-                    // デバイス準備タスクのクリーンアップ
-                    if (_devicePreparationTask != null)
-                    {
-                        try
-                        {
-                            if (!_devicePreparationTask.IsCompleted)
-                            {
-                                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(AudioConstants.DevicePreparationCleanupTimeoutSeconds));
-                                _devicePreparationTask.Wait(cts.Token);
-                            }
-                        }
-                        catch (OperationCanceledException)
-                        {
-                            Log.Debug("デバイス準備タスクのクリーンアップがタイムアウトしました");
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Warning(ex, "デバイス準備タスクのクリーンアップ中にエラーが発生しました");
-                        }
-                    }
-
-                    // WASAPIデバイスのクリーンアップ
-                    if (_wasapiDevice != null)
-                    {
-                        try
-                        {
-                            _wasapiDevice.Dispose();
-                        }
-                        catch (Exception ex)
-                        {
-                            Log.Warning(ex, "WASAPIデバイスの破棄中にエラーが発生しました");
-                        }
-                        finally
-                        {
-                            _wasapiDevice = null;
-                        }
-                    }
+                    CleanupDevicePreparationTask();
+                    CleanupWasapiDevice();
                 }
                 catch (Exception ex)
                 {
@@ -239,6 +204,48 @@ public class AudioDeviceManager : IDisposable
             }
 
             _disposed = true;
+        }
+    }
+
+    private void CleanupDevicePreparationTask()
+    {
+        if (_devicePreparationTask == null)
+            return;
+
+        try
+        {
+            if (!_devicePreparationTask.IsCompleted)
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(AudioConstants.DevicePreparationCleanupTimeoutSeconds));
+                _devicePreparationTask.Wait(cts.Token);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Debug("デバイス準備タスクのクリーンアップがタイムアウトしました");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "デバイス準備タスクのクリーンアップ中にエラーが発生しました");
+        }
+    }
+
+    private void CleanupWasapiDevice()
+    {
+        if (_wasapiDevice == null)
+            return;
+
+        try
+        {
+            _wasapiDevice.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "WASAPIデバイスの破棄中にエラーが発生しました");
+        }
+        finally
+        {
+            _wasapiDevice = null;
         }
     }
 }

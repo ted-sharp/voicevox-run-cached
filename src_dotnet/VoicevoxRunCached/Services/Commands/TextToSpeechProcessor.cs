@@ -42,55 +42,18 @@ public class TextToSpeechProcessor
 
         try
         {
-            // VOICEVOXエンジンが動作していることを確認
-            if (!await _engineCoordinator.EnsureEngineRunningAsync(cancellationToken))
+            if (!await EnsureEngineAvailableAsync(verbose, cancellationToken))
             {
-                ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
                 return 1;
             }
 
-            if (verbose)
-            {
-                var engineStatus = await _engineCoordinator.GetEngineStatusAsync();
-                ConsoleHelper.WriteLine($"Engine check completed at {engineStatus.LastChecked:HH:mm:ss}", _logger);
-            }
-
-            // 出力ファイルが指定されている場合、バックグラウンドエクスポートタスクを開始
-            Task? exportTask = null;
-            if (!String.IsNullOrWhiteSpace(outPath))
-            {
-                exportTask = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await _audioExportService.ExportAudioAsync(request, outPath, cancellationToken);
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        // キャンセルされた場合は何もしない
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogWarning(ex, "音声ファイルの出力に失敗しました");
-                    }
-                }, cancellationToken);
-            }
+            var exportTask = StartExportTaskIfNeeded(request, outPath, cancellationToken);
 
             if (noPlay)
             {
-                if (exportTask != null)
-                {
-                    await exportTask;
-                }
-                ConsoleHelper.WriteSuccess("Done (no-play mode)!", _logger);
-                if (verbose)
-                {
-                    ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms", _logger);
-                }
-                return 0;
+                return await HandleNoPlayModeAsync(exportTask, verbose, totalStartTime);
             }
 
-            // セグメント処理
             var segments = await _segmentProcessor.ProcessSegmentsAsync(request, noCache, cancellationToken);
             if (segments.Count == 0)
             {
@@ -98,35 +61,8 @@ public class TextToSpeechProcessor
                 return 1;
             }
 
-            // 音声再生処理
-            var formatDetector = new AudioFormatDetector();
-            var playbackController = new AudioPlaybackController(_settings.Audio, formatDetector);
-
-            // 各セグメントを順次再生
-            foreach (var segment in segments)
-            {
-                if (segment.AudioData != null)
-                {
-                    await playbackController.PlayAudioAsync(segment.AudioData, cancellationToken);
-                }
-            }
-
-            // エクスポートタスクの完了を待機
-            if (exportTask != null)
-            {
-                try
-                {
-                    await exportTask;
-                }
-                catch (OperationCanceledException)
-                {
-                    _logger.LogInformation("音声ファイルの出力がキャンセルされました");
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "音声ファイルの出力に失敗しました");
-                }
-            }
+            await PlayAudioSegmentsAsync(segments, cancellationToken);
+            await WaitForExportTaskAsync(exportTask);
 
             if (verbose)
             {
@@ -148,7 +84,6 @@ public class TextToSpeechProcessor
         }
         catch (VoicevoxRunCachedException)
         {
-            // 既に適切に処理された例外は再スロー
             throw;
         }
         catch (Exception ex)
@@ -161,6 +96,99 @@ public class TextToSpeechProcessor
                 ex,
                 "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
             );
+        }
+    }
+
+    private async Task<bool> EnsureEngineAvailableAsync(bool verbose, CancellationToken cancellationToken)
+    {
+        if (!await _engineCoordinator.EnsureEngineRunningAsync(cancellationToken))
+        {
+            ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
+            return false;
+        }
+
+        if (verbose)
+        {
+            var engineStatus = await _engineCoordinator.GetEngineStatusAsync();
+            ConsoleHelper.WriteLine($"Engine check completed at {engineStatus.LastChecked:HH:mm:ss}", _logger);
+        }
+
+        return true;
+    }
+
+    private Task? StartExportTaskIfNeeded(VoiceRequest request, string? outPath, CancellationToken cancellationToken)
+    {
+        if (String.IsNullOrWhiteSpace(outPath))
+        {
+            return null;
+        }
+
+        return Task.Run(async () =>
+        {
+            try
+            {
+                await _audioExportService.ExportAudioAsync(request, outPath, cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                // キャンセルされた場合は何もしない
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "音声ファイルの出力に失敗しました");
+            }
+        }, cancellationToken);
+    }
+
+    private async Task<int> HandleNoPlayModeAsync(Task? exportTask, bool verbose, DateTime totalStartTime)
+    {
+        if (exportTask != null)
+        {
+            await exportTask;
+        }
+
+        ConsoleHelper.WriteSuccess("Done (no-play mode)!", _logger);
+
+        if (verbose)
+        {
+            ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms", _logger);
+        }
+
+        return 0;
+    }
+
+    private async Task PlayAudioSegmentsAsync(List<TextSegment> segments, CancellationToken cancellationToken)
+    {
+        var formatDetector = new AudioFormatDetector();
+        var playbackController = new AudioPlaybackController(_settings.Audio, formatDetector);
+
+        foreach (var segment in segments)
+        {
+            if (segment.AudioData != null)
+            {
+                await playbackController.PlayAudioAsync(segment.AudioData, cancellationToken);
+            }
+        }
+    }
+
+    private async Task WaitForExportTaskAsync(Task? exportTask)
+    {
+        if (exportTask == null)
+        {
+            return;
+        }
+
+        try
+        {
+            await exportTask;
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogInformation("音声ファイルの出力がキャンセルされました");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "音声ファイルの出力に失敗しました");
         }
     }
 }
