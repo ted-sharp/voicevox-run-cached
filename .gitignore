@@ -138,6 +138,11 @@ _ReSharper*/
 *.[Rr]e[Ss]harper
 *.DotSettings.user
 
+# Code quality reports (ReSharper, SonarQube, etc.)
+src_dotnet/quality-reports/
+src_dotnet/.sonarqube/
+src_dotnet/.scannerwork/
+
 # TeamCity is a build add-in
 _TeamCity*
 
@@ -567,3 +572,5 @@ cache/
 *.mp3
 *.meta.json
 release/
+nul
+

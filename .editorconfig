@@ -1,4 +1,6 @@
-# 上位ディレクトリから .editorconfig 設定を継承する場合は、以下の行を削除します
+# EditorConfig is awesome: https://EditorConfig.org
+
+# top-most EditorConfig file
 root = true
 
 ####################
@@ -6,22 +8,51 @@ root = true
 ####################
 [*]
 charset = utf-8
-end_of_line = crlf
-indent_size = 4
-indent_style = space
 insert_final_newline = true
 trim_trailing_whitespace = true
 
 ####################
-# WEBフロントエンド開発の指定
+# Markdown
 ####################
-[*.{js,jsx,ts,tsx,json,css,scss,html,md,yml,yaml,xml}]
+[*.md]
+charset = utf-8
 end_of_line = lf
 indent_size = 2
+indent_style = space
+trim_trailing_whitespace = false
+max_line_length = 120
 
 ####################
-# C# の指定
+# YAML/JSON
 ####################
-[*.{cs,xaml,cshtml,razor}]
+[*.{yml,yaml,json}]
+charset = utf-8
+end_of_line = lf
+indent_size = 2
+indent_style = space
+
+####################
+# Shell scripts
+####################
+[*.{sh,bash,zsh}]
+charset = utf-8
+end_of_line = lf
+indent_size = 2
+indent_style = space
+
+[*.{bat,cmd,ps1}]
+charset = utf-8
 end_of_line = crlf
 indent_size = 4
+indent_style = space
+
+####################
+# Git
+####################
+[.gitignore]
+charset = utf-8
+end_of_line = lf
+
+[.gitattributes]
+charset = utf-8
+end_of_line = lf
