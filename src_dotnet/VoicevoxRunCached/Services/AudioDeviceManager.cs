@@ -174,7 +174,7 @@ public class AudioDeviceManager : IDisposable
 
             var tcs = new TaskCompletionSource<bool>();
 
-            wavePlayer.PlaybackStopped += (sender, e) =>
+            wavePlayer.PlaybackStopped += (_, _) =>
             {
                 tcs.TrySetResult(true);
             };

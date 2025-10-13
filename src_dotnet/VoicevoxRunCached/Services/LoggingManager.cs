@@ -96,7 +96,7 @@ public class LoggingManager
             path: logFilePath,
             rollingInterval: RollingInterval.Day,
             retainedFileCountLimit: _settings.MaxFileCount,
-            fileSizeLimitBytes: _settings.MaxFileSizeMB * 1024 * 1024,
+            fileSizeLimitBytes: _settings.MaxFileSizeMb * 1024 * 1024,
             rollOnFileSizeLimit: true,
             outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}",
             shared: true,

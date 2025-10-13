@@ -25,14 +25,14 @@ public class AudioProcessingBenchmarks
         _memoryCache = new MemoryCacheService(cacheSettings);
         _cacheManager = new AudioCacheManager(cacheSettings, _memoryCache);
 
-        _testRequest = new VoiceRequest("テスト用の音声データです。", 1, 1.0, 0.0, 1.0);
+        _testRequest = new VoiceRequest("テスト用の音声データです。", 1);
     }
 
     [GlobalCleanup]
     public void Cleanup()
     {
-        _cacheManager?.Dispose();
-        _memoryCache?.Dispose();
+        _cacheManager.Dispose();
+        _memoryCache.Dispose();
     }
 
     [Benchmark]
@@ -55,7 +55,7 @@ public class AudioProcessingBenchmarks
         new Random().NextBytes(data);
 
         _memoryCache.Set(key, data);
-        var retrieved = _memoryCache.Get<byte[]>(key);
+        _ = _memoryCache.Get<byte[]>(key);
 
         await Task.CompletedTask;
     }
@@ -67,7 +67,7 @@ public class AudioProcessingBenchmarks
         new Random().NextBytes(data);
 
         await _cacheManager.SaveAudioCacheAsync(_testRequest, data);
-        var retrieved = await _cacheManager.GetCachedAudioAsync(_testRequest);
+        _ = await _cacheManager.GetCachedAudioAsync(_testRequest);
 
         await Task.CompletedTask;
     }
@@ -76,8 +76,7 @@ public class AudioProcessingBenchmarks
     {
         // 1秒間の44.1kHz 16bit モノラルWAVデータを生成
         var sampleRate = 44100;
-        var duration = 1; // 1秒
-        var samples = sampleRate * duration;
+        var samples = sampleRate;
         var wavData = new byte[44 + samples * 2]; // WAVヘッダー + サンプルデータ
 
         // WAVヘッダー
@@ -108,8 +107,7 @@ public class AudioProcessingBenchmarks
         var dataSize = BitConverter.GetBytes(samples * 2);
         Array.Copy(dataSize, 0, wavData, 40, 4);
 
-        // サンプルデータを生成（簡単なサイン波）
-        var random = new Random(42); // 固定シードで再現性を確保
+        // サンプルデータを生成（440Hzのサイン波）
         for (int i = 0; i < samples; i++)
         {
             var sample = (short)(Math.Sin(2 * Math.PI * 440 * i / sampleRate) * 16384); // 440Hzのサイン波

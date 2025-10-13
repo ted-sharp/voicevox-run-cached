@@ -16,16 +16,16 @@ public static class ErrorHandlingUtility
     {
         return statusCode switch
         {
-            HttpStatusCode.BadRequest => ErrorCodes.Api.API_REQUEST_FAILED,
-            HttpStatusCode.Unauthorized => ErrorCodes.Api.API_AUTHENTICATION_ERROR,
-            HttpStatusCode.Forbidden => ErrorCodes.General.PERMISSION_DENIED,
-            HttpStatusCode.NotFound => ErrorCodes.General.RESOURCE_NOT_FOUND,
-            HttpStatusCode.TooManyRequests => ErrorCodes.Api.API_RATE_LIMIT_EXCEEDED,
-            HttpStatusCode.InternalServerError => ErrorCodes.Engine.ENGINE_PROCESS_ERROR,
-            HttpStatusCode.ServiceUnavailable => ErrorCodes.Engine.ENGINE_NOT_AVAILABLE,
-            HttpStatusCode.GatewayTimeout => ErrorCodes.Api.API_TIMEOUT,
-            HttpStatusCode.RequestTimeout => ErrorCodes.Api.API_TIMEOUT,
-            _ => ErrorCodes.Api.API_REQUEST_FAILED
+            HttpStatusCode.BadRequest => ErrorCodes.Api.ApiRequestFailed,
+            HttpStatusCode.Unauthorized => ErrorCodes.Api.ApiAuthenticationError,
+            HttpStatusCode.Forbidden => ErrorCodes.General.PermissionDenied,
+            HttpStatusCode.NotFound => ErrorCodes.General.ResourceNotFound,
+            HttpStatusCode.TooManyRequests => ErrorCodes.Api.ApiRateLimitExceeded,
+            HttpStatusCode.InternalServerError => ErrorCodes.Engine.EngineProcessError,
+            HttpStatusCode.ServiceUnavailable => ErrorCodes.Engine.EngineNotAvailable,
+            HttpStatusCode.GatewayTimeout => ErrorCodes.Api.ApiTimeout,
+            HttpStatusCode.RequestTimeout => ErrorCodes.Api.ApiTimeout,
+            _ => ErrorCodes.Api.ApiRequestFailed
         };
     }
 
@@ -76,14 +76,14 @@ public static class ErrorHandlingUtility
     {
         return exception switch
         {
-            UnauthorizedAccessException => ErrorCodes.General.PERMISSION_DENIED,
-            IOException => ErrorCodes.Cache.CACHE_READ_ERROR,
-            ArgumentException => ErrorCodes.General.INVALID_ARGUMENTS,
-            InvalidOperationException => ErrorCodes.General.INVALID_ARGUMENTS,
-            TaskCanceledException => ErrorCodes.Api.API_TIMEOUT,
-            OperationCanceledException => ErrorCodes.General.OPERATION_CANCELLED,
-            TimeoutException => ErrorCodes.General.TIMEOUT_ERROR,
-            _ => ErrorCodes.General.UNKNOWN_ERROR
+            UnauthorizedAccessException => ErrorCodes.General.PermissionDenied,
+            IOException => ErrorCodes.Cache.CacheReadError,
+            ArgumentException => ErrorCodes.General.InvalidArguments,
+            InvalidOperationException => ErrorCodes.General.InvalidArguments,
+            TaskCanceledException => ErrorCodes.Api.ApiTimeout,
+            OperationCanceledException => ErrorCodes.General.OperationCancelled,
+            TimeoutException => ErrorCodes.General.TimeoutError,
+            _ => ErrorCodes.General.UnknownError
         };
     }
 

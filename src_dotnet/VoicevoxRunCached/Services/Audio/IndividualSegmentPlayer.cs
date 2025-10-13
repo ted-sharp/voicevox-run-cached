@@ -47,7 +47,7 @@ public class IndividualSegmentPlayer
             if (_wavePlayer != null)
             {
                 EventHandler<StoppedEventArgs>? handler = null;
-                handler = (sender, e) =>
+                handler = (_, e) =>
                 {
                     Log.Debug("PlaybackStopped イベントが発生しました - 例外: {Exception}",
                         e.Exception?.Message ?? "なし");

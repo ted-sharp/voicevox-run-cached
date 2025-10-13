@@ -66,7 +66,7 @@ public class AudioPlaybackController : IDisposable
 
             // 再生完了イベントの登録
             EventHandler<StoppedEventArgs>? handler = null;
-            handler = (sender, e) =>
+            handler = (_, e) =>
             {
                 try
                 { reader?.Dispose(); }
@@ -155,7 +155,7 @@ public class AudioPlaybackController : IDisposable
 
             // 再生完了イベントの登録
             EventHandler<StoppedEventArgs>? handler = null;
-            handler = (sender, e) =>
+            handler = (_, e) =>
             {
                 try
                 { reader?.Dispose(); }

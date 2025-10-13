@@ -21,7 +21,7 @@ public class MemoryCacheService : IDisposable
 
     public MemoryCacheService(CacheSettings settings)
     {
-        _maxSizeBytes = settings.MemoryCacheSizeMB * 1024L * 1024L; // MB to bytes
+        _maxSizeBytes = settings.MemoryCacheSizeMb * 1024L * 1024L; // MB to bytes
         _defaultExpiration = TimeSpan.FromDays(settings.ExpirationDays);
         _cache = new Dictionary<string, LinkedListNode<CacheItem>>();
         _lruList = new LinkedList<CacheItem>();
@@ -31,7 +31,7 @@ public class MemoryCacheService : IDisposable
         _missCount = 0;
 
         Log.Information("MemoryCacheService を初期化しました - 最大サイズ: {MaxSizeMB}MB, デフォルト有効期限: {ExpirationDays}日",
-            settings.MemoryCacheSizeMB, settings.ExpirationDays);
+            settings.MemoryCacheSizeMb, settings.ExpirationDays);
     }
 
     public void Dispose()

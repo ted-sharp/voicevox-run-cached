@@ -11,8 +11,8 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class ApplicationBootstrap
 {
-    private const int STD_OUTPUT_HANDLE = -11;
-    private const uint ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004;
+    private const int StdOutputHandle = -11;
+    private const uint EnableVirtualTerminalProcessing = 0x0004;
 
     /// <summary>
     /// アプリケーションの初期化を実行します
@@ -77,11 +77,11 @@ public class ApplicationBootstrap
         try
         {
             validationService.ValidateConfiguration(settings);
-            ConsoleHelper.WriteValidationSuccess("設定の検証が完了しました", null);
+            ConsoleHelper.WriteValidationSuccess("設定の検証が完了しました");
         }
         catch (InvalidOperationException ex)
         {
-            ConsoleHelper.WriteValidationError($"設定の検証に失敗しました: {ex.Message}", null);
+            ConsoleHelper.WriteValidationError($"設定の検証に失敗しました: {ex.Message}");
             throw;
         }
 
@@ -95,10 +95,10 @@ public class ApplicationBootstrap
     {
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            var handle = GetStdHandle(STD_OUTPUT_HANDLE);
+            var handle = GetStdHandle(StdOutputHandle);
             if (GetConsoleMode(handle, out uint mode))
             {
-                mode |= ENABLE_VIRTUAL_TERMINAL_PROCESSING;
+                mode |= EnableVirtualTerminalProcessing;
                 SetConsoleMode(handle, mode);
             }
         }

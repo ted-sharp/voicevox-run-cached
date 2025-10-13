@@ -84,7 +84,7 @@ public static class ErrorHandlingTests
         {
             // VoiceVoxApiExceptionのテスト
             throw new VoiceVoxApiException(
-                ErrorCodes.Engine.ENGINE_NOT_AVAILABLE,
+                ErrorCodes.Engine.EngineNotAvailable,
                 "VOICEVOX engine is not running",
                 "VOICEVOXエンジンが起動していません。",
                 HttpStatusCode.ServiceUnavailable,
@@ -107,7 +107,7 @@ public static class ErrorHandlingTests
         {
             // CacheExceptionのテスト
             throw new CacheException(
-                ErrorCodes.Cache.CACHE_PERMISSION_DENIED,
+                ErrorCodes.Cache.CachePermissionDenied,
                 "Access denied to cache directory",
                 "キャッシュディレクトリへのアクセスが拒否されました。",
                 "test-cache-key",
@@ -131,7 +131,7 @@ public static class ErrorHandlingTests
         {
             // ConfigurationExceptionのテスト
             throw new ConfigurationException(
-                ErrorCodes.Configuration.INVALID_SETTINGS,
+                ErrorCodes.Configuration.InvalidSettings,
                 "Invalid configuration settings",
                 "設定が無効です。",
                 "VoiceVox.BaseUrl",
@@ -159,12 +159,12 @@ public static class ErrorHandlingTests
 
         var testErrorCodes = new[]
         {
-            ErrorCodes.Configuration.INVALID_SETTINGS,
-            ErrorCodes.Engine.ENGINE_NOT_AVAILABLE,
-            ErrorCodes.Cache.CACHE_READ_ERROR,
-            ErrorCodes.Audio.AUDIO_GENERATION_FAILED,
-            ErrorCodes.Api.API_REQUEST_FAILED,
-            ErrorCodes.General.UNKNOWN_ERROR
+            ErrorCodes.Configuration.InvalidSettings,
+            ErrorCodes.Engine.EngineNotAvailable,
+            ErrorCodes.Cache.CacheReadError,
+            ErrorCodes.Audio.AudioGenerationFailed,
+            ErrorCodes.Api.ApiRequestFailed,
+            ErrorCodes.General.UnknownError
         };
 
         foreach (var errorCode in testErrorCodes)

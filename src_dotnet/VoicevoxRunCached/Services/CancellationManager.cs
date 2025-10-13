@@ -57,7 +57,7 @@ public class CancellationManager : IDisposable
     /// </summary>
     private void SetupCancellationHandling()
     {
-        Console.CancelKeyPress += (sender, e) =>
+        Console.CancelKeyPress += (_, e) =>
         {
             e.Cancel = true;
             _logger.LogWarning("Cancellation requested (Ctrl+C). Attempting graceful shutdown...");

@@ -29,7 +29,7 @@ public class RetryPolicyService
                 retryCount: _maxRetryAttempts,
                 sleepDurationProvider: retryAttempt =>
                     TimeSpan.FromSeconds(Math.Pow(2, retryAttempt - 1)), // 指数バックオフ: 1s, 2s, 4s
-                onRetry: (exception, timeSpan, retryCount, context) =>
+                onRetry: (exception, timeSpan, retryCount, _) =>
                 {
                     Log.Warning(exception, "リトライ {RetryCount}/{MaxRetries} - {TimeSpan}後に再試行します", retryCount, _maxRetryAttempts, timeSpan);
                 }

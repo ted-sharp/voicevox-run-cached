@@ -1,6 +1,6 @@
 ﻿using FluentValidation;
 
-namespace VoicevoxRunCached.Configuration.Validators;
+namespace VoicevoxRunCached.Configuration;
 
 // VoiceVoxSettings のバリデーター
 public class VoiceVoxSettingsValidator : AbstractValidator<VoiceVoxSettings>
@@ -21,7 +21,7 @@ public class VoiceVoxSettingsValidator : AbstractValidator<VoiceVoxSettings>
             .InclusiveBetween(5, 600).WithMessage("StartupTimeoutSecondsは5-600秒の範囲である必要があります");
 
         RuleFor(x => x.EnginePath)
-            .Must((settings, path) => String.IsNullOrEmpty(path) || File.Exists(path))
+            .Must((_, path) => String.IsNullOrEmpty(path) || File.Exists(path))
             .WithMessage("EnginePathが指定されている場合、ファイルが存在する必要があります");
 
         // 新しい検証ルール
@@ -47,12 +47,12 @@ public class CacheSettingsValidator : AbstractValidator<CacheSettings>
         RuleFor(x => x.ExpirationDays)
             .InclusiveBetween(1, 3650).WithMessage("ExpirationDaysは1-3650日（10年）の範囲である必要があります");
 
-        RuleFor(x => x.MaxSizeGB)
-            .InclusiveBetween(0.1, 1000.0).WithMessage("MaxSizeGBは0.1-1000.0GBの範囲である必要があります");
+        RuleFor(x => x.MaxSizeGb)
+            .InclusiveBetween(0.1, 1000.0).WithMessage("MaxSizeGbは0.1-1000.0GBの範囲である必要があります");
 
         // 新しい検証ルール
-        RuleFor(x => x.MemoryCacheSizeMB)
-            .InclusiveBetween(1, 10000).WithMessage("MemoryCacheSizeMBは1-10000MBの範囲である必要があります");
+        RuleFor(x => x.MemoryCacheSizeMb)
+            .InclusiveBetween(1, 10000).WithMessage("MemoryCacheSizeMbは1-10000MBの範囲である必要があります");
     }
 
     private static bool BeWritableDirectory(string path)
@@ -115,8 +115,8 @@ public class FillerSettingsValidator : AbstractValidator<FillerSettings>
             .When(x => x.Enabled).WithMessage("FillerTextsの各要素は空文字列であってはいけません");
 
         // 新しい検証ルール
-        RuleFor(x => x.MaxCacheSizeMB)
-            .InclusiveBetween(1, 10000).When(x => x.Enabled).WithMessage("MaxCacheSizeMBは1-10000MBの範囲である必要があります");
+        RuleFor(x => x.MaxCacheSizeMb)
+            .InclusiveBetween(1, 10000).When(x => x.Enabled).WithMessage("MaxCacheSizeMbは1-10000MBの範囲である必要があります");
     }
 
     private static bool BeWritableDirectory(string path)
@@ -151,8 +151,8 @@ public class LoggingSettingsValidator : AbstractValidator<LoggingSettings>
             .WithMessage("Formatは'simple'または'json'である必要があります");
 
         // 新しい検証ルール
-        RuleFor(x => x.MaxFileSizeMB)
-            .InclusiveBetween(1, 1000).When(x => x.EnableFileLogging).WithMessage("MaxFileSizeMBは1-1000MBの範囲である必要があります");
+        RuleFor(x => x.MaxFileSizeMb)
+            .InclusiveBetween(1, 1000).When(x => x.EnableFileLogging).WithMessage("MaxFileSizeMbは1-1000MBの範囲である必要があります");
 
         RuleFor(x => x.MaxFileCount)
             .InclusiveBetween(1, 100).When(x => x.EnableFileLogging).WithMessage("MaxFileCountは1-100の範囲である必要があります");

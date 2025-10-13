@@ -15,7 +15,7 @@ namespace VoicevoxRunCached.Services;
 public class AudioCacheManager : IDisposable
 {
     // C# 13 ref readonly parameter for better performance with large structs
-    private static readonly SHA256 _sha256 = SHA256.Create();
+    private static readonly SHA256 Sha256 = SHA256.Create();
     private readonly CacheCleanupService _cleanupService;
     private readonly DiskCacheService _diskCacheService;
     private readonly MemoryCacheService _memoryCache;
@@ -91,7 +91,7 @@ public class AudioCacheManager : IDisposable
         {
             Log.Error(ex, "キャッシュファイルへのアクセス権限がありません: {CacheKey}", cacheKey);
             throw new CacheException(
-                ErrorCodes.Cache.CACHE_PERMISSION_DENIED,
+                ErrorCodes.Cache.CachePermissionDenied,
                 $"Access denied to cache file: {ex.Message}",
                 "キャッシュファイルへのアクセス権限がありません。",
                 cacheKey,
@@ -103,7 +103,7 @@ public class AudioCacheManager : IDisposable
         {
             Log.Error(ex, "キャッシュファイルの読み込みに失敗しました: {CacheKey}", cacheKey);
             throw new CacheException(
-                ErrorCodes.Cache.CACHE_READ_ERROR,
+                ErrorCodes.Cache.CacheReadError,
                 $"Failed to read cache file: {ex.Message}",
                 "キャッシュファイルの読み込みに失敗しました。",
                 cacheKey,
@@ -115,7 +115,7 @@ public class AudioCacheManager : IDisposable
         {
             Log.Error(ex, "キャッシュからの音声データ取得中に予期しないエラーが発生しました: {CacheKey}", cacheKey);
             throw new CacheException(
-                ErrorCodes.General.UNKNOWN_ERROR,
+                ErrorCodes.General.UnknownError,
                 $"Unexpected error while retrieving cached audio: {ex.Message}",
                 "キャッシュからの音声データ取得中に予期しないエラーが発生しました。",
                 cacheKey,
@@ -153,7 +153,7 @@ public class AudioCacheManager : IDisposable
         {
             Log.Error(ex, "キャッシュディレクトリへの書き込み権限がありません: {CacheKey}", cacheKey);
             throw new CacheException(
-                ErrorCodes.Cache.CACHE_PERMISSION_DENIED,
+                ErrorCodes.Cache.CachePermissionDenied,
                 $"Access denied to cache directory: {ex.Message}",
                 "キャッシュディレクトリへの書き込み権限がありません。",
                 cacheKey,
@@ -165,7 +165,7 @@ public class AudioCacheManager : IDisposable
         {
             Log.Error(ex, "キャッシュディレクトリの容量が不足しています: {CacheKey}", cacheKey);
             throw new CacheException(
-                ErrorCodes.Cache.CACHE_FULL,
+                ErrorCodes.Cache.CacheFull,
                 $"Cache directory is full: {ex.Message}",
                 "キャッシュディレクトリの容量が不足しています。",
                 cacheKey,
@@ -177,7 +177,7 @@ public class AudioCacheManager : IDisposable
         {
             Log.Error(ex, "キャッシュファイルの書き込みに失敗しました: {CacheKey}", cacheKey);
             throw new CacheException(
-                ErrorCodes.Cache.CACHE_WRITE_ERROR,
+                ErrorCodes.Cache.CacheWriteError,
                 $"Failed to write cache file: {ex.Message}",
                 "キャッシュファイルの書き込みに失敗しました。",
                 cacheKey,
@@ -189,7 +189,7 @@ public class AudioCacheManager : IDisposable
         {
             Log.Error(ex, "キャッシュの保存に失敗: {CacheKey}", cacheKey);
             throw new CacheException(
-                ErrorCodes.Cache.CACHE_WRITE_ERROR,
+                ErrorCodes.Cache.CacheWriteError,
                 $"Failed to save audio cache: {ex.Message}",
                 "キャッシュの保存に失敗しました。",
                 cacheKey,
@@ -214,7 +214,7 @@ public class AudioCacheManager : IDisposable
         {
             Log.Information("キャッシュクリーンアップがキャンセルされました");
             throw new VoicevoxRunCachedException(
-                ErrorCodes.General.OPERATION_CANCELLED,
+                ErrorCodes.General.OperationCancelled,
                 "Cache cleanup was cancelled",
                 "キャッシュクリーンアップがキャンセルされました。",
                 null,
@@ -225,7 +225,7 @@ public class AudioCacheManager : IDisposable
         {
             Log.Error(ex, "キャッシュクリーンアップ中にアクセス権限エラーが発生しました");
             throw new CacheException(
-                ErrorCodes.Cache.CACHE_PERMISSION_DENIED,
+                ErrorCodes.Cache.CachePermissionDenied,
                 $"Access denied during cache cleanup: {ex.Message}",
                 "キャッシュクリーンアップ中にアクセス権限エラーが発生しました。",
                 null,
@@ -237,7 +237,7 @@ public class AudioCacheManager : IDisposable
         {
             Log.Error(ex, "キャッシュクリーンアップ中にI/Oエラーが発生しました");
             throw new CacheException(
-                ErrorCodes.Cache.CACHE_READ_ERROR,
+                ErrorCodes.Cache.CacheReadError,
                 $"I/O error during cache cleanup: {ex.Message}",
                 "キャッシュクリーンアップ中にI/Oエラーが発生しました。",
                 null,
@@ -249,7 +249,7 @@ public class AudioCacheManager : IDisposable
         {
             Log.Error(ex, "キャッシュクリーンアップ中に予期しないエラーが発生しました");
             throw new CacheException(
-                ErrorCodes.General.UNKNOWN_ERROR,
+                ErrorCodes.General.UnknownError,
                 $"Unexpected error during cache cleanup: {ex.Message}",
                 "キャッシュクリーンアップ中に予期しないエラーが発生しました。",
                 null,
@@ -282,7 +282,7 @@ public class AudioCacheManager : IDisposable
     /// <summary>
     /// 個別セグメントの非同期処理
     /// </summary>
-    private async Task<TextSegment> ProcessSegmentAsync(TextSegment segment, VoiceRequest request, CancellationToken cancellationToken)
+    private async Task<TextSegment> ProcessSegmentAsync(TextSegment segment, VoiceRequest request, CancellationToken _)
     {
         try
         {
@@ -334,7 +334,7 @@ public class AudioCacheManager : IDisposable
             "{0}|{1}|{2:F2}|{3:F2}|{4:F2}", request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
 
         // 軽量なハッシュ計算（SHA256の再利用）
-        var hashBytes = _sha256.ComputeHash(Encoding.UTF8.GetBytes(keyString));
+        var hashBytes = Sha256.ComputeHash(Encoding.UTF8.GetBytes(keyString));
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 

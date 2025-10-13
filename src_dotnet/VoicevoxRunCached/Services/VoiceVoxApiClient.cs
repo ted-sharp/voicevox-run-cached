@@ -59,7 +59,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "VOICEVOXエンジンが利用できません - StatusCode: {StatusCode}", ex.StatusCode);
             throw new VoiceVoxApiException(
-                ErrorCodes.Engine.ENGINE_NOT_AVAILABLE,
+                ErrorCodes.Engine.EngineNotAvailable,
                 $"Failed to get speakers: {ex.Message}",
                 "VOICEVOXエンジンが利用できません。エンジンが起動しているか確認してください。",
                 ex.StatusCode,
@@ -71,7 +71,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "Speakersエンドポイントが見つかりません - StatusCode: {StatusCode}", ex.StatusCode);
             throw new VoiceVoxApiException(
-                ErrorCodes.Api.API_REQUEST_FAILED,
+                ErrorCodes.Api.ApiRequestFailed,
                 $"Speakers endpoint not found: {ex.Message}",
                 "スピーカー情報の取得に失敗しました。VOICEVOXエンジンのバージョンを確認してください。",
                 ex.StatusCode,
@@ -83,7 +83,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "Failed to get speakers from VoiceVox API - StatusCode: {StatusCode}", ex.StatusCode);
             throw new VoiceVoxApiException(
-                ErrorCodes.Api.API_REQUEST_FAILED,
+                ErrorCodes.Api.ApiRequestFailed,
                 $"Failed to get speakers: {ex.Message}",
                 "スピーカー情報の取得に失敗しました。",
                 ex.StatusCode,
@@ -95,7 +95,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Information("Speakers取得がキャンセルされました");
             throw new VoicevoxRunCachedException(
-                ErrorCodes.General.OPERATION_CANCELLED,
+                ErrorCodes.General.OperationCancelled,
                 "Speakers retrieval was cancelled",
                 "スピーカー情報の取得がキャンセルされました。",
                 ex,
@@ -106,7 +106,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "Speakers取得がタイムアウトしました");
             throw new VoiceVoxApiException(
-                ErrorCodes.Api.API_TIMEOUT,
+                ErrorCodes.Api.ApiTimeout,
                 $"Speakers retrieval timed out: {ex.Message}",
                 "スピーカー情報の取得がタイムアウトしました。",
                 null,
@@ -118,7 +118,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "SpeakersレスポンスのJSON解析に失敗しました");
             throw new VoiceVoxApiException(
-                ErrorCodes.Api.API_RESPONSE_INVALID,
+                ErrorCodes.Api.ApiResponseInvalid,
                 $"Failed to parse speakers response: {ex.Message}",
                 "スピーカー情報の解析に失敗しました。",
                 null,
@@ -130,7 +130,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "Unexpected error while getting speakers");
             throw new VoiceVoxApiException(
-                ErrorCodes.General.UNKNOWN_ERROR,
+                ErrorCodes.General.UnknownError,
                 $"Unexpected error while getting speakers: {ex.Message}",
                 "スピーカー情報の取得中に予期しないエラーが発生しました。",
                 ex,
@@ -189,7 +189,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "Audio query生成リクエストが無効です - StatusCode: {StatusCode}", ex.StatusCode);
             throw new VoiceVoxApiException(
-                ErrorCodes.Api.API_REQUEST_FAILED,
+                ErrorCodes.Api.ApiRequestFailed,
                 $"Invalid audio query request: {ex.Message}",
                 "音声クエリの生成リクエストが無効です。テキスト内容とパラメータを確認してください。",
                 ex.StatusCode,
@@ -201,7 +201,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "VOICEVOXエンジンが利用できません - StatusCode: {StatusCode}", ex.StatusCode);
             throw new VoiceVoxApiException(
-                ErrorCodes.Engine.ENGINE_NOT_AVAILABLE,
+                ErrorCodes.Engine.EngineNotAvailable,
                 $"VOICEVOX engine unavailable: {ex.Message}",
                 "VOICEVOXエンジンが利用できません。エンジンが起動しているか確認してください。",
                 ex.StatusCode,
@@ -213,7 +213,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "Audio query生成に失敗しました - StatusCode: {StatusCode}", ex.StatusCode);
             throw new VoiceVoxApiException(
-                ErrorCodes.Api.API_REQUEST_FAILED,
+                ErrorCodes.Api.ApiRequestFailed,
                 $"Failed to generate audio query: {ex.Message}",
                 "音声クエリの生成に失敗しました。",
                 ex.StatusCode,
@@ -225,7 +225,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Information("Audio query生成がキャンセルされました");
             throw new VoicevoxRunCachedException(
-                ErrorCodes.General.OPERATION_CANCELLED,
+                ErrorCodes.General.OperationCancelled,
                 "Audio query generation was cancelled",
                 "音声クエリの生成がキャンセルされました。",
                 ex,
@@ -236,7 +236,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "Audio query生成がタイムアウトしました");
             throw new VoiceVoxApiException(
-                ErrorCodes.Api.API_TIMEOUT,
+                ErrorCodes.Api.ApiTimeout,
                 $"Audio query generation timed out: {ex.Message}",
                 "音声クエリの生成がタイムアウトしました。",
                 null,
@@ -248,7 +248,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "Audio queryレスポンスのJSON解析に失敗しました");
             throw new VoiceVoxApiException(
-                ErrorCodes.Api.API_RESPONSE_INVALID,
+                ErrorCodes.Api.ApiResponseInvalid,
                 $"Failed to parse audio query response: {ex.Message}",
                 "音声クエリの解析に失敗しました。",
                 null,
@@ -260,7 +260,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "Audio query生成中に予期しないエラーが発生しました");
             throw new VoiceVoxApiException(
-                ErrorCodes.General.UNKNOWN_ERROR,
+                ErrorCodes.General.UnknownError,
                 $"Unexpected error during audio query generation: {ex.Message}",
                 "音声クエリの生成中に予期しないエラーが発生しました。",
                 ex,
@@ -296,7 +296,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "音声合成リクエストが無効です - SpeakerId: {SpeakerId}, StatusCode: {StatusCode}", speakerId, ex.StatusCode);
             throw new VoiceVoxApiException(
-                ErrorCodes.Api.API_REQUEST_FAILED,
+                ErrorCodes.Api.ApiRequestFailed,
                 $"Invalid synthesis request: {ex.Message}",
                 "音声合成リクエストが無効です。スピーカーIDと音声クエリを確認してください。",
                 ex.StatusCode,
@@ -308,7 +308,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "VOICEVOXエンジンが利用できません - SpeakerId: {SpeakerId}, StatusCode: {StatusCode}", speakerId, ex.StatusCode);
             throw new VoiceVoxApiException(
-                ErrorCodes.Engine.ENGINE_NOT_AVAILABLE,
+                ErrorCodes.Engine.EngineNotAvailable,
                 $"VOICEVOX engine unavailable: {ex.Message}",
                 "VOICEVOXエンジンが利用できません。エンジンが起動しているか確認してください。",
                 ex.StatusCode,
@@ -320,7 +320,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "VOICEVOXエンジンで内部エラーが発生しました - SpeakerId: {SpeakerId}, StatusCode: {StatusCode}", speakerId, ex.StatusCode);
             throw new VoiceVoxApiException(
-                ErrorCodes.Engine.ENGINE_PROCESS_ERROR,
+                ErrorCodes.Engine.EngineProcessError,
                 $"VOICEVOX engine internal error: {ex.Message}",
                 "VOICEVOXエンジンで内部エラーが発生しました。",
                 ex.StatusCode,
@@ -332,7 +332,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "音声合成に失敗しました - SpeakerId: {SpeakerId}, StatusCode: {StatusCode}", speakerId, ex.StatusCode);
             throw new VoiceVoxApiException(
-                ErrorCodes.Api.API_REQUEST_FAILED,
+                ErrorCodes.Api.ApiRequestFailed,
                 $"Failed to synthesize audio: {ex.Message}",
                 "音声合成に失敗しました。",
                 ex.StatusCode,
@@ -344,7 +344,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Information("音声合成がキャンセルされました - SpeakerId: {SpeakerId}", speakerId);
             throw new VoicevoxRunCachedException(
-                ErrorCodes.General.OPERATION_CANCELLED,
+                ErrorCodes.General.OperationCancelled,
                 "Audio synthesis was cancelled",
                 "音声合成がキャンセルされました。",
                 ex,
@@ -355,7 +355,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "音声合成がタイムアウトしました - SpeakerId: {SpeakerId}", speakerId);
             throw new VoiceVoxApiException(
-                ErrorCodes.Api.API_TIMEOUT,
+                ErrorCodes.Api.ApiTimeout,
                 $"Audio synthesis timed out: {ex.Message}",
                 "音声合成がタイムアウトしました。",
                 null,
@@ -367,7 +367,7 @@ public class VoiceVoxApiClient : IDisposable
         {
             Log.Error(ex, "音声合成中に予期しないエラーが発生しました - SpeakerId: {SpeakerId}", speakerId);
             throw new VoiceVoxApiException(
-                ErrorCodes.General.UNKNOWN_ERROR,
+                ErrorCodes.General.UnknownError,
                 $"Unexpected error during audio synthesis: {ex.Message}",
                 "音声合成中に予期しないエラーが発生しました。",
                 ex,

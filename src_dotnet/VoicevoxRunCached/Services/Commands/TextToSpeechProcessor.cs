@@ -139,7 +139,7 @@ public class TextToSpeechProcessor
         {
             _logger.LogInformation("テキスト読み上げ処理がキャンセルされました");
             throw new VoicevoxRunCachedException(
-                ErrorCodes.General.OPERATION_CANCELLED,
+                ErrorCodes.General.OperationCancelled,
                 "Text-to-speech processing was cancelled",
                 "テキスト読み上げ処理がキャンセルされました。",
                 null,
@@ -155,7 +155,7 @@ public class TextToSpeechProcessor
         {
             _logger.LogError(ex, "テキスト読み上げ処理中に予期しないエラーが発生しました");
             throw new VoicevoxRunCachedException(
-                ErrorCodes.General.UNKNOWN_ERROR,
+                ErrorCodes.General.UnknownError,
                 $"Unexpected error during text-to-speech processing: {ex.Message}",
                 "テキスト読み上げ処理中に予期しないエラーが発生しました。",
                 ex,
@@ -177,7 +177,7 @@ public class TextToSpeechProcessor
         {
             _logger.LogInformation("セグメント処理がキャンセルされました");
             throw new VoicevoxRunCachedException(
-                ErrorCodes.General.OPERATION_CANCELLED,
+                ErrorCodes.General.OperationCancelled,
                 "Segment processing was cancelled",
                 "セグメント処理がキャンセルされました。",
                 null,
@@ -193,7 +193,7 @@ public class TextToSpeechProcessor
         {
             _logger.LogError(ex, "セグメント処理中に予期しないエラーが発生しました");
             throw new VoicevoxRunCachedException(
-                ErrorCodes.General.UNKNOWN_ERROR,
+                ErrorCodes.General.UnknownError,
                 $"Unexpected error during segment processing: {ex.Message}",
                 "セグメント処理中に予期しないエラーが発生しました。",
                 ex,

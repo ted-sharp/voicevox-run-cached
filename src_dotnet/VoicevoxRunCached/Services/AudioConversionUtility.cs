@@ -79,13 +79,13 @@ public static class AudioConversionUtility
         if (audioData[0] == 'R' && audioData[1] == 'I' && audioData[2] == 'F' && audioData[3] == 'F' &&
             audioData[8] == 'W' && audioData[9] == 'A' && audioData[10] == 'V' && audioData[11] == 'E')
         {
-            return AudioFormat.WAV;
+            return AudioFormat.Wav;
         }
 
         // Check for MP3 header (starts with 0xFF)
         if (audioData[0] == 0xFF && (audioData[1] & 0xE0) == 0xE0)
         {
-            return AudioFormat.MP3;
+            return AudioFormat.Mp3;
         }
 
         return AudioFormat.Unknown;

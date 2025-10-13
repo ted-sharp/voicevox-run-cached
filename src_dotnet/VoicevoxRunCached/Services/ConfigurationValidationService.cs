@@ -1,5 +1,4 @@
 ﻿using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Configuration.Validators;
 
 namespace VoicevoxRunCached.Services;
 

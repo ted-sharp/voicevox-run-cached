@@ -22,7 +22,7 @@ public class AudioFormatDetector
         // ヘッダーを読み取ってフォーマットを検出
         tempStream.Position = 0;
         var headerBuffer = new byte[12];
-        var bytesRead = await tempStream.ReadAsync(headerBuffer, 0, 12);
+        _ = await tempStream.ReadAsync(headerBuffer, 0, 12);
 
         var format = DetectFormat(headerBuffer);
         Log.Debug("音声フォーマットを検出: {Format}", format);
@@ -33,8 +33,8 @@ public class AudioFormatDetector
 
         return format switch
         {
-            AudioFormat.WAV => new WaveFileReader(audioStream),
-            AudioFormat.MP3 => new Mp3FileReader(audioStream),
+            AudioFormat.Wav => new WaveFileReader(audioStream),
+            AudioFormat.Mp3 => new Mp3FileReader(audioStream),
             _ => CreateFallbackWaveStream(audioStream)
         };
     }
@@ -54,13 +54,13 @@ public class AudioFormatDetector
         // WAVフォーマットの検出
         if (IsWavFormat(headerBuffer))
         {
-            return AudioFormat.WAV;
+            return AudioFormat.Wav;
         }
 
         // MP3フォーマットの検出
         if (IsMp3Format(headerBuffer))
         {
-            return AudioFormat.MP3;
+            return AudioFormat.Mp3;
         }
 
         return AudioFormat.Unknown;

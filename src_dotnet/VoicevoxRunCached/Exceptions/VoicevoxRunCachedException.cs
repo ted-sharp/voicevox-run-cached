@@ -82,11 +82,11 @@ public class VoicevoxRunCachedException : Exception
     {
         var data = new
         {
-            ErrorCode = ErrorCode,
-            UserMessage = UserMessage,
-            SuggestedSolution = SuggestedSolution,
-            Context = Context,
-            Message = Message,
+            ErrorCode,
+            UserMessage,
+            SuggestedSolution,
+            Context,
+            Message,
             InnerException = InnerException?.Message
         };
 
@@ -124,13 +124,13 @@ public class VoiceVoxApiException : VoicevoxRunCachedException
     {
         var data = new
         {
-            ErrorCode = ErrorCode,
-            UserMessage = UserMessage,
-            SuggestedSolution = SuggestedSolution,
-            Context = Context,
-            Message = Message,
-            StatusCode = StatusCode,
-            ApiResponse = ApiResponse,
+            ErrorCode,
+            UserMessage,
+            SuggestedSolution,
+            Context,
+            Message,
+            StatusCode,
+            ApiResponse,
             InnerException = InnerException?.Message
         };
 
@@ -165,12 +165,12 @@ public class ConfigurationException : VoicevoxRunCachedException
     {
         var data = new
         {
-            ErrorCode = ErrorCode,
-            UserMessage = UserMessage,
-            SuggestedSolution = SuggestedSolution,
-            Context = Context,
-            Message = Message,
-            SettingPath = SettingPath,
+            ErrorCode,
+            UserMessage,
+            SuggestedSolution,
+            Context,
+            Message,
+            SettingPath,
             InnerException = InnerException?.Message
         };
 
@@ -208,13 +208,13 @@ public class CacheException : VoicevoxRunCachedException
     {
         var data = new
         {
-            ErrorCode = ErrorCode,
-            UserMessage = UserMessage,
-            SuggestedSolution = SuggestedSolution,
-            Context = Context,
-            Message = Message,
-            CacheKey = CacheKey,
-            CachePath = CachePath,
+            ErrorCode,
+            UserMessage,
+            SuggestedSolution,
+            Context,
+            Message,
+            CacheKey,
+            CachePath,
             InnerException = InnerException?.Message
         };
 

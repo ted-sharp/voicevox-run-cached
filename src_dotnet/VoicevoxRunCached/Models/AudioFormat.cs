@@ -6,6 +6,6 @@
 public enum AudioFormat
 {
     Unknown,
-    WAV,
-    MP3
+    Wav,
+    Mp3
 }

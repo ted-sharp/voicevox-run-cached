@@ -11,7 +11,7 @@ public class AppSettings
 }
 
 // C# 13 Primary constructor for VoiceVoxSettings
-public class VoiceVoxSettings(string baseUrl = "http://127.0.0.1:50021", int defaultSpeaker = 1, int connectionTimeout = 30, bool autoStartEngine = false, string enginePath = "", int startupTimeoutSeconds = 30, string engineArguments = "", EngineType engineType = EngineType.VOICEVOX, bool keepEngineRunning = true)
+public class VoiceVoxSettings(string baseUrl = "http://127.0.0.1:50021", int defaultSpeaker = 1, int connectionTimeout = 30, bool autoStartEngine = false, string enginePath = "", int startupTimeoutSeconds = 30, string engineArguments = "", EngineType engineType = EngineType.Voicevox, bool keepEngineRunning = true)
 {
     public string BaseUrl { get; set; } = baseUrl;
     public int DefaultSpeaker { get; set; } = defaultSpeaker;
@@ -30,22 +30,22 @@ public class VoiceVoxSettings(string baseUrl = "http://127.0.0.1:50021", int def
 
 public enum EngineType
 {
-    VOICEVOX,
+    Voicevox,
     AivisSpeech
 }
 
 // C# 13 Primary constructor for CacheSettings
-public class CacheSettings(string directory = "./cache/audio/", int expirationDays = 30, double maxSizeGB = 1.0, bool useExecutableBaseDirectory = false)
+public class CacheSettings(string directory = "./cache/audio/", int expirationDays = 30, double maxSizeGb = 1.0, bool useExecutableBaseDirectory = false)
 {
     public string Directory { get; set; } = directory;
     public int ExpirationDays { get; set; } = expirationDays;
-    public double MaxSizeGB { get; set; } = maxSizeGB;
+    public double MaxSizeGb { get; set; } = maxSizeGb;
 
     // When true and Directory is relative, resolve it under the executable directory
     public bool UseExecutableBaseDirectory { get; set; } = useExecutableBaseDirectory;
 
     // 新しいプロパティ
-    public int MemoryCacheSizeMB { get; set; } = 100; // 100MB
+    public int MemoryCacheSizeMb { get; set; } = 100; // 100MB
 }
 
 // C# 13 Primary constructor for AudioSettings with device preparation
@@ -85,7 +85,7 @@ public class FillerSettings(bool enabled = false, string directory = "./cache/fi
     public bool UseExecutableBaseDirectory { get; set; } = useExecutableBaseDirectory;
 
     // 新しいプロパティ
-    public int MaxCacheSizeMB { get; set; } = 100; // 100MB
+    public int MaxCacheSizeMb { get; set; } = 100; // 100MB
 }
 
 // Log level enum for configuration
@@ -111,7 +111,7 @@ public class LoggingSettings(string level = "Information", string format = "simp
 
     // 新しいプロパティ
     public bool EnableFileLogging { get; set; } = false;
-    public int MaxFileSizeMB { get; set; } = 10; // 10MB
+    public int MaxFileSizeMb { get; set; } = 10; // 10MB
     public int MaxFileCount { get; set; } = 5;
 }
 
