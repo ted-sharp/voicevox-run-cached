@@ -1,6 +1,6 @@
+﻿using Serilog;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
-using Serilog;
 
 namespace VoicevoxRunCached.Services;
 
@@ -10,25 +10,48 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class AudioPlayer : IDisposable
 {
-    private readonly AudioSettings _settings;
     private readonly AudioDeviceManager _deviceManager;
     private readonly AudioFormatDetector _formatDetector;
     private readonly AudioPlaybackController _playbackController;
     private readonly AudioSegmentPlayer _segmentPlayer;
+    private readonly AudioSettings _settings;
     private bool _disposed;
 
     public AudioPlayer(AudioSettings settings)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
 
         // 各専門クラスのインスタンスを作成
-        this._deviceManager = new AudioDeviceManager(settings);
-        this._formatDetector = new AudioFormatDetector();
-        this._playbackController = new AudioPlaybackController(settings, this._formatDetector);
-        this._segmentPlayer = new AudioSegmentPlayer(settings, this._formatDetector);
+        _deviceManager = new AudioDeviceManager(settings);
+        _formatDetector = new AudioFormatDetector();
+        _playbackController = new AudioPlaybackController(settings, _formatDetector);
+        _segmentPlayer = new AudioSegmentPlayer(settings, _formatDetector);
 
         Log.Information("AudioPlayer を初期化しました - 音量: {Volume}, デバイス: {Device}",
-            this._settings.Volume, this._settings.OutputDevice);
+            _settings.Volume, _settings.OutputDevice);
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            try
+            {
+                // 各専門クラスの破棄
+                _deviceManager?.Dispose();
+                _playbackController?.Dispose();
+                _segmentPlayer?.Dispose();
+                _disposed = true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "AudioPlayerの破棄中にエラーが発生しました");
+            }
+            finally
+            {
+                GC.SuppressFinalize(this);
+            }
+        }
     }
 
     /// <summary>
@@ -40,14 +63,14 @@ public class AudioPlayer : IDisposable
     /// <returns>再生完了を表すTask</returns>
     public async Task PlayAudioStreamingAsync(byte[] audioData, Func<byte[], Task>? cacheCallback = null, CancellationToken cancellationToken = default)
     {
-        if (this._disposed)
+        if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
         // デバイスの準備完了を確認
-        await this._deviceManager.EnsureDeviceReadyAsync();
+        await _deviceManager.EnsureDeviceReadyAsync();
 
         // 再生制御クラスに委譲
-        await this._playbackController.PlayAudioStreamingAsync(audioData, cacheCallback, cancellationToken);
+        await _playbackController.PlayAudioStreamingAsync(audioData, cacheCallback, cancellationToken);
     }
 
     /// <summary>
@@ -58,14 +81,14 @@ public class AudioPlayer : IDisposable
     /// <returns>再生完了を表すTask</returns>
     public async Task PlayAudioSequentiallyAsync(List<byte[]> audioSegments, CancellationToken cancellationToken = default)
     {
-        if (this._disposed)
+        if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
         // デバイスの準備完了を確認
-        await this._deviceManager.EnsureDeviceReadyAsync();
+        await _deviceManager.EnsureDeviceReadyAsync();
 
         // セグメント再生クラスに委譲
-        await this._segmentPlayer.PlayAudioSequentiallyAsync(audioSegments, cancellationToken);
+        await _segmentPlayer.PlayAudioSequentiallyAsync(audioSegments, cancellationToken);
     }
 
     /// <summary>
@@ -78,14 +101,14 @@ public class AudioPlayer : IDisposable
     /// <returns>再生完了を表すTask</returns>
     public async Task PlayAudioSequentiallyWithGenerationAsync(List<TextSegment> segments, AudioProcessingChannel? processingChannel, FillerManager? fillerManager = null, CancellationToken cancellationToken = default)
     {
-        if (this._disposed)
+        if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
         // デバイスの準備完了を確認
-        await this._deviceManager.EnsureDeviceReadyAsync();
+        await _deviceManager.EnsureDeviceReadyAsync();
 
         // セグメント再生クラスに委譲
-        await this._segmentPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, processingChannel, fillerManager, cancellationToken);
+        await _segmentPlayer.PlayAudioSequentiallyWithGenerationAsync(segments, processingChannel, fillerManager, cancellationToken);
     }
 
     /// <summary>
@@ -96,14 +119,14 @@ public class AudioPlayer : IDisposable
     /// <returns>再生完了を表すTask</returns>
     public async Task PlayAudioAsync(byte[] audioData, CancellationToken cancellationToken = default)
     {
-        if (this._disposed)
+        if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
         // デバイスの準備完了を確認
-        await this._deviceManager.EnsureDeviceReadyAsync();
+        await _deviceManager.EnsureDeviceReadyAsync();
 
         // 再生制御クラスに委譲
-        await this._playbackController.PlayAudioAsync(audioData, cancellationToken);
+        await _playbackController.PlayAudioAsync(audioData, cancellationToken);
     }
 
     /// <summary>
@@ -113,8 +136,8 @@ public class AudioPlayer : IDisposable
     {
         try
         {
-            this._playbackController.StopAudio();
-            this._segmentPlayer.StopAudio();
+            _playbackController.StopAudio();
+            _segmentPlayer.StopAudio();
         }
         catch (Exception ex)
         {
@@ -131,43 +154,20 @@ public class AudioPlayer : IDisposable
         return AudioDeviceManager.GetAvailableDevices();
     }
 
-    public void Dispose()
-    {
-        if (!this._disposed)
-        {
-            try
-            {
-                // 各専門クラスの破棄
-                this._deviceManager?.Dispose();
-                this._playbackController?.Dispose();
-                this._segmentPlayer?.Dispose();
-                this._disposed = true;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "AudioPlayerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
-        }
-    }
-
     // ファイナライザー（安全性のため）
     ~AudioPlayer()
     {
-        this.Dispose(false);
+        Dispose(false);
     }
 
     protected virtual void Dispose(bool disposing)
     {
-        if (!this._disposed)
+        if (!_disposed)
         {
             if (disposing)
             {
                 // マネージドリソースの破棄
-                this.Dispose();
+                Dispose();
             }
             else
             {

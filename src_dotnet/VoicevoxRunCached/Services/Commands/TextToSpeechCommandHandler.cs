@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 
@@ -9,15 +9,15 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class TextToSpeechCommandHandler
 {
-    private readonly AppSettings _settings;
     private readonly ILogger _logger;
     private readonly TextToSpeechProcessor _processor;
+    private readonly AppSettings _settings;
 
     public TextToSpeechCommandHandler(AppSettings settings, ILogger logger)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        this._processor = new TextToSpeechProcessor(settings, logger);
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _processor = new TextToSpeechProcessor(settings, logger);
     }
 
     /// <summary>
@@ -35,13 +35,13 @@ public class TextToSpeechCommandHandler
     {
         try
         {
-            return await this._processor.ProcessTextToSpeechAsync(
+            return await _processor.ProcessTextToSpeechAsync(
                 request, noCache, cacheOnly, verbose, outPath, noPlay, cancellationToken);
         }
         catch (Exception ex)
         {
-            this._logger.LogError(ex, "テキスト読み上げ処理中にエラーが発生しました");
-            ConsoleHelper.WriteError($"Error: {ex.Message}", this._logger);
+            _logger.LogError(ex, "テキスト読み上げ処理中にエラーが発生しました");
+            ConsoleHelper.WriteError($"Error: {ex.Message}", _logger);
             return 1;
         }
     }

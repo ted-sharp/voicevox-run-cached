@@ -1,7 +1,6 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
-using VoicevoxRunCached.Services;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -10,13 +9,13 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class AudioExportService
 {
-    private readonly AppSettings _settings;
     private readonly ILogger _logger;
+    private readonly AppSettings _settings;
 
     public AudioExportService(AppSettings settings, ILogger logger)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
@@ -30,27 +29,27 @@ public class AudioExportService
     {
         try
         {
-            this._logger.LogInformation("音声ファイルの出力を開始します: {OutPath}", outPath);
+            _logger.LogInformation("音声ファイルの出力を開始します: {OutPath}", outPath);
 
-            using var apiClient = new VoiceVoxApiClient(this._settings.VoiceVox);
+            using var apiClient = new VoiceVoxApiClient(_settings.VoiceVox);
             await apiClient.InitializeSpeakerAsync(request.SpeakerId, cancellationToken);
 
             var audioQuery = await apiClient.GenerateAudioQueryAsync(request, cancellationToken);
             var wavData = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId, cancellationToken);
-            await this.WriteOutputFileAsync(wavData, outPath, cancellationToken);
+            await WriteOutputFileAsync(wavData, outPath, cancellationToken);
 
-            ConsoleHelper.WriteSuccess($"Saved output to: {outPath}", this._logger);
-            this._logger.LogInformation("音声ファイルの出力が完了しました: {OutPath}", outPath);
+            ConsoleHelper.WriteSuccess($"Saved output to: {outPath}", _logger);
+            _logger.LogInformation("音声ファイルの出力が完了しました: {OutPath}", outPath);
         }
         catch (OperationCanceledException)
         {
-            ConsoleHelper.WriteLine("Output export was cancelled", this._logger);
+            ConsoleHelper.WriteLine("Output export was cancelled", _logger);
             throw;
         }
         catch (Exception ex)
         {
-            this._logger.LogError(ex, "音声ファイルの出力に失敗しました: {OutPath}", outPath);
-            ConsoleHelper.WriteWarning($"Failed to save output to '{outPath}': {ex.Message}", this._logger);
+            _logger.LogError(ex, "音声ファイルの出力に失敗しました: {OutPath}", outPath);
+            ConsoleHelper.WriteWarning($"Failed to save output to '{outPath}': {ex.Message}", _logger);
             throw;
         }
     }
@@ -71,6 +70,6 @@ public class AudioExportService
         }
 
         await File.WriteAllBytesAsync(outPath, audioData, cancellationToken);
-        this._logger.LogDebug("音声ファイルを書き込みました: {OutPath}, サイズ: {Size} bytes", outPath, audioData.Length);
+        _logger.LogDebug("音声ファイルを書き込みました: {OutPath}, サイズ: {Size} bytes", outPath, audioData.Length);
     }
 }

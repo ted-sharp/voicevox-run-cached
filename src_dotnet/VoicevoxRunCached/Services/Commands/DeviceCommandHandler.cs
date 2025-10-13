@@ -1,8 +1,7 @@
+﻿using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Services;
 using NAudio.CoreAudioApi;
-using System.Text.Json;
+using VoicevoxRunCached.Configuration;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -11,13 +10,13 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class DeviceCommandHandler
 {
-    private readonly AppSettings _settings;
     private readonly ILogger _logger;
+    private readonly AppSettings _settings;
 
     public DeviceCommandHandler(AppSettings settings, ILogger logger)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
@@ -45,7 +44,7 @@ public class DeviceCommandHandler
             }
             catch (Exception ex)
             {
-                ConsoleHelper.WriteWarning($"Failed to get default audio endpoint: {ex.Message}", this._logger);
+                ConsoleHelper.WriteWarning($"Failed to get default audio endpoint: {ex.Message}", _logger);
             }
 
             var list = new List<object>();
@@ -67,13 +66,13 @@ public class DeviceCommandHandler
                         }
                         catch (Exception inner)
                         {
-                            ConsoleHelper.WriteWarning($"Failed to read device info: {inner.Message}", this._logger);
+                            ConsoleHelper.WriteWarning($"Failed to read device info: {inner.Message}", _logger);
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    ConsoleHelper.WriteWarning($"Failed to enumerate audio endpoints: {ex.Message}", this._logger);
+                    ConsoleHelper.WriteWarning($"Failed to enumerate audio endpoints: {ex.Message}", _logger);
                 }
             }
 
@@ -126,7 +125,7 @@ public class DeviceCommandHandler
         }
         catch (Exception ex)
         {
-            ConsoleHelper.WriteError($"Error listing devices: {ex.Message}", this._logger);
+            ConsoleHelper.WriteError($"Error listing devices: {ex.Message}", _logger);
             return 1;
         }
     }

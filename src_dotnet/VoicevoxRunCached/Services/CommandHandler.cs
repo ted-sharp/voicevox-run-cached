@@ -1,7 +1,6 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
-using VoicevoxRunCached.Services;
 using VoicevoxRunCached.Services.Commands;
 
 namespace VoicevoxRunCached.Services;
@@ -12,27 +11,27 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class CommandHandler
 {
-    private readonly AppSettings _settings;
-    private readonly ILogger _logger;
-    private readonly SpeakerCommandHandler _speakerHandler;
+    private readonly BenchmarkCommandHandler _benchmarkHandler;
+    private readonly CacheCommandHandler _cacheHandler;
     private readonly DeviceCommandHandler _deviceHandler;
     private readonly InitCommandHandler _initHandler;
-    private readonly CacheCommandHandler _cacheHandler;
-    private readonly BenchmarkCommandHandler _benchmarkHandler;
+    private readonly ILogger _logger;
+    private readonly AppSettings _settings;
+    private readonly SpeakerCommandHandler _speakerHandler;
     private readonly TextToSpeechCommandHandler _ttsHandler;
 
     public CommandHandler(AppSettings settings, ILogger logger)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         // 各専門クラスのインスタンスを作成
-        this._speakerHandler = new SpeakerCommandHandler(settings, logger);
-        this._deviceHandler = new DeviceCommandHandler(settings, logger);
-        this._initHandler = new InitCommandHandler(settings, logger);
-        this._cacheHandler = new CacheCommandHandler(settings, logger);
-        this._benchmarkHandler = new BenchmarkCommandHandler(settings, logger);
-        this._ttsHandler = new TextToSpeechCommandHandler(settings, logger);
+        _speakerHandler = new SpeakerCommandHandler(settings, logger);
+        _deviceHandler = new DeviceCommandHandler(settings, logger);
+        _initHandler = new InitCommandHandler(settings, logger);
+        _cacheHandler = new CacheCommandHandler(settings, logger);
+        _benchmarkHandler = new BenchmarkCommandHandler(settings, logger);
+        _ttsHandler = new TextToSpeechCommandHandler(settings, logger);
     }
 
     /// <summary>
@@ -41,7 +40,7 @@ public class CommandHandler
     /// <returns>処理結果の終了コード</returns>
     public async Task<int> HandleSpeakersAsync()
     {
-        return await this._speakerHandler.HandleSpeakersAsync();
+        return await _speakerHandler.HandleSpeakersAsync();
     }
 
     /// <summary>
@@ -51,7 +50,7 @@ public class CommandHandler
     /// <returns>処理結果の終了コード</returns>
     public int HandleDevices(string[] args)
     {
-        return this._deviceHandler.HandleDevices(args);
+        return _deviceHandler.HandleDevices(args);
     }
 
     /// <summary>
@@ -60,7 +59,7 @@ public class CommandHandler
     /// <returns>処理結果の終了コード</returns>
     public async Task<int> HandleInitAsync()
     {
-        return await this._initHandler.HandleInitAsync();
+        return await _initHandler.HandleInitAsync();
     }
 
     /// <summary>
@@ -69,7 +68,7 @@ public class CommandHandler
     /// <returns>処理結果の終了コード</returns>
     public async Task<int> HandleClearCacheAsync()
     {
-        return await this._cacheHandler.HandleClearCacheAsync();
+        return await _cacheHandler.HandleClearCacheAsync();
     }
 
     /// <summary>
@@ -78,7 +77,7 @@ public class CommandHandler
     /// <returns>処理結果の終了コード</returns>
     public async Task<int> HandleBenchmarkAsync()
     {
-        return await this._benchmarkHandler.HandleBenchmarkAsync();
+        return await _benchmarkHandler.HandleBenchmarkAsync();
     }
 
     /// <summary>
@@ -94,6 +93,6 @@ public class CommandHandler
     /// <returns>処理結果の終了コード</returns>
     public async Task<int> HandleTextToSpeechAsync(VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false, string? outPath = null, bool noPlay = false, CancellationToken cancellationToken = default)
     {
-        return await this._ttsHandler.HandleTextToSpeechAsync(request, noCache, cacheOnly, verbose, outPath, noPlay, cancellationToken);
+        return await _ttsHandler.HandleTextToSpeechAsync(request, noCache, cacheOnly, verbose, outPath, noPlay, cancellationToken);
     }
 }

@@ -1,6 +1,5 @@
+﻿using Serilog;
 using VoicevoxRunCached.Models;
-using VoicevoxRunCached.Services;
-using Serilog;
 
 namespace VoicevoxRunCached.Services.Audio;
 
@@ -9,13 +8,13 @@ namespace VoicevoxRunCached.Services.Audio;
 /// </summary>
 public class SegmentGenerationWaiter
 {
-    private readonly AudioProcessingChannel? _processingChannel;
     private readonly int _maxWaitTimeMs;
+    private readonly AudioProcessingChannel? _processingChannel;
 
     public SegmentGenerationWaiter(AudioProcessingChannel? processingChannel = null, int maxWaitTimeMs = 30000)
     {
-        this._processingChannel = processingChannel;
-        this._maxWaitTimeMs = maxWaitTimeMs;
+        _processingChannel = processingChannel;
+        _maxWaitTimeMs = maxWaitTimeMs;
     }
 
     /// <summary>
@@ -33,13 +32,13 @@ public class SegmentGenerationWaiter
             return;
         }
 
-        if (this._processingChannel != null)
+        if (_processingChannel != null)
         {
-            await this.GenerateAudioWithChannelAsync(segment, segmentIndex, cancellationToken);
+            await GenerateAudioWithChannelAsync(segment, segmentIndex, cancellationToken);
         }
         else
         {
-            await this.WaitForFallbackGenerationAsync(segment, segmentIndex, cancellationToken);
+            await WaitForFallbackGenerationAsync(segment, segmentIndex, cancellationToken);
         }
     }
 
@@ -52,7 +51,7 @@ public class SegmentGenerationWaiter
     /// <returns>音声生成の完了を表すTask</returns>
     private async Task GenerateAudioWithChannelAsync(TextSegment segment, int segmentIndex, CancellationToken cancellationToken)
     {
-        if (this._processingChannel == null)
+        if (_processingChannel == null)
             throw new InvalidOperationException("Processing channel is not available");
 
         try
@@ -68,7 +67,7 @@ public class SegmentGenerationWaiter
                 Volume = 1.0
             };
 
-            var result = await this._processingChannel.ProcessAudioAsync(segmentRequest, cancellationToken);
+            var result = await _processingChannel.ProcessAudioAsync(segmentRequest, cancellationToken);
             if (result.Success && result.AudioData != null && result.AudioData.Length > 0)
             {
                 segment.AudioData = result.AudioData;
@@ -108,16 +107,16 @@ public class SegmentGenerationWaiter
         Log.Information("フォールバック処理: セグメント {SegmentIndex} の準備完了を待機中...", segmentIndex + 1);
 
         while ((!segment.IsCached || segment.AudioData == null) &&
-               (DateTime.UtcNow - waitStartTime).TotalMilliseconds < this._maxWaitTimeMs)
+               (DateTime.UtcNow - waitStartTime).TotalMilliseconds < _maxWaitTimeMs)
         {
             await Task.Delay(100, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
         }
 
-        if ((DateTime.UtcNow - waitStartTime).TotalMilliseconds >= this._maxWaitTimeMs)
+        if ((DateTime.UtcNow - waitStartTime).TotalMilliseconds >= _maxWaitTimeMs)
         {
             Log.Warning("セグメント {SegmentIndex} の待機がタイムアウトしました", segmentIndex + 1);
-            throw new TimeoutException($"Segment {segmentIndex + 1} generation timeout after {this._maxWaitTimeMs}ms");
+            throw new TimeoutException($"Segment {segmentIndex + 1} generation timeout after {_maxWaitTimeMs}ms");
         }
 
         if (segment.AudioData == null)
@@ -158,13 +157,13 @@ public class SegmentGenerationWaiter
     /// セグメントの生成完了を待機する際のタイムアウト設定を取得します
     /// </summary>
     /// <returns>タイムアウト設定（ミリ秒）</returns>
-    public int GetMaxWaitTimeMs() => this._maxWaitTimeMs;
+    public int GetMaxWaitTimeMs() => _maxWaitTimeMs;
 
     /// <summary>
     /// 音声処理チャンネルの利用可能性を確認します
     /// </summary>
     /// <returns>利用可能な場合true</returns>
-    public bool HasProcessingChannel() => this._processingChannel != null;
+    public bool HasProcessingChannel() => _processingChannel != null;
 }
 
 /// <summary>
@@ -175,5 +174,5 @@ public class GenerationStatusStats
     public int TotalSegments { get; set; }
     public int CachedSegments { get; set; }
     public int UncachedSegments { get; set; }
-    public double CompletionRatio => this.TotalSegments > 0 ? (double)this.CachedSegments / this.TotalSegments : 0.0;
+    public double CompletionRatio => TotalSegments > 0 ? (double)CachedSegments / TotalSegments : 0.0;
 }

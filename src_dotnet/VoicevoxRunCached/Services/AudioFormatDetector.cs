@@ -1,6 +1,6 @@
-using NAudio.Wave;
-using VoicevoxRunCached.Models;
+﻿using NAudio.Wave;
 using Serilog;
+using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services;
 
@@ -35,7 +35,7 @@ public class AudioFormatDetector
         {
             AudioFormat.WAV => new WaveFileReader(audioStream),
             AudioFormat.MP3 => new Mp3FileReader(audioStream),
-            _ => this.CreateFallbackWaveStream(audioStream)
+            _ => CreateFallbackWaveStream(audioStream)
         };
     }
 

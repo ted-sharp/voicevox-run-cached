@@ -1,6 +1,5 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Services;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -9,13 +8,13 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class SpeakerCommandHandler
 {
-    private readonly AppSettings _settings;
     private readonly ILogger _logger;
+    private readonly AppSettings _settings;
 
     public SpeakerCommandHandler(AppSettings settings, ILogger logger)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
@@ -27,23 +26,23 @@ public class SpeakerCommandHandler
         try
         {
             // VOICEVOXエンジンが動作していることを確認
-            using var engineManager = new VoiceVoxEngineManager(this._settings.VoiceVox);
+            using var engineManager = new VoiceVoxEngineManager(_settings.VoiceVox);
             if (!await engineManager.EnsureEngineRunningAsync())
             {
-                ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", this._logger);
+                ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
                 return 1;
             }
 
-            using var apiClient = new VoiceVoxApiClient(this._settings.VoiceVox);
+            using var apiClient = new VoiceVoxApiClient(_settings.VoiceVox);
             var speakers = await apiClient.GetSpeakersAsync();
 
-            ConsoleHelper.WriteLine("Available speakers:", this._logger);
+            ConsoleHelper.WriteLine("Available speakers:", _logger);
             foreach (var speaker in speakers)
             {
-                ConsoleHelper.WriteLine($"  {speaker.Name} (v{speaker.Version})", this._logger);
+                ConsoleHelper.WriteLine($"  {speaker.Name} (v{speaker.Version})", _logger);
                 foreach (var style in speaker.Styles)
                 {
-                    ConsoleHelper.WriteLine($"    ID: {style.Id} - {style.Name}", this._logger);
+                    ConsoleHelper.WriteLine($"    ID: {style.Id} - {style.Name}", _logger);
                 }
                 Console.WriteLine();
             }
@@ -51,7 +50,7 @@ public class SpeakerCommandHandler
         }
         catch (Exception ex)
         {
-            ConsoleHelper.WriteError($"Error: {ex.Message}", this._logger);
+            ConsoleHelper.WriteError($"Error: {ex.Message}", _logger);
             return 1;
         }
     }

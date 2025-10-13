@@ -1,8 +1,6 @@
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Configuration.Binder;
+﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Services;
 
 namespace VoicevoxRunCached.Services;
 
@@ -13,8 +11,8 @@ public class ConfigurationManager
 
     public ConfigurationManager()
     {
-        this._configuration = BuildConfiguration();
-        this._validationService = new ConfigurationValidationService();
+        _configuration = BuildConfiguration();
+        _validationService = new ConfigurationValidationService();
     }
 
     public AppSettings GetSettings()
@@ -22,12 +20,12 @@ public class ConfigurationManager
         var settings = new AppSettings();
 
         // 設定ファイルから直接バインド
-        this._configuration.GetSection("VoiceVox").Bind(settings.VoiceVox);
-        this._configuration.GetSection("Cache").Bind(settings.Cache);
-        this._configuration.GetSection("Audio").Bind(settings.Audio);
-        this._configuration.GetSection("Filler").Bind(settings.Filler);
-        this._configuration.GetSection("Logging").Bind(settings.Logging);
-        this._configuration.GetSection("Test").Bind(settings.Test);
+        _configuration.GetSection("VoiceVox").Bind(settings.VoiceVox);
+        _configuration.GetSection("Cache").Bind(settings.Cache);
+        _configuration.GetSection("Audio").Bind(settings.Audio);
+        _configuration.GetSection("Filler").Bind(settings.Filler);
+        _configuration.GetSection("Logging").Bind(settings.Logging);
+        _configuration.GetSection("Test").Bind(settings.Test);
 
         return settings;
     }
@@ -36,7 +34,7 @@ public class ConfigurationManager
     {
         try
         {
-            this._validationService.ValidateConfiguration(settings);
+            _validationService.ValidateConfiguration(settings);
             ConsoleHelper.WriteValidationSuccess("設定の検証が完了しました", logger);
             return true;
         }
@@ -55,7 +53,7 @@ public class ConfigurationManager
 
     public IConfiguration GetConfiguration()
     {
-        return this._configuration;
+        return _configuration;
     }
 
     private static IConfiguration BuildConfiguration()

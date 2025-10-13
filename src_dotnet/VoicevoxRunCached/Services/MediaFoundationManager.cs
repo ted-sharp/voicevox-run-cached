@@ -1,5 +1,4 @@
-using System.Threading;
-using NAudio.MediaFoundation;
+﻿using NAudio.MediaFoundation;
 
 namespace VoicevoxRunCached.Services;
 
@@ -33,7 +32,9 @@ public static class MediaFoundationManager
     {
         if (Interlocked.Exchange(ref _initialized, 0) == 1)
         {
-            try { MediaFoundationApi.Shutdown(); } catch { }
+            try
+            { MediaFoundationApi.Shutdown(); }
+            catch { }
         }
     }
 }

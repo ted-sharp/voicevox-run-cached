@@ -1,5 +1,4 @@
-using FluentValidation;
-using VoicevoxRunCached.Configuration;
+﻿using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Configuration.Validators;
 
 namespace VoicevoxRunCached.Services;
@@ -10,7 +9,7 @@ public class ConfigurationValidationService
 
     public ConfigurationValidationService()
     {
-        this._validator = new AppSettingsValidator();
+        _validator = new AppSettingsValidator();
     }
 
     public async Task<FluentValidation.Results.ValidationResult> ValidateConfigurationAsync(AppSettings settings)
@@ -20,7 +19,7 @@ public class ConfigurationValidationService
             throw new ArgumentNullException(nameof(settings));
         }
 
-        return await this._validator.ValidateAsync(settings);
+        return await _validator.ValidateAsync(settings);
     }
 
     public void ValidateConfiguration(AppSettings settings)
@@ -30,7 +29,7 @@ public class ConfigurationValidationService
             throw new ArgumentNullException(nameof(settings));
         }
 
-        var result = this._validator.Validate(settings);
+        var result = _validator.Validate(settings);
         if (!result.IsValid)
         {
             var errors = String.Join(Environment.NewLine, result.Errors.Select(e => $"- {e.PropertyName}: {e.ErrorMessage}"));
@@ -42,7 +41,7 @@ public class ConfigurationValidationService
     {
         try
         {
-            var result = await this.ValidateConfigurationAsync(settings);
+            var result = await ValidateConfigurationAsync(settings);
             return result.IsValid;
         }
         catch
@@ -58,7 +57,7 @@ public class ConfigurationValidationService
             return ["設定がnullです"];
         }
 
-        var result = this._validator.Validate(settings);
+        var result = _validator.Validate(settings);
         return result.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}").ToList();
     }
 }

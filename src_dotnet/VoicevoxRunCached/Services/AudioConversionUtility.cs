@@ -1,8 +1,8 @@
-using System.Text;
+﻿using System.Text;
 using NAudio.Wave;
+using Serilog;
 using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Models;
-using Serilog;
 
 namespace VoicevoxRunCached.Services;
 
@@ -72,7 +72,8 @@ public static class AudioConversionUtility
     /// <returns>Detected format (WAV, MP3, or Unknown)</returns>
     public static AudioFormat DetectFormat(byte[] audioData)
     {
-        if (audioData.Length < 12) return AudioFormat.Unknown;
+        if (audioData.Length < 12)
+            return AudioFormat.Unknown;
 
         // Check for WAV header (RIFF....WAVE)
         if (audioData[0] == 'R' && audioData[1] == 'I' && audioData[2] == 'F' && audioData[3] == 'F' &&

@@ -1,8 +1,8 @@
-using System.Globalization;
+﻿using System.Globalization;
+using Aloe.Utils.CommandLine;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
-using Aloe.Utils.CommandLine;
 
 namespace VoicevoxRunCached.Services;
 

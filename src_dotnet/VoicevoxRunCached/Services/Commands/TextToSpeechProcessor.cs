@@ -1,8 +1,7 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Models;
-using VoicevoxRunCached.Services;
 using VoicevoxRunCached.Exceptions;
+using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -11,19 +10,19 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class TextToSpeechProcessor
 {
-    private readonly AppSettings _settings;
-    private readonly ILogger _logger;
-    private readonly EngineCoordinator _engineCoordinator;
     private readonly AudioExportService _audioExportService;
+    private readonly EngineCoordinator _engineCoordinator;
+    private readonly ILogger _logger;
     private readonly SegmentProcessor _segmentProcessor;
+    private readonly AppSettings _settings;
 
     public TextToSpeechProcessor(AppSettings settings, ILogger logger)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        this._engineCoordinator = new EngineCoordinator(settings.VoiceVox, logger);
-        this._audioExportService = new AudioExportService(settings, logger);
-        this._segmentProcessor = new SegmentProcessor(settings, logger);
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _engineCoordinator = new EngineCoordinator(settings.VoiceVox, logger);
+        _audioExportService = new AudioExportService(settings, logger);
+        _segmentProcessor = new SegmentProcessor(settings, logger);
     }
 
     /// <summary>
@@ -44,16 +43,16 @@ public class TextToSpeechProcessor
         try
         {
             // VOICEVOXエンジンが動作していることを確認
-            if (!await this._engineCoordinator.EnsureEngineRunningAsync(cancellationToken))
+            if (!await _engineCoordinator.EnsureEngineRunningAsync(cancellationToken))
             {
-                ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", this._logger);
+                ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
                 return 1;
             }
 
             if (verbose)
             {
-                var engineStatus = await this._engineCoordinator.GetEngineStatusAsync();
-                ConsoleHelper.WriteLine($"Engine check completed at {engineStatus.LastChecked:HH:mm:ss}", this._logger);
+                var engineStatus = await _engineCoordinator.GetEngineStatusAsync();
+                ConsoleHelper.WriteLine($"Engine check completed at {engineStatus.LastChecked:HH:mm:ss}", _logger);
             }
 
             // 出力ファイルが指定されている場合、バックグラウンドエクスポートタスクを開始
@@ -64,7 +63,7 @@ public class TextToSpeechProcessor
                 {
                     try
                     {
-                        await this._audioExportService.ExportAudioAsync(request, outPath!, cancellationToken);
+                        await _audioExportService.ExportAudioAsync(request, outPath!, cancellationToken);
                     }
                     catch (OperationCanceledException)
                     {
@@ -72,7 +71,7 @@ public class TextToSpeechProcessor
                     }
                     catch (Exception ex)
                     {
-                        this._logger.LogWarning(ex, "音声ファイルの出力に失敗しました");
+                        _logger.LogWarning(ex, "音声ファイルの出力に失敗しました");
                     }
                 }, cancellationToken);
             }
@@ -83,25 +82,25 @@ public class TextToSpeechProcessor
                 {
                     await exportTask;
                 }
-                ConsoleHelper.WriteSuccess("Done (no-play mode)!", this._logger);
+                ConsoleHelper.WriteSuccess("Done (no-play mode)!", _logger);
                 if (verbose)
                 {
-                    ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms", this._logger);
+                    ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms", _logger);
                 }
                 return 0;
             }
 
             // セグメント処理
-            var segments = await this._segmentProcessor.ProcessSegmentsAsync(request, noCache, cancellationToken);
+            var segments = await _segmentProcessor.ProcessSegmentsAsync(request, noCache, cancellationToken);
             if (segments.Count == 0)
             {
-                ConsoleHelper.WriteError("Error: No segments to process", this._logger);
+                ConsoleHelper.WriteError("Error: No segments to process", _logger);
                 return 1;
             }
 
             // 音声再生処理
             var formatDetector = new AudioFormatDetector();
-            var playbackController = new AudioPlaybackController(this._settings.Audio, formatDetector);
+            var playbackController = new AudioPlaybackController(_settings.Audio, formatDetector);
 
             // 各セグメントを順次再生
             foreach (var segment in segments)
@@ -121,24 +120,24 @@ public class TextToSpeechProcessor
                 }
                 catch (OperationCanceledException)
                 {
-                    this._logger.LogInformation("音声ファイルの出力がキャンセルされました");
+                    _logger.LogInformation("音声ファイルの出力がキャンセルされました");
                 }
                 catch (Exception ex)
                 {
-                    this._logger.LogWarning(ex, "音声ファイルの出力に失敗しました");
+                    _logger.LogWarning(ex, "音声ファイルの出力に失敗しました");
                 }
             }
 
             if (verbose)
             {
-                ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms", this._logger);
+                ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms", _logger);
             }
 
             return 0;
         }
         catch (OperationCanceledException)
         {
-            this._logger.LogInformation("テキスト読み上げ処理がキャンセルされました");
+            _logger.LogInformation("テキスト読み上げ処理がキャンセルされました");
             throw new VoicevoxRunCachedException(
                 ErrorCodes.General.OPERATION_CANCELLED,
                 "Text-to-speech processing was cancelled",
@@ -154,7 +153,7 @@ public class TextToSpeechProcessor
         }
         catch (Exception ex)
         {
-            this._logger.LogError(ex, "テキスト読み上げ処理中に予期しないエラーが発生しました");
+            _logger.LogError(ex, "テキスト読み上げ処理中に予期しないエラーが発生しました");
             throw new VoicevoxRunCachedException(
                 ErrorCodes.General.UNKNOWN_ERROR,
                 $"Unexpected error during text-to-speech processing: {ex.Message}",
@@ -172,11 +171,11 @@ public class TextToSpeechProcessor
     {
         try
         {
-            return await this._segmentProcessor.ProcessSegmentsAsync(request, noCache, cancellationToken);
+            return await _segmentProcessor.ProcessSegmentsAsync(request, noCache, cancellationToken);
         }
         catch (OperationCanceledException)
         {
-            this._logger.LogInformation("セグメント処理がキャンセルされました");
+            _logger.LogInformation("セグメント処理がキャンセルされました");
             throw new VoicevoxRunCachedException(
                 ErrorCodes.General.OPERATION_CANCELLED,
                 "Segment processing was cancelled",
@@ -192,7 +191,7 @@ public class TextToSpeechProcessor
         }
         catch (Exception ex)
         {
-            this._logger.LogError(ex, "セグメント処理中に予期しないエラーが発生しました");
+            _logger.LogError(ex, "セグメント処理中に予期しないエラーが発生しました");
             throw new VoicevoxRunCachedException(
                 ErrorCodes.General.UNKNOWN_ERROR,
                 $"Unexpected error during segment processing: {ex.Message}",

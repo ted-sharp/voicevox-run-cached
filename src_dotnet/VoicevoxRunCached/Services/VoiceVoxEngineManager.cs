@@ -1,7 +1,6 @@
-using System.Diagnostics;
-using System.Net.Http;
-using VoicevoxRunCached.Configuration;
+﻿using System.Diagnostics;
 using Serilog;
+using VoicevoxRunCached.Configuration;
 
 namespace VoicevoxRunCached.Services;
 
@@ -12,19 +11,28 @@ public class VoiceVoxEngineManager : IDisposable
 
     public VoiceVoxEngineManager(VoiceVoxSettings settings)
     {
-        this._settings = settings;
+        _settings = settings;
+    }
+
+    public void Dispose()
+    {
+        if (!_settings.KeepEngineRunning)
+        {
+            StopEngine();
+        }
+        _engineProcess?.Dispose();
     }
 
     public async Task<bool> EnsureEngineRunningAsync()
     {
-        if (!this._settings.AutoStartEngine)
-            return await this.IsEngineRunningAsync();
+        if (!_settings.AutoStartEngine)
+            return await IsEngineRunningAsync();
 
-        if (await this.IsEngineRunningAsync())
+        if (await IsEngineRunningAsync())
             return true;
 
         Log.Information("VOICEVOXエンジンが検出されていません。起動を試行します...");
-        return await this.StartEngineAsync();
+        return await StartEngineAsync();
     }
 
     private async Task<bool> IsEngineRunningAsync()
@@ -35,7 +43,7 @@ public class VoiceVoxEngineManager : IDisposable
             {
                 Timeout = TimeSpan.FromSeconds(5)
             };
-            var response = await client.GetAsync($"{this._settings.BaseUrl}/version");
+            var response = await client.GetAsync($"{_settings.BaseUrl}/version");
             return response.IsSuccessStatusCode;
         }
         catch
@@ -46,12 +54,12 @@ public class VoiceVoxEngineManager : IDisposable
 
     private async Task<bool> StartEngineAsync()
     {
-        string enginePath = this._settings.EnginePath;
+        string enginePath = _settings.EnginePath;
 
         // If no path specified, try to find default installation
         if (String.IsNullOrEmpty(enginePath))
         {
-            enginePath = this.FindDefaultEnginePath();
+            enginePath = FindDefaultEnginePath();
             if (String.IsNullOrEmpty(enginePath))
             {
                 Log.Error("VOICEVOXエンジンが見つかりません。appsettings.jsonでEnginePathを設定してください");
@@ -72,7 +80,7 @@ public class VoiceVoxEngineManager : IDisposable
             var startInfo = new ProcessStartInfo
             {
                 FileName = enginePath,
-                Arguments = this._settings.EngineArguments,
+                Arguments = _settings.EngineArguments,
                 UseShellExecute = false,
                 CreateNoWindow = true,
                 RedirectStandardOutput = false,
@@ -80,20 +88,20 @@ public class VoiceVoxEngineManager : IDisposable
                 WorkingDirectory = Path.GetDirectoryName(enginePath) ?? Environment.CurrentDirectory
             };
 
-            this._engineProcess = Process.Start(startInfo);
-            if (this._engineProcess == null)
+            _engineProcess = Process.Start(startInfo);
+            if (_engineProcess == null)
             {
                 Log.Error("VOICEVOXエンジンプロセスの起動に失敗しました");
                 return false;
             }
 
             // Wait for engine to be ready
-            var timeout = TimeSpan.FromSeconds(this._settings.StartupTimeoutSeconds);
+            var timeout = TimeSpan.FromSeconds(_settings.StartupTimeoutSeconds);
             var startTime = DateTime.UtcNow;
 
             while (DateTime.UtcNow - startTime < timeout)
             {
-                if (await this.IsEngineRunningAsync())
+                if (await IsEngineRunningAsync())
                 {
                     spinner.Dispose();
                     Log.Information("VOICEVOXエンジンが正常に起動しました");
@@ -116,12 +124,12 @@ public class VoiceVoxEngineManager : IDisposable
 
     public void StopEngine()
     {
-        if (this._engineProcess != null && !this._engineProcess.HasExited)
+        if (_engineProcess != null && !_engineProcess.HasExited)
         {
             try
             {
-                this._engineProcess.Kill();
-                this._engineProcess.WaitForExit(5000);
+                _engineProcess.Kill();
+                _engineProcess.WaitForExit(5000);
             }
             catch (Exception ex)
             {
@@ -135,20 +143,20 @@ public class VoiceVoxEngineManager : IDisposable
         var possiblePaths = new List<string>();
 
         // Add paths based on engine type
-        if (this._settings.EngineType == EngineType.AivisSpeech)
+        if (_settings.EngineType == EngineType.AivisSpeech)
         {
-            possiblePaths.AddRange(this.GetAivisSpeechPaths());
+            possiblePaths.AddRange(GetAivisSpeechPaths());
         }
         else
         {
-            possiblePaths.AddRange(this.GetVoiceVoxPaths());
+            possiblePaths.AddRange(GetVoiceVoxPaths());
         }
 
         foreach (var path in possiblePaths)
         {
             if (File.Exists(path))
             {
-                Log.Information("{EngineType} エンジンが見つかりました: {Path}", this._settings.EngineType, path);
+                Log.Information("{EngineType} エンジンが見つかりました: {Path}", _settings.EngineType, path);
                 return path;
             }
         }
@@ -228,14 +236,5 @@ public class VoiceVoxEngineManager : IDisposable
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AivisSpeech", "run.exe"),
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads", "AivisSpeech", "AivisSpeech.exe")
         };
-    }
-
-    public void Dispose()
-    {
-        if (!this._settings.KeepEngineRunning)
-        {
-            this.StopEngine();
-        }
-        this._engineProcess?.Dispose();
     }
 }

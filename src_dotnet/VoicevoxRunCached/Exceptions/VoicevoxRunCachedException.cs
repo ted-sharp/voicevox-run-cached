@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text.Json;
 
 namespace VoicevoxRunCached.Exceptions;
@@ -9,6 +9,24 @@ namespace VoicevoxRunCached.Exceptions;
 [Serializable]
 public class VoicevoxRunCachedException : Exception
 {
+    public VoicevoxRunCachedException(string errorCode, string message, string userMessage, string? suggestedSolution = null, string? context = null)
+        : base(message)
+    {
+        ErrorCode = errorCode;
+        UserMessage = userMessage;
+        SuggestedSolution = suggestedSolution;
+        Context = context;
+    }
+
+    public VoicevoxRunCachedException(string errorCode, string message, string userMessage, Exception innerException, string? suggestedSolution = null, string? context = null)
+        : base(message, innerException)
+    {
+        ErrorCode = errorCode;
+        UserMessage = userMessage;
+        SuggestedSolution = suggestedSolution;
+        Context = context;
+    }
+
     /// <summary>
     /// エラーコード
     /// </summary>
@@ -29,47 +47,29 @@ public class VoicevoxRunCachedException : Exception
     /// </summary>
     public string? Context { get; }
 
-    public VoicevoxRunCachedException(string errorCode, string message, string userMessage, string? suggestedSolution = null, string? context = null)
-        : base(message)
-    {
-        this.ErrorCode = errorCode;
-        this.UserMessage = userMessage;
-        this.SuggestedSolution = suggestedSolution;
-        this.Context = context;
-    }
-
-    public VoicevoxRunCachedException(string errorCode, string message, string userMessage, Exception innerException, string? suggestedSolution = null, string? context = null)
-        : base(message, innerException)
-    {
-        this.ErrorCode = errorCode;
-        this.UserMessage = userMessage;
-        this.SuggestedSolution = suggestedSolution;
-        this.Context = context;
-    }
-
     /// <summary>
     /// エラーの詳細情報を取得
     /// </summary>
     public string GetDetailedErrorInfo()
     {
-        var info = $"Error Code: {this.ErrorCode}\n";
-        info += $"User Message: {this.UserMessage}\n";
+        var info = $"Error Code: {ErrorCode}\n";
+        info += $"User Message: {UserMessage}\n";
 
-        if (!String.IsNullOrEmpty(this.SuggestedSolution))
+        if (!String.IsNullOrEmpty(SuggestedSolution))
         {
-            info += $"Suggested Solution: {this.SuggestedSolution}\n";
+            info += $"Suggested Solution: {SuggestedSolution}\n";
         }
 
-        if (!String.IsNullOrEmpty(this.Context))
+        if (!String.IsNullOrEmpty(Context))
         {
-            info += $"Context: {this.Context}\n";
+            info += $"Context: {Context}\n";
         }
 
-        info += $"Technical Details: {this.Message}";
+        info += $"Technical Details: {Message}";
 
-        if (this.InnerException != null)
+        if (InnerException != null)
         {
-            info += $"\nInner Exception: {this.InnerException.Message}";
+            info += $"\nInner Exception: {InnerException.Message}";
         }
 
         return info;
@@ -82,12 +82,12 @@ public class VoicevoxRunCachedException : Exception
     {
         var data = new
         {
-            ErrorCode = this.ErrorCode,
-            UserMessage = this.UserMessage,
-            SuggestedSolution = this.SuggestedSolution,
-            Context = this.Context,
-            Message = this.Message,
-            InnerException = this.InnerException?.Message
+            ErrorCode = ErrorCode,
+            UserMessage = UserMessage,
+            SuggestedSolution = SuggestedSolution,
+            Context = Context,
+            Message = Message,
+            InnerException = InnerException?.Message
         };
 
         return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
@@ -100,22 +100,22 @@ public class VoicevoxRunCachedException : Exception
 [Serializable]
 public class VoiceVoxApiException : VoicevoxRunCachedException
 {
-    public HttpStatusCode? StatusCode { get; }
-    public string? ApiResponse { get; }
-
     public VoiceVoxApiException(string errorCode, string message, string userMessage, HttpStatusCode? statusCode = null, string? apiResponse = null, string? suggestedSolution = null)
         : base(errorCode, message, userMessage, suggestedSolution, "VoiceVox API")
     {
-        this.StatusCode = statusCode;
-        this.ApiResponse = apiResponse;
+        StatusCode = statusCode;
+        ApiResponse = apiResponse;
     }
 
     public VoiceVoxApiException(string errorCode, string message, string userMessage, Exception innerException, HttpStatusCode? statusCode = null, string? apiResponse = null, string? suggestedSolution = null)
         : base(errorCode, message, userMessage, innerException, suggestedSolution, "VoiceVox API")
     {
-        this.StatusCode = statusCode;
-        this.ApiResponse = apiResponse;
+        StatusCode = statusCode;
+        ApiResponse = apiResponse;
     }
+
+    public HttpStatusCode? StatusCode { get; }
+    public string? ApiResponse { get; }
 
     /// <summary>
     /// 例外をJSON形式でシリアライズ
@@ -124,14 +124,14 @@ public class VoiceVoxApiException : VoicevoxRunCachedException
     {
         var data = new
         {
-            ErrorCode = this.ErrorCode,
-            UserMessage = this.UserMessage,
-            SuggestedSolution = this.SuggestedSolution,
-            Context = this.Context,
-            Message = this.Message,
-            StatusCode = this.StatusCode,
-            ApiResponse = this.ApiResponse,
-            InnerException = this.InnerException?.Message
+            ErrorCode = ErrorCode,
+            UserMessage = UserMessage,
+            SuggestedSolution = SuggestedSolution,
+            Context = Context,
+            Message = Message,
+            StatusCode = StatusCode,
+            ApiResponse = ApiResponse,
+            InnerException = InnerException?.Message
         };
 
         return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
@@ -144,19 +144,19 @@ public class VoiceVoxApiException : VoicevoxRunCachedException
 [Serializable]
 public class ConfigurationException : VoicevoxRunCachedException
 {
-    public string? SettingPath { get; }
-
     public ConfigurationException(string errorCode, string message, string userMessage, string? settingPath = null, string? suggestedSolution = null)
         : base(errorCode, message, userMessage, suggestedSolution, "Configuration")
     {
-        this.SettingPath = settingPath;
+        SettingPath = settingPath;
     }
 
     public ConfigurationException(string errorCode, string message, string userMessage, Exception innerException, string? settingPath = null, string? suggestedSolution = null)
         : base(errorCode, message, userMessage, innerException, suggestedSolution, "Configuration")
     {
-        this.SettingPath = settingPath;
+        SettingPath = settingPath;
     }
+
+    public string? SettingPath { get; }
 
     /// <summary>
     /// 例外をJSON形式でシリアライズ
@@ -165,13 +165,13 @@ public class ConfigurationException : VoicevoxRunCachedException
     {
         var data = new
         {
-            ErrorCode = this.ErrorCode,
-            UserMessage = this.UserMessage,
-            SuggestedSolution = this.SuggestedSolution,
-            Context = this.Context,
-            Message = this.Message,
-            SettingPath = this.SettingPath,
-            InnerException = this.InnerException?.Message
+            ErrorCode = ErrorCode,
+            UserMessage = UserMessage,
+            SuggestedSolution = SuggestedSolution,
+            Context = Context,
+            Message = Message,
+            SettingPath = SettingPath,
+            InnerException = InnerException?.Message
         };
 
         return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });
@@ -184,22 +184,22 @@ public class ConfigurationException : VoicevoxRunCachedException
 [Serializable]
 public class CacheException : VoicevoxRunCachedException
 {
-    public string? CacheKey { get; }
-    public string? CachePath { get; }
-
     public CacheException(string errorCode, string message, string userMessage, string? cacheKey = null, string? cachePath = null, string? suggestedSolution = null)
         : base(errorCode, message, userMessage, suggestedSolution, "Cache")
     {
-        this.CacheKey = cacheKey;
-        this.CachePath = cachePath;
+        CacheKey = cacheKey;
+        CachePath = cachePath;
     }
 
     public CacheException(string errorCode, string message, string userMessage, Exception innerException, string? cacheKey = null, string? cachePath = null, string? suggestedSolution = null)
         : base(errorCode, message, userMessage, innerException, suggestedSolution, "Cache")
     {
-        this.CacheKey = cacheKey;
-        this.CachePath = cachePath;
+        CacheKey = cacheKey;
+        CachePath = cachePath;
     }
+
+    public string? CacheKey { get; }
+    public string? CachePath { get; }
 
     /// <summary>
     /// 例外をJSON形式でシリアライズ
@@ -208,14 +208,14 @@ public class CacheException : VoicevoxRunCachedException
     {
         var data = new
         {
-            ErrorCode = this.ErrorCode,
-            UserMessage = this.UserMessage,
-            SuggestedSolution = this.SuggestedSolution,
-            Context = this.Context,
-            Message = this.Message,
-            CacheKey = this.CacheKey,
-            CachePath = this.CachePath,
-            InnerException = this.InnerException?.Message
+            ErrorCode = ErrorCode,
+            UserMessage = UserMessage,
+            SuggestedSolution = SuggestedSolution,
+            Context = Context,
+            Message = Message,
+            CacheKey = CacheKey,
+            CachePath = CachePath,
+            InnerException = InnerException?.Message
         };
 
         return JsonSerializer.Serialize(data, new JsonSerializerOptions { WriteIndented = true });

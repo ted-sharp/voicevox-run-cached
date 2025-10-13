@@ -1,4 +1,4 @@
-namespace VoicevoxRunCached.Constants;
+﻿namespace VoicevoxRunCached.Constants;
 
 /// <summary>
 /// 音声処理関連の定数定義

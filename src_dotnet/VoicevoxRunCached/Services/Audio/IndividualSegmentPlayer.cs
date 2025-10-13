@@ -1,8 +1,7 @@
-using NAudio.Wave;
+﻿using NAudio.Wave;
+using Serilog;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
-using VoicevoxRunCached.Services;
-using Serilog;
 
 namespace VoicevoxRunCached.Services.Audio;
 
@@ -11,15 +10,15 @@ namespace VoicevoxRunCached.Services.Audio;
 /// </summary>
 public class IndividualSegmentPlayer
 {
-    private readonly AudioSettings _settings;
     private readonly AudioFormatDetector _formatDetector;
-    private IWavePlayer? _wavePlayer;
+    private readonly AudioSettings _settings;
     private bool _disposed;
+    private IWavePlayer? _wavePlayer;
 
     public IndividualSegmentPlayer(AudioSettings settings, AudioFormatDetector formatDetector)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._formatDetector = formatDetector ?? throw new ArgumentNullException(nameof(formatDetector));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _formatDetector = formatDetector ?? throw new ArgumentNullException(nameof(formatDetector));
     }
 
     /// <summary>
@@ -31,7 +30,7 @@ public class IndividualSegmentPlayer
     /// <returns>再生完了を表すTask</returns>
     public async Task PlaySegmentAsync(byte[] audioData, bool isFirstSegment = false, CancellationToken cancellationToken = default)
     {
-        if (this._disposed)
+        if (_disposed)
             throw new ObjectDisposedException(nameof(IndividualSegmentPlayer));
 
         WaveStream? reader = null;
@@ -41,11 +40,11 @@ public class IndividualSegmentPlayer
                 audioData.Length, isFirstSegment);
 
             // フォーマット検出とWaveStream作成
-            reader = await this._formatDetector.CreateWaveStreamAsync(audioData);
+            reader = await _formatDetector.CreateWaveStreamAsync(audioData);
 
             var tcs = new TaskCompletionSource<bool>();
 
-            if (this._wavePlayer != null)
+            if (_wavePlayer != null)
             {
                 EventHandler<StoppedEventArgs>? handler = null;
                 handler = (sender, e) =>
@@ -60,24 +59,24 @@ public class IndividualSegmentPlayer
                     {
                         tcs.TrySetResult(true);
                     }
-                    if (this._wavePlayer != null && handler != null)
+                    if (_wavePlayer != null && handler != null)
                     {
-                        this._wavePlayer.PlaybackStopped -= handler;
+                        _wavePlayer.PlaybackStopped -= handler;
                     }
                 };
-                this._wavePlayer.PlaybackStopped += handler;
+                _wavePlayer.PlaybackStopped += handler;
                 Log.Debug("PlaybackStopped イベントハンドラーを登録しました");
             }
 
             Log.Debug("WavePlayer に音声リーダーを初期化中...");
-            this._wavePlayer?.Init(reader);
+            _wavePlayer?.Init(reader);
 
             // セグメントタイプに応じた遅延を実行
-            await this.ExecuteSegmentDelayAsync(isFirstSegment, cancellationToken);
+            await ExecuteSegmentDelayAsync(isFirstSegment, cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
             Log.Debug("音声再生を開始します");
-            this._wavePlayer?.Play();
+            _wavePlayer?.Play();
 
             using (cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken)))
             {
@@ -89,7 +88,7 @@ public class IndividualSegmentPlayer
                 if (completedTask == timeoutTask)
                 {
                     Log.Warning("セグメント再生がタイムアウトしました。強制停止します。");
-                    this._wavePlayer?.Stop();
+                    _wavePlayer?.Stop();
                     throw new TimeoutException("セグメント再生がタイムアウトしました");
                 }
 
@@ -98,13 +97,13 @@ public class IndividualSegmentPlayer
             }
 
             // 完全な音声再生を確保 - 適切な遅延を設定
-            var playbackDelay = this.CalculatePlaybackDelay(isFirstSegment);
+            var playbackDelay = CalculatePlaybackDelay(isFirstSegment);
             Log.Debug("音声再生完了後の遅延を実行中: {Delay}ms", playbackDelay);
             await Task.Delay(playbackDelay, cancellationToken);
 
             // 停止するがWavePlayerは破棄しない - 次のセグメントで再利用
             Log.Debug("WavePlayer を停止中...");
-            this._wavePlayer?.Stop();
+            _wavePlayer?.Stop();
 
             Log.Information("セグメント再生が完了しました (遅延: {Delay}ms)", playbackDelay);
         }
@@ -116,7 +115,9 @@ public class IndividualSegmentPlayer
         finally
         {
             // 再生が完了してからリーダーを破棄
-            try { reader?.Dispose(); } catch { }
+            try
+            { reader?.Dispose(); }
+            catch { }
         }
     }
 
@@ -158,10 +159,10 @@ public class IndividualSegmentPlayer
     /// <param name="wavePlayer">設定するWavePlayer</param>
     public void SetWavePlayer(IWavePlayer wavePlayer)
     {
-        if (this._disposed)
+        if (_disposed)
             throw new ObjectDisposedException(nameof(IndividualSegmentPlayer));
 
-        this._wavePlayer = wavePlayer ?? throw new ArgumentNullException(nameof(wavePlayer));
+        _wavePlayer = wavePlayer ?? throw new ArgumentNullException(nameof(wavePlayer));
         Log.Debug("WavePlayer が設定されました");
     }
 
@@ -172,9 +173,9 @@ public class IndividualSegmentPlayer
     {
         try
         {
-            if (this._wavePlayer != null)
+            if (_wavePlayer != null)
             {
-                this._wavePlayer.Stop();
+                _wavePlayer.Stop();
                 Log.Debug("音声再生を停止しました");
             }
         }
@@ -188,7 +189,7 @@ public class IndividualSegmentPlayer
     /// 現在のWavePlayerを取得します
     /// </summary>
     /// <returns>現在のWavePlayer（設定されていない場合はnull）</returns>
-    public IWavePlayer? GetCurrentWavePlayer() => this._wavePlayer;
+    public IWavePlayer? GetCurrentWavePlayer() => _wavePlayer;
 
     /// <summary>
     /// 再生状態を確認します
@@ -196,17 +197,17 @@ public class IndividualSegmentPlayer
     /// <returns>再生中の場合はtrue</returns>
     public bool IsPlaying()
     {
-        return this._wavePlayer?.PlaybackState == PlaybackState.Playing;
+        return _wavePlayer?.PlaybackState == PlaybackState.Playing;
     }
 
     public void Dispose()
     {
-        if (!this._disposed)
+        if (!_disposed)
         {
             try
             {
-                this.StopAudio();
-                this._disposed = true;
+                StopAudio();
+                _disposed = true;
             }
             catch (Exception ex)
             {

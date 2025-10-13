@@ -1,6 +1,6 @@
-using System.Text;
-using VoicevoxRunCached.Models;
+﻿using System.Text;
 using Serilog;
+using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services;
 
@@ -9,15 +9,15 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class TextSegmentProcessor
 {
-    private readonly int _maxSegmentLength;
     private readonly int _maxConcurrentTasks;
+    private readonly int _maxSegmentLength;
     private readonly SemaphoreSlim _semaphore;
 
     public TextSegmentProcessor(int maxSegmentLength = 100, int maxConcurrentTasks = 4)
     {
-        this._maxSegmentLength = maxSegmentLength;
-        this._maxConcurrentTasks = maxConcurrentTasks;
-        this._semaphore = new SemaphoreSlim(maxConcurrentTasks, maxConcurrentTasks);
+        _maxSegmentLength = maxSegmentLength;
+        _maxConcurrentTasks = maxConcurrentTasks;
+        _semaphore = new SemaphoreSlim(maxConcurrentTasks, maxConcurrentTasks);
 
         Log.Information("TextSegmentProcessor を初期化しました - 最大セグメント長: {MaxLength}, 最大並行タスク数: {MaxConcurrent}",
             maxSegmentLength, maxConcurrentTasks);
@@ -36,10 +36,10 @@ public class TextSegmentProcessor
         try
         {
             // 基本的なセグメント分割
-            var segments = this.SplitTextIntoSegments(text);
+            var segments = SplitTextIntoSegments(text);
 
             // 並行処理でセグメントを最適化
-            var optimizedSegments = await this.OptimizeSegmentsParallelAsync(segments, speakerId, cancellationToken);
+            var optimizedSegments = await OptimizeSegmentsParallelAsync(segments, speakerId, cancellationToken);
 
             Log.Information("テキスト処理が完了しました - 元のセグメント数: {OriginalCount}, 最適化後: {OptimizedCount}",
                 segments.Count, optimizedSegments.Count);
@@ -84,7 +84,7 @@ public class TextSegmentProcessor
                 currentSegment.Clear();
             }
             // 最大長に達した場合の強制分割
-            else if (currentSegment.Length >= this._maxSegmentLength)
+            else if (currentSegment.Length >= _maxSegmentLength)
             {
                 var segment = currentSegment.ToString().Trim();
                 if (!String.IsNullOrWhiteSpace(segment))
@@ -119,7 +119,7 @@ public class TextSegmentProcessor
             if (cancellationToken.IsCancellationRequested)
                 break;
 
-            var task = this.ProcessSegmentWithSemaphoreAsync(segment, speakerId, cancellationToken);
+            var task = ProcessSegmentWithSemaphoreAsync(segment, speakerId, cancellationToken);
             tasks.Add(task);
         }
 
@@ -137,15 +137,15 @@ public class TextSegmentProcessor
     /// </summary>
     private async Task<TextSegment> ProcessSegmentWithSemaphoreAsync(string text, int speakerId, CancellationToken cancellationToken)
     {
-        await this._semaphore.WaitAsync(cancellationToken);
+        await _semaphore.WaitAsync(cancellationToken);
 
         try
         {
-            return await Task.Run(() => this.ProcessSegment(text, speakerId), cancellationToken);
+            return await Task.Run(() => ProcessSegment(text, speakerId), cancellationToken);
         }
         finally
         {
-            this._semaphore.Release();
+            _semaphore.Release();
         }
     }
 
@@ -155,7 +155,7 @@ public class TextSegmentProcessor
     private TextSegment ProcessSegment(string text, int speakerId)
     {
         // セグメントの最適化処理
-        var optimizedText = this.OptimizeSegmentText(text);
+        var optimizedText = OptimizeSegmentText(text);
 
         return new TextSegment
         {
@@ -231,7 +231,7 @@ public class TextSegmentProcessor
 
     public void Dispose()
     {
-        this._semaphore?.Dispose();
+        _semaphore?.Dispose();
     }
 }
 

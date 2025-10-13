@@ -1,6 +1,5 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Services;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -9,13 +8,13 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class CacheCommandHandler
 {
-    private readonly AppSettings _settings;
     private readonly ILogger _logger;
+    private readonly AppSettings _settings;
 
     public CacheCommandHandler(AppSettings settings, ILogger logger)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
@@ -27,20 +26,20 @@ public class CacheCommandHandler
         try
         {
             using var spinner = new ProgressSpinner("Clearing audio cache...");
-            var cacheManager = new AudioCacheManager(this._settings.Cache);
+            var cacheManager = new AudioCacheManager(_settings.Cache);
 
             cacheManager.ClearAllCache();
 
             // フィラーキャッシュも設定されたフィラーディレクトリを使用してクリア
-            var fillerManager = new FillerManager(this._settings.Filler, cacheManager, this._settings.VoiceVox.DefaultSpeaker);
+            var fillerManager = new FillerManager(_settings.Filler, cacheManager, _settings.VoiceVox.DefaultSpeaker);
             await fillerManager.ClearFillerCacheAsync();
 
-            ConsoleHelper.WriteSuccess("Cache cleared successfully!", this._logger);
+            ConsoleHelper.WriteSuccess("Cache cleared successfully!", _logger);
             return 0;
         }
         catch (Exception ex)
         {
-            ConsoleHelper.WriteError($"Error clearing cache: {ex.Message}", this._logger);
+            ConsoleHelper.WriteError($"Error clearing cache: {ex.Message}", _logger);
             return 1;
         }
     }

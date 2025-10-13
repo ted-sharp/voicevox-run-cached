@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using Serilog;
 
 namespace VoicevoxRunCached.Services;
@@ -14,15 +14,43 @@ public class CancellationManager : IDisposable
 
     public CancellationManager(Microsoft.Extensions.Logging.ILogger logger)
     {
-        this._logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        this._cancellationTokenSource = new CancellationTokenSource();
-        this.SetupCancellationHandling();
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _cancellationTokenSource = new CancellationTokenSource();
+        SetupCancellationHandling();
     }
 
     /// <summary>
     /// キャンセレーショントークンを取得します
     /// </summary>
-    public CancellationToken Token => this._cancellationTokenSource.Token;
+    public CancellationToken Token => _cancellationTokenSource.Token;
+
+    /// <summary>
+    /// キャンセレーションが要求されているかどうかを確認します
+    /// </summary>
+    public bool IsCancellationRequested => _cancellationTokenSource.IsCancellationRequested;
+
+    /// <summary>
+    /// リソースを破棄します
+    /// </summary>
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            try
+            {
+                _cancellationTokenSource?.Dispose();
+                _disposed = true;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "CancellationManagerの破棄中にエラーが発生しました");
+            }
+            finally
+            {
+                GC.SuppressFinalize(this);
+            }
+        }
+    }
 
     /// <summary>
     /// キャンセレーション処理を設定します
@@ -32,9 +60,9 @@ public class CancellationManager : IDisposable
         Console.CancelKeyPress += (sender, e) =>
         {
             e.Cancel = true;
-            this._logger.LogWarning("Cancellation requested (Ctrl+C). Attempting graceful shutdown...");
+            _logger.LogWarning("Cancellation requested (Ctrl+C). Attempting graceful shutdown...");
             Log.Warning("ユーザーによるキャンセル要求 (Ctrl+C)。正常終了を試行します...");
-            this._cancellationTokenSource.Cancel();
+            _cancellationTokenSource.Cancel();
         };
     }
 
@@ -43,34 +71,6 @@ public class CancellationManager : IDisposable
     /// </summary>
     public void Cancel()
     {
-        this._cancellationTokenSource.Cancel();
-    }
-
-    /// <summary>
-    /// キャンセレーションが要求されているかどうかを確認します
-    /// </summary>
-    public bool IsCancellationRequested => this._cancellationTokenSource.IsCancellationRequested;
-
-    /// <summary>
-    /// リソースを破棄します
-    /// </summary>
-    public void Dispose()
-    {
-        if (!this._disposed)
-        {
-            try
-            {
-                this._cancellationTokenSource?.Dispose();
-                this._disposed = true;
-            }
-            catch (Exception ex)
-            {
-                this._logger?.LogError(ex, "CancellationManagerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
-        }
+        _cancellationTokenSource.Cancel();
     }
 }

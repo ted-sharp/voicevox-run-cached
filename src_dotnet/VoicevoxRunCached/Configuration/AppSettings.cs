@@ -1,4 +1,4 @@
-namespace VoicevoxRunCached.Configuration;
+﻿namespace VoicevoxRunCached.Configuration;
 
 public class AppSettings
 {
@@ -72,6 +72,7 @@ public class FillerSettings(bool enabled = false, string directory = "./cache/fi
 {
     public bool Enabled { get; set; } = enabled;
     public string Directory { get; set; } = directory;
+
     public string[] FillerTexts { get; set; } = fillerTexts ?? [
         "えーっと、",
         "あのー、",
@@ -80,6 +81,7 @@ public class FillerSettings(bool enabled = false, string directory = "./cache/fi
         "ええっと、",
         "えとえと、"
     ];
+
     public bool UseExecutableBaseDirectory { get; set; } = useExecutableBaseDirectory;
 
     // 新しいプロパティ
@@ -103,6 +105,7 @@ public class LoggingSettings(string level = "Information", string format = "simp
 {
     // Level: Trace|Debug|Information|Warning|Error|Critical|None
     public string Level { get; set; } = level;
+
     // Format: simple|json
     public string Format { get; set; } = format;
 

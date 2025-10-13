@@ -1,6 +1,6 @@
-using NAudio.Wave;
-using VoicevoxRunCached.Configuration;
+﻿using NAudio.Wave;
 using Serilog;
+using VoicevoxRunCached.Configuration;
 
 namespace VoicevoxRunCached.Services;
 
@@ -9,15 +9,35 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class AudioPlaybackController : IDisposable
 {
-    private readonly AudioSettings _settings;
     private readonly AudioFormatDetector _formatDetector;
-    private IWavePlayer? _wavePlayer;
+    private readonly AudioSettings _settings;
     private bool _disposed;
+    private IWavePlayer? _wavePlayer;
 
     public AudioPlaybackController(AudioSettings settings, AudioFormatDetector formatDetector)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._formatDetector = formatDetector ?? throw new ArgumentNullException(nameof(formatDetector));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _formatDetector = formatDetector ?? throw new ArgumentNullException(nameof(formatDetector));
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            try
+            {
+                StopAudio();
+                _disposed = true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "AudioPlaybackControllerの破棄中にエラーが発生しました");
+            }
+            finally
+            {
+                GC.SuppressFinalize(this);
+            }
+        }
     }
 
     /// <summary>
@@ -28,19 +48,19 @@ public class AudioPlaybackController : IDisposable
     /// <returns>再生完了を表すTask</returns>
     public async Task PlayAudioAsync(byte[] audioData, CancellationToken cancellationToken = default)
     {
-        if (this._disposed)
+        if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlaybackController));
 
         try
         {
-            this.StopAudio();
+            StopAudio();
 
             // フォーマット検出とWaveStream作成
-            var reader = await this._formatDetector.CreateWaveStreamAsync(audioData);
+            var reader = await _formatDetector.CreateWaveStreamAsync(audioData);
 
             // WavePlayerの作成
-            this._wavePlayer = this.CreateWavePlayer();
-            this._wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
+            _wavePlayer = CreateWavePlayer();
+            _wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
 
             var tcs = new TaskCompletionSource<bool>();
 
@@ -48,7 +68,9 @@ public class AudioPlaybackController : IDisposable
             EventHandler<StoppedEventArgs>? handler = null;
             handler = (sender, e) =>
             {
-                try { reader?.Dispose(); } catch { }
+                try
+                { reader?.Dispose(); }
+                catch { }
                 if (e.Exception != null)
                 {
                     tcs.TrySetException(e.Exception);
@@ -57,21 +79,21 @@ public class AudioPlaybackController : IDisposable
                 {
                     tcs.TrySetResult(true);
                 }
-                if (this._wavePlayer != null && handler != null)
+                if (_wavePlayer != null && handler != null)
                 {
-                    this._wavePlayer.PlaybackStopped -= handler;
+                    _wavePlayer.PlaybackStopped -= handler;
                 }
             };
-            this._wavePlayer.PlaybackStopped += handler;
+            _wavePlayer.PlaybackStopped += handler;
 
             // 音声の初期化
-            this._wavePlayer.Init(reader);
+            _wavePlayer.Init(reader);
 
             // 音声初期化のための最小遅延
             await Task.Delay(20, cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
-            this._wavePlayer.Play();
+            _wavePlayer.Play();
 
             // 再生完了を待機
             await tcs.Task.ConfigureAwait(false);
@@ -85,7 +107,7 @@ public class AudioPlaybackController : IDisposable
         }
         finally
         {
-            this.StopAudio();
+            StopAudio();
         }
     }
 
@@ -98,19 +120,19 @@ public class AudioPlaybackController : IDisposable
     /// <returns>再生完了を表すTask</returns>
     public async Task PlayAudioStreamingAsync(byte[] audioData, Func<byte[], Task>? cacheCallback = null, CancellationToken cancellationToken = default)
     {
-        if (this._disposed)
+        if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlaybackController));
 
         try
         {
-            this.StopAudio();
+            StopAudio();
 
             // フォーマット検出とWaveStream作成
-            var reader = await this._formatDetector.CreateWaveStreamAsync(audioData);
+            var reader = await _formatDetector.CreateWaveStreamAsync(audioData);
 
             // WavePlayerの作成
-            this._wavePlayer = this.CreateWavePlayer();
-            this._wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
+            _wavePlayer = CreateWavePlayer();
+            _wavePlayer.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
 
             var tcs = new TaskCompletionSource<bool>();
 
@@ -135,7 +157,9 @@ public class AudioPlaybackController : IDisposable
             EventHandler<StoppedEventArgs>? handler = null;
             handler = (sender, e) =>
             {
-                try { reader?.Dispose(); } catch { }
+                try
+                { reader?.Dispose(); }
+                catch { }
                 if (e.Exception != null)
                 {
                     tcs.TrySetException(e.Exception);
@@ -144,21 +168,21 @@ public class AudioPlaybackController : IDisposable
                 {
                     tcs.TrySetResult(true);
                 }
-                if (this._wavePlayer != null && handler != null)
+                if (_wavePlayer != null && handler != null)
                 {
-                    this._wavePlayer.PlaybackStopped -= handler;
+                    _wavePlayer.PlaybackStopped -= handler;
                 }
             };
-            this._wavePlayer.PlaybackStopped += handler;
+            _wavePlayer.PlaybackStopped += handler;
 
             // 音声の初期化
-            this._wavePlayer.Init(reader);
+            _wavePlayer.Init(reader);
 
             // 音声初期化のための最小遅延
             await Task.Delay(20, cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
-            this._wavePlayer.Play();
+            _wavePlayer.Play();
 
             // 再生完了を待機
             using (cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken)))
@@ -181,7 +205,7 @@ public class AudioPlaybackController : IDisposable
         }
         finally
         {
-            this.StopAudio();
+            StopAudio();
         }
     }
 
@@ -197,9 +221,9 @@ public class AudioPlaybackController : IDisposable
             NumberOfBuffers = 3
         };
 
-        if (this._settings.OutputDevice >= 0)
+        if (_settings.OutputDevice >= 0)
         {
-            waveOut.DeviceNumber = this._settings.OutputDevice;
+            waveOut.DeviceNumber = _settings.OutputDevice;
         }
 
         return waveOut;
@@ -212,11 +236,11 @@ public class AudioPlaybackController : IDisposable
     {
         try
         {
-            if (this._wavePlayer != null)
+            if (_wavePlayer != null)
             {
-                this._wavePlayer.Stop();
-                this._wavePlayer.Dispose();
-                this._wavePlayer = null;
+                _wavePlayer.Stop();
+                _wavePlayer.Dispose();
+                _wavePlayer = null;
             }
         }
         catch
@@ -225,40 +249,20 @@ public class AudioPlaybackController : IDisposable
         }
     }
 
-    public void Dispose()
-    {
-        if (!this._disposed)
-        {
-            try
-            {
-                this.StopAudio();
-                this._disposed = true;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "AudioPlaybackControllerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
-        }
-    }
-
     // ファイナライザー（安全性のため）
     ~AudioPlaybackController()
     {
-        this.Dispose(false);
+        Dispose(false);
     }
 
     protected virtual void Dispose(bool disposing)
     {
-        if (!this._disposed)
+        if (!_disposed)
         {
             if (disposing)
             {
                 // マネージドリソースの破棄
-                this.Dispose();
+                Dispose();
             }
             else
             {

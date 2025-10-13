@@ -1,7 +1,6 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
-using VoicevoxRunCached.Services;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -10,13 +9,13 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class SegmentProcessor
 {
-    private readonly AppSettings _settings;
     private readonly ILogger _logger;
+    private readonly AppSettings _settings;
 
     public SegmentProcessor(AppSettings settings, ILogger logger)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
@@ -32,33 +31,33 @@ public class SegmentProcessor
 
         try
         {
-            ConsoleHelper.WriteLine("Processing segments...", this._logger);
+            ConsoleHelper.WriteLine("Processing segments...", _logger);
 
             var textProcessor = new TextSegmentProcessor();
             var segments = await textProcessor.ProcessTextAsync(request.Text, request.SpeakerId, cancellationToken);
 
             if (segments.Count == 0)
             {
-                this._logger.LogWarning("処理可能なセグメントがありません");
+                _logger.LogWarning("処理可能なセグメントがありません");
                 return segments;
             }
 
-            this._logger.LogInformation("テキストを {SegmentCount} 個のセグメントに分割しました", segments.Count);
+            _logger.LogInformation("テキストを {SegmentCount} 個のセグメントに分割しました", segments.Count);
 
             // キャッシュを使用する場合、キャッシュから音声データを取得
             if (!noCache)
             {
-                await this.LoadCachedAudioDataAsync(segments, cancellationToken);
+                await LoadCachedAudioDataAsync(segments, cancellationToken);
             }
 
             var elapsed = (DateTime.UtcNow - segmentStartTime).TotalMilliseconds;
-            this._logger.LogDebug("セグメント処理が完了しました: {Elapsed}ms", elapsed);
+            _logger.LogDebug("セグメント処理が完了しました: {Elapsed}ms", elapsed);
 
             return segments;
         }
         catch (Exception ex)
         {
-            this._logger.LogError(ex, "セグメント処理中にエラーが発生しました");
+            _logger.LogError(ex, "セグメント処理中にエラーが発生しました");
             throw;
         }
     }
@@ -73,14 +72,14 @@ public class SegmentProcessor
     {
         try
         {
-            var cacheManager = new AudioCacheManager(this._settings.Cache);
+            var cacheManager = new AudioCacheManager(_settings.Cache);
             var cacheHitCount = 0;
 
             foreach (var segment in segments)
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
-                    this._logger.LogWarning("キャッシュ読み込みがキャンセルされました");
+                    _logger.LogWarning("キャッシュ読み込みがキャンセルされました");
                     break;
                 }
 
@@ -101,11 +100,11 @@ public class SegmentProcessor
                 }
             }
 
-            this._logger.LogInformation("キャッシュヒット: {HitCount}/{TotalCount}", cacheHitCount, segments.Count);
+            _logger.LogInformation("キャッシュヒット: {HitCount}/{TotalCount}", cacheHitCount, segments.Count);
         }
         catch (Exception ex)
         {
-            this._logger.LogWarning(ex, "キャッシュからの読み込み中にエラーが発生しました");
+            _logger.LogWarning(ex, "キャッシュからの読み込み中にエラーが発生しました");
         }
     }
 

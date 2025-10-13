@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Services;
@@ -17,7 +17,7 @@ public class MediaFoundationInitializer
 
     private MediaFoundationInitializer(ILogger? logger = null)
     {
-        this._logger = logger;
+        _logger = logger;
     }
 
     /// <summary>
@@ -46,7 +46,7 @@ public class MediaFoundationInitializer
 
             if (_isInitialized)
             {
-                this._logger?.LogDebug("MediaFoundation は既に初期化済みです。参照カウント: {ReferenceCount}", _referenceCount);
+                _logger?.LogDebug("MediaFoundation は既に初期化済みです。参照カウント: {ReferenceCount}", _referenceCount);
                 return;
             }
 
@@ -54,12 +54,12 @@ public class MediaFoundationInitializer
             {
                 MediaFoundationManager.Initialize();
                 _isInitialized = true;
-                this._logger?.LogDebug("MediaFoundation の初期化が完了しました。参照カウント: {ReferenceCount}", _referenceCount);
+                _logger?.LogDebug("MediaFoundation の初期化が完了しました。参照カウント: {ReferenceCount}", _referenceCount);
             }
             catch (Exception ex)
             {
                 _referenceCount--; // 初期化失敗時は参照カウントを戻す
-                this._logger?.LogError(ex, "MediaFoundation の初期化に失敗しました");
+                _logger?.LogError(ex, "MediaFoundation の初期化に失敗しました");
                 throw new VoicevoxRunCachedException(
                     ErrorCodes.Audio.MediaFoundationInitFailed,
                     "MediaFoundation initialization failed",
@@ -80,18 +80,18 @@ public class MediaFoundationInitializer
         {
             if (!_isInitialized)
             {
-                this.Initialize();
+                Initialize();
                 return;
             }
 
             try
             {
                 MediaFoundationManager.EnsureInitialized();
-                this._logger?.LogDebug("MediaFoundation の初期化状態を確認しました。参照カウント: {ReferenceCount}", _referenceCount);
+                _logger?.LogDebug("MediaFoundation の初期化状態を確認しました。参照カウント: {ReferenceCount}", _referenceCount);
             }
             catch (Exception ex)
             {
-                this._logger?.LogError(ex, "MediaFoundation の初期化状態確認に失敗しました");
+                _logger?.LogError(ex, "MediaFoundation の初期化状態確認に失敗しました");
                 throw new VoicevoxRunCachedException(
                     ErrorCodes.Audio.MediaFoundationInitFailed,
                     "MediaFoundation ensure initialized failed",
@@ -112,12 +112,12 @@ public class MediaFoundationInitializer
         {
             if (_referenceCount <= 0)
             {
-                this._logger?.LogDebug("MediaFoundation は既にシャットダウン済みです");
+                _logger?.LogDebug("MediaFoundation は既にシャットダウン済みです");
                 return;
             }
 
             _referenceCount--;
-            this._logger?.LogDebug("MediaFoundation の参照カウントを減らしました: {ReferenceCount}", _referenceCount);
+            _logger?.LogDebug("MediaFoundation の参照カウントを減らしました: {ReferenceCount}", _referenceCount);
 
             if (_referenceCount == 0 && _isInitialized)
             {
@@ -125,11 +125,11 @@ public class MediaFoundationInitializer
                 {
                     MediaFoundationManager.Shutdown();
                     _isInitialized = false;
-                    this._logger?.LogDebug("MediaFoundation のシャットダウンが完了しました");
+                    _logger?.LogDebug("MediaFoundation のシャットダウンが完了しました");
                 }
                 catch (Exception ex)
                 {
-                    this._logger?.LogWarning(ex, "MediaFoundation のシャットダウン中にエラーが発生しました");
+                    _logger?.LogWarning(ex, "MediaFoundation のシャットダウン中にエラーが発生しました");
                     // シャットダウン時のエラーは例外をスローしない
                 }
             }

@@ -1,6 +1,5 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Services;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -9,13 +8,13 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class EngineCoordinator
 {
-    private readonly VoiceVoxSettings _settings;
     private readonly ILogger _logger;
+    private readonly VoiceVoxSettings _settings;
 
     public EngineCoordinator(VoiceVoxSettings settings, ILogger logger)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
@@ -29,11 +28,11 @@ public class EngineCoordinator
 
         try
         {
-            using var engineManager = new VoiceVoxEngineManager(this._settings);
+            using var engineManager = new VoiceVoxEngineManager(_settings);
 
             if (cancellationToken.IsCancellationRequested)
             {
-                this._logger.LogWarning("エンジン確認がキャンセルされました");
+                _logger.LogWarning("エンジン確認がキャンセルされました");
                 return false;
             }
 
@@ -42,18 +41,18 @@ public class EngineCoordinator
             if (isRunning)
             {
                 var elapsed = (DateTime.UtcNow - engineStartTime).TotalMilliseconds;
-                this._logger.LogDebug("エンジン確認が完了しました: {Elapsed}ms", elapsed);
+                _logger.LogDebug("エンジン確認が完了しました: {Elapsed}ms", elapsed);
             }
             else
             {
-                this._logger.LogError("VOICEVOXエンジンが利用できません");
+                _logger.LogError("VOICEVOXエンジンが利用できません");
             }
 
             return isRunning;
         }
         catch (Exception ex)
         {
-            this._logger.LogError(ex, "エンジン確認中にエラーが発生しました");
+            _logger.LogError(ex, "エンジン確認中にエラーが発生しました");
             return false;
         }
     }
@@ -66,19 +65,19 @@ public class EngineCoordinator
     {
         try
         {
-            using var engineManager = new VoiceVoxEngineManager(this._settings);
+            using var engineManager = new VoiceVoxEngineManager(_settings);
             var isRunning = await engineManager.EnsureEngineRunningAsync();
 
             return new EngineStatus
             {
                 IsRunning = isRunning,
                 LastChecked = DateTime.UtcNow,
-                Settings = this._settings
+                Settings = _settings
             };
         }
         catch (Exception ex)
         {
-            this._logger.LogError(ex, "エンジン状態の取得中にエラーが発生しました");
+            _logger.LogError(ex, "エンジン状態の取得中にエラーが発生しました");
             return new EngineStatus
             {
                 IsRunning = false,

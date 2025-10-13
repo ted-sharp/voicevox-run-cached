@@ -1,4 +1,4 @@
-namespace VoicevoxRunCached.Models;
+﻿namespace VoicevoxRunCached.Models;
 
 /// <summary>
 /// 音声フォーマットの種類

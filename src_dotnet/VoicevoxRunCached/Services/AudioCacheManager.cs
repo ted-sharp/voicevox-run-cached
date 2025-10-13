@@ -1,10 +1,10 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
+using Serilog;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Cache;
-using VoicevoxRunCached.Exceptions;
-using Serilog;
 
 namespace VoicevoxRunCached.Services;
 
@@ -14,26 +14,48 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class AudioCacheManager : IDisposable
 {
-    private readonly CacheSettings _settings;
-    private readonly MemoryCacheService _memoryCache;
-    private readonly DiskCacheService _diskCacheService;
+    // C# 13 ref readonly parameter for better performance with large structs
+    private static readonly SHA256 _sha256 = SHA256.Create();
     private readonly CacheCleanupService _cleanupService;
+    private readonly DiskCacheService _diskCacheService;
+    private readonly MemoryCacheService _memoryCache;
+    private readonly CacheSettings _settings;
     private readonly CacheStatisticsService _statisticsService;
     private bool _disposed;
 
     public AudioCacheManager(CacheSettings settings, MemoryCacheService? memoryCache = null)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._memoryCache = memoryCache ?? new MemoryCacheService(settings);
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _memoryCache = memoryCache ?? new MemoryCacheService(settings);
 
-        this.ResolveCacheBaseDirectory();
+        ResolveCacheBaseDirectory();
 
         // 各専門クラスのインスタンスを作成
-        this._diskCacheService = new DiskCacheService(settings);
-        this._cleanupService = new CacheCleanupService(settings, this._diskCacheService);
-        this._statisticsService = new CacheStatisticsService(settings, this._diskCacheService, this._memoryCache);
+        _diskCacheService = new DiskCacheService(settings);
+        _cleanupService = new CacheCleanupService(settings, _diskCacheService);
+        _statisticsService = new CacheStatisticsService(settings, _diskCacheService, _memoryCache);
 
-        Log.Information("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}, メモリキャッシュ: 有効", this._settings.Directory);
+        Log.Information("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}, メモリキャッシュ: 有効", _settings.Directory);
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            try
+            {
+                _memoryCache?.Dispose();
+                _disposed = true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "AudioCacheManagerの破棄中にエラーが発生しました");
+            }
+            finally
+            {
+                GC.SuppressFinalize(this);
+            }
+        }
     }
 
     /// <summary>
@@ -43,12 +65,12 @@ public class AudioCacheManager : IDisposable
     /// <returns>キャッシュされた音声データ。キャッシュにない場合はnull</returns>
     public async Task<byte[]?> GetCachedAudioAsync(VoiceRequest request)
     {
-        var cacheKey = this.ComputeCacheKey(request);
+        var cacheKey = ComputeCacheKey(request);
 
         try
         {
             // まずメモリキャッシュをチェック
-            var memoryCached = this._memoryCache.Get<byte[]>(cacheKey);
+            var memoryCached = _memoryCache.Get<byte[]>(cacheKey);
             if (memoryCached != null)
             {
                 Log.Debug("メモリキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, memoryCached.Length);
@@ -56,11 +78,11 @@ public class AudioCacheManager : IDisposable
             }
 
             // メモリキャッシュにない場合はディスクキャッシュをチェック
-            var audioData = await this._diskCacheService.LoadAudioFromDiskAsync(cacheKey);
+            var audioData = await _diskCacheService.LoadAudioFromDiskAsync(cacheKey);
             if (audioData != null)
             {
                 // ディスクから読み込めた場合はメモリキャッシュに保存（次回は高速アクセス）
-                this._memoryCache.Set(cacheKey, audioData);
+                _memoryCache.Set(cacheKey, audioData);
             }
 
             return audioData;
@@ -73,7 +95,7 @@ public class AudioCacheManager : IDisposable
                 $"Access denied to cache file: {ex.Message}",
                 "キャッシュファイルへのアクセス権限がありません。",
                 cacheKey,
-                this._settings.Directory,
+                _settings.Directory,
                 "キャッシュディレクトリのアクセス権限を確認してください。"
             );
         }
@@ -85,7 +107,7 @@ public class AudioCacheManager : IDisposable
                 $"Failed to read cache file: {ex.Message}",
                 "キャッシュファイルの読み込みに失敗しました。",
                 cacheKey,
-                this._settings.Directory,
+                _settings.Directory,
                 "キャッシュディレクトリの状態を確認し、必要に応じてキャッシュをクリアしてください。"
             );
         }
@@ -97,7 +119,7 @@ public class AudioCacheManager : IDisposable
                 $"Unexpected error while retrieving cached audio: {ex.Message}",
                 "キャッシュからの音声データ取得中に予期しないエラーが発生しました。",
                 cacheKey,
-                this._settings.Directory,
+                _settings.Directory,
                 "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
             );
         }
@@ -111,21 +133,21 @@ public class AudioCacheManager : IDisposable
     /// <returns>保存処理の完了を表すTask</returns>
     public async Task SaveAudioCacheAsync(VoiceRequest request, byte[] audioData)
     {
-        var cacheKey = this.ComputeCacheKey(request);
+        var cacheKey = ComputeCacheKey(request);
 
         try
         {
             // ディスクキャッシュに保存
-            await this._diskCacheService.SaveAudioToDiskAsync(request, audioData, cacheKey);
+            await _diskCacheService.SaveAudioToDiskAsync(request, audioData, cacheKey);
 
             // WAVをMP3に変換してメモリキャッシュに保存
             var mp3Data = AudioConversionUtility.ConvertWavToMp3(audioData);
-            this._memoryCache.Set(cacheKey, mp3Data);
+            _memoryCache.Set(cacheKey, mp3Data);
 
             Log.Debug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes", cacheKey, mp3Data.Length);
 
             // 保存後、バックグラウンドでサイズ制限ポリシーを適用
-            _ = this._cleanupService.RunBackgroundCleanupAsync();
+            _ = _cleanupService.RunBackgroundCleanupAsync();
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -135,7 +157,7 @@ public class AudioCacheManager : IDisposable
                 $"Access denied to cache directory: {ex.Message}",
                 "キャッシュディレクトリへの書き込み権限がありません。",
                 cacheKey,
-                this._settings.Directory,
+                _settings.Directory,
                 "キャッシュディレクトリの書き込み権限を確認してください。"
             );
         }
@@ -147,7 +169,7 @@ public class AudioCacheManager : IDisposable
                 $"Cache directory is full: {ex.Message}",
                 "キャッシュディレクトリの容量が不足しています。",
                 cacheKey,
-                this._settings.Directory,
+                _settings.Directory,
                 "古いキャッシュファイルを削除するか、キャッシュディレクトリの容量を増やしてください。"
             );
         }
@@ -159,7 +181,7 @@ public class AudioCacheManager : IDisposable
                 $"Failed to write cache file: {ex.Message}",
                 "キャッシュファイルの書き込みに失敗しました。",
                 cacheKey,
-                this._settings.Directory,
+                _settings.Directory,
                 "ディスクの空き容量とキャッシュディレクトリの状態を確認してください。"
             );
         }
@@ -171,7 +193,7 @@ public class AudioCacheManager : IDisposable
                 $"Failed to save audio cache: {ex.Message}",
                 "キャッシュの保存に失敗しました。",
                 cacheKey,
-                this._settings.Directory,
+                _settings.Directory,
                 "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
             );
         }
@@ -185,7 +207,7 @@ public class AudioCacheManager : IDisposable
     {
         try
         {
-            await this._cleanupService.CleanupExpiredCacheAsync();
+            await _cleanupService.CleanupExpiredCacheAsync();
             Log.Information("期限切れキャッシュのクリーンアップが完了しました");
         }
         catch (OperationCanceledException)
@@ -207,7 +229,7 @@ public class AudioCacheManager : IDisposable
                 $"Access denied during cache cleanup: {ex.Message}",
                 "キャッシュクリーンアップ中にアクセス権限エラーが発生しました。",
                 null,
-                this._settings.Directory,
+                _settings.Directory,
                 "キャッシュディレクトリのアクセス権限を確認してください。"
             );
         }
@@ -219,7 +241,7 @@ public class AudioCacheManager : IDisposable
                 $"I/O error during cache cleanup: {ex.Message}",
                 "キャッシュクリーンアップ中にI/Oエラーが発生しました。",
                 null,
-                this._settings.Directory,
+                _settings.Directory,
                 "ディスクの状態とキャッシュディレクトリの権限を確認してください。"
             );
         }
@@ -231,7 +253,7 @@ public class AudioCacheManager : IDisposable
                 $"Unexpected error during cache cleanup: {ex.Message}",
                 "キャッシュクリーンアップ中に予期しないエラーが発生しました。",
                 null,
-                this._settings.Directory,
+                _settings.Directory,
                 "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
             );
         }
@@ -243,9 +265,8 @@ public class AudioCacheManager : IDisposable
     /// <param name="cancellationToken">キャンセレーショントークン</param>
     public void CleanupByMaxSize(CancellationToken cancellationToken = default)
     {
-        this._cleanupService.CleanupByMaxSize(cancellationToken);
+        _cleanupService.CleanupByMaxSize(cancellationToken);
     }
-
 
 
     /// <summary>
@@ -253,7 +274,7 @@ public class AudioCacheManager : IDisposable
     /// </summary>
     public async Task<List<TextSegment>> ProcessTextSegmentsAsync(List<TextSegment> segments, VoiceRequest request, CancellationToken cancellationToken = default)
     {
-        var tasks = segments.Select(segment => this.ProcessSegmentAsync(segment, request, cancellationToken));
+        var tasks = segments.Select(segment => ProcessSegmentAsync(segment, request, cancellationToken));
         var results = await Task.WhenAll(tasks);
         return results.ToList();
     }
@@ -277,7 +298,7 @@ public class AudioCacheManager : IDisposable
                 Volume = request.Volume
             };
 
-            var cachedAudio = await this.GetCachedAudioAsync(segmentRequest);
+            var cachedAudio = await GetCachedAudioAsync(segmentRequest);
             if (cachedAudio != null)
             {
                 segment.AudioData = cachedAudio;
@@ -307,9 +328,6 @@ public class AudioCacheManager : IDisposable
         }
     }
 
-    // C# 13 ref readonly parameter for better performance with large structs
-    private static readonly SHA256 _sha256 = SHA256.Create();
-
     public string ComputeCacheKey(VoiceRequest request)
     {
         var keyString = String.Format(System.Globalization.CultureInfo.InvariantCulture,
@@ -321,17 +339,16 @@ public class AudioCacheManager : IDisposable
     }
 
 
-
     private void ResolveCacheBaseDirectory()
     {
         try
         {
-            if (this._settings.UseExecutableBaseDirectory && !Path.IsPathRooted(this._settings.Directory))
+            if (_settings.UseExecutableBaseDirectory && !Path.IsPathRooted(_settings.Directory))
             {
                 var executablePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
                 var executableDirectory = Path.GetDirectoryName(executablePath) ?? Directory.GetCurrentDirectory();
-                var combined = Path.Combine(executableDirectory, this._settings.Directory);
-                this._settings.Directory = Path.GetFullPath(combined);
+                var combined = Path.Combine(executableDirectory, _settings.Directory);
+                _settings.Directory = Path.GetFullPath(combined);
             }
         }
         catch
@@ -339,7 +356,6 @@ public class AudioCacheManager : IDisposable
             // If resolution fails, keep original setting
         }
     }
-
 
 
     /// <summary>
@@ -350,15 +366,15 @@ public class AudioCacheManager : IDisposable
         try
         {
             // メモリキャッシュをクリア
-            this._memoryCache.Clear();
+            _memoryCache.Clear();
 
             // ディスクキャッシュをクリア
             // ディスクキャッシュのクリア処理を実装
-            var cacheFiles = this._diskCacheService.GetCacheFiles();
+            var cacheFiles = _diskCacheService.GetCacheFiles();
             foreach (var file in cacheFiles)
             {
                 var cacheKey = Path.GetFileNameWithoutExtension(file);
-                this._diskCacheService.DeleteCacheFile(cacheKey);
+                _diskCacheService.DeleteCacheFile(cacheKey);
             }
 
             Log.Information("すべてのキャッシュをクリアしました - メモリ・ディスク共にクリア済み");
@@ -376,7 +392,7 @@ public class AudioCacheManager : IDisposable
     /// <returns>キャッシュの統計情報</returns>
     public AudioCacheStatistics GetCacheStatistics()
     {
-        return this._statisticsService.GetCombinedCacheStatistics();
+        return _statisticsService.GetCombinedCacheStatistics();
     }
 
     /// <summary>
@@ -385,7 +401,7 @@ public class AudioCacheManager : IDisposable
     /// <returns>詳細統計情報</returns>
     public DetailedCacheStatistics GetDetailedStatistics()
     {
-        return this._statisticsService.GetDetailedStatistics();
+        return _statisticsService.GetDetailedStatistics();
     }
 
     /// <summary>
@@ -394,27 +410,7 @@ public class AudioCacheManager : IDisposable
     /// <returns>効率分析結果</returns>
     public CacheEfficiencyAnalysis AnalyzeCacheEfficiency()
     {
-        return this._statisticsService.AnalyzeCacheEfficiency();
-    }
-
-    public void Dispose()
-    {
-        if (!this._disposed)
-        {
-            try
-            {
-                this._memoryCache?.Dispose();
-                this._disposed = true;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "AudioCacheManagerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
-        }
+        return _statisticsService.AnalyzeCacheEfficiency();
     }
 }
 
@@ -456,12 +452,12 @@ public class AudioCacheStatistics
     /// <summary>
     /// ヒット率
     /// </summary>
-    public double HitRate => this.CacheHits + this.CacheMisses > 0 ? (double)this.CacheHits / (this.CacheHits + this.CacheMisses) : 0;
+    public double HitRate => CacheHits + CacheMisses > 0 ? (double)CacheHits / (CacheHits + CacheMisses) : 0;
 
     /// <summary>
     /// 使用率
     /// </summary>
-    public double UsageRate => this.TotalSizeBytes > 0 ? (double)this.UsedSizeBytes / this.TotalSizeBytes : 0;
+    public double UsageRate => TotalSizeBytes > 0 ? (double)UsedSizeBytes / TotalSizeBytes : 0;
 }
 
 public class CacheMetadata

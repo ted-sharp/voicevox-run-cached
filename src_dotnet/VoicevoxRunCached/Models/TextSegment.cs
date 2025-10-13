@@ -1,4 +1,4 @@
-namespace VoicevoxRunCached.Models;
+﻿namespace VoicevoxRunCached.Models;
 
 // C# 13 Primary constructor for TextSegment model
 public class TextSegment(string text = "", int position = 0, int length = 0)

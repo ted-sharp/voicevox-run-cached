@@ -1,44 +1,42 @@
+﻿using System.Net;
+using System.Net.Sockets;
 using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
-using Polly.Timeout;
-using System.Net;
-using System.Net.Sockets;
-using System.Net.WebSockets;
 using Serilog;
 
 namespace VoicevoxRunCached.Services;
 
 public class RetryPolicyService
 {
-    private readonly AsyncRetryPolicy _retryPolicy;
+    private readonly int _baseDelayMs = 1000; // 1秒
     private readonly AsyncCircuitBreakerPolicy _circuitBreakerPolicy;
     private readonly AsyncPolicy _combinedPolicy;
+    private readonly int _maxDelayMs = 30000; // 30秒
 
     // 新しいプロパティ
     private readonly int _maxRetryAttempts = 3;
-    private readonly int _baseDelayMs = 1000; // 1秒
-    private readonly int _maxDelayMs = 30000; // 30秒
+    private readonly AsyncRetryPolicy _retryPolicy;
 
     public RetryPolicyService()
     {
         // 指数バックオフ付きリトライポリシー
-        this._retryPolicy = Policy
+        _retryPolicy = Policy
             .Handle<HttpRequestException>()
             .Or<TimeoutException>()
             .Or<OperationCanceledException>()
             .WaitAndRetryAsync(
-                retryCount: this._maxRetryAttempts,
+                retryCount: _maxRetryAttempts,
                 sleepDurationProvider: retryAttempt =>
                     TimeSpan.FromSeconds(Math.Pow(2, retryAttempt - 1)), // 指数バックオフ: 1s, 2s, 4s
                 onRetry: (exception, timeSpan, retryCount, context) =>
                 {
-                    Log.Warning(exception, "リトライ {RetryCount}/{MaxRetries} - {TimeSpan}後に再試行します", retryCount, this._maxRetryAttempts, timeSpan);
+                    Log.Warning(exception, "リトライ {RetryCount}/{MaxRetries} - {TimeSpan}後に再試行します", retryCount, _maxRetryAttempts, timeSpan);
                 }
             );
 
         // サーキットブレーカーポリシー
-        this._circuitBreakerPolicy = Policy
+        _circuitBreakerPolicy = Policy
             .Handle<HttpRequestException>()
             .Or<TimeoutException>()
             .CircuitBreakerAsync(
@@ -62,34 +60,34 @@ public class RetryPolicyService
         var timeoutPolicy = Policy.TimeoutAsync(TimeSpan.FromSeconds(30));
 
         // ポリシーを組み合わせ
-        this._combinedPolicy = Policy.WrapAsync(this._retryPolicy, this._circuitBreakerPolicy, timeoutPolicy);
+        _combinedPolicy = Policy.WrapAsync(_retryPolicy, _circuitBreakerPolicy, timeoutPolicy);
     }
 
-    public AsyncPolicy GetRetryPolicy() => this._retryPolicy;
-    public AsyncPolicy GetCircuitBreakerPolicy() => this._circuitBreakerPolicy;
-    public AsyncPolicy GetCombinedPolicy() => this._combinedPolicy;
+    public AsyncPolicy GetRetryPolicy() => _retryPolicy;
+    public AsyncPolicy GetCircuitBreakerPolicy() => _circuitBreakerPolicy;
+    public AsyncPolicy GetCombinedPolicy() => _combinedPolicy;
 
     public async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> operation, string operationName, CancellationToken cancellationToken = default)
     {
         var retryCount = 0;
         var lastException = default(Exception);
 
-        while (retryCount < this._maxRetryAttempts)
+        while (retryCount < _maxRetryAttempts)
         {
             try
             {
                 return await operation();
             }
-            catch (HttpRequestException ex) when (this.ShouldRetryHttpError(ex))
+            catch (HttpRequestException ex) when (ShouldRetryHttpError(ex))
             {
                 lastException = ex;
                 retryCount++;
 
-                if (retryCount < this._maxRetryAttempts)
+                if (retryCount < _maxRetryAttempts)
                 {
-                    var delay = this.CalculateDelay(retryCount, ex.StatusCode);
+                    var delay = CalculateDelay(retryCount, ex.StatusCode);
                     Log.Warning(ex, "HTTP error during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
-                        operationName, delay, retryCount, this._maxRetryAttempts);
+                        operationName, delay, retryCount, _maxRetryAttempts);
 
                     await Task.Delay(delay, cancellationToken);
                 }
@@ -103,25 +101,25 @@ public class RetryPolicyService
                 lastException = ex;
                 retryCount++;
 
-                if (retryCount < this._maxRetryAttempts)
+                if (retryCount < _maxRetryAttempts)
                 {
-                    var delay = this.CalculateDelay(retryCount, null);
+                    var delay = CalculateDelay(retryCount, null);
                     Log.Warning(ex, "Timeout during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
-                        operationName, delay, retryCount, this._maxRetryAttempts);
+                        operationName, delay, retryCount, _maxRetryAttempts);
 
                     await Task.Delay(delay, cancellationToken);
                 }
             }
-            catch (Exception ex) when (this.ShouldRetryException(ex))
+            catch (Exception ex) when (ShouldRetryException(ex))
             {
                 lastException = ex;
                 retryCount++;
 
-                if (retryCount < this._maxRetryAttempts)
+                if (retryCount < _maxRetryAttempts)
                 {
-                    var delay = this.CalculateDelay(retryCount, null);
+                    var delay = CalculateDelay(retryCount, null);
                     Log.Warning(ex, "Retryable error during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
-                        operationName, delay, retryCount, this._maxRetryAttempts);
+                        operationName, delay, retryCount, _maxRetryAttempts);
 
                     await Task.Delay(delay, cancellationToken);
                 }
@@ -135,7 +133,7 @@ public class RetryPolicyService
         }
 
         // All retries exhausted
-        var errorMessage = $"Operation '{operationName}' failed after {this._maxRetryAttempts} attempts";
+        var errorMessage = $"Operation '{operationName}' failed after {_maxRetryAttempts} attempts";
         if (lastException != null)
         {
             throw new InvalidOperationException(errorMessage, lastException);
@@ -173,7 +171,7 @@ public class RetryPolicyService
 
     private int CalculateDelay(int retryCount, HttpStatusCode? statusCode)
     {
-        var baseDelay = this._baseDelayMs;
+        var baseDelay = _baseDelayMs;
 
         // Apply exponential backoff
         var exponentialDelay = baseDelay * Math.Pow(2, retryCount - 1);
@@ -187,7 +185,7 @@ public class RetryPolicyService
             exponentialDelay = Math.Max(exponentialDelay, 1000); // Minimum 1 second for rate limiting
         }
 
-        var finalDelay = (int)Math.Min(exponentialDelay + jitter, this._maxDelayMs);
+        var finalDelay = (int)Math.Min(exponentialDelay + jitter, _maxDelayMs);
         return Math.Max(finalDelay, 100); // Minimum 100ms
     }
 }

@@ -1,6 +1,6 @@
-using NAudio.Wave;
-using VoicevoxRunCached.Configuration;
+﻿using NAudio.Wave;
 using Serilog;
+using VoicevoxRunCached.Configuration;
 
 namespace VoicevoxRunCached.Services.Audio;
 
@@ -10,12 +10,32 @@ namespace VoicevoxRunCached.Services.Audio;
 public class WavePlayerManager : IDisposable
 {
     private readonly AudioSettings _settings;
-    private IWavePlayer? _wavePlayer;
     private bool _disposed;
+    private IWavePlayer? _wavePlayer;
 
     public WavePlayerManager(AudioSettings settings)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+    }
+
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            try
+            {
+                DisposeSharedWavePlayer();
+                _disposed = true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "WavePlayerManagerの破棄中にエラーが発生しました");
+            }
+            finally
+            {
+                GC.SuppressFinalize(this);
+            }
+        }
     }
 
     /// <summary>
@@ -24,7 +44,7 @@ public class WavePlayerManager : IDisposable
     /// <returns>作成されたWavePlayer</returns>
     public IWavePlayer CreateWavePlayer()
     {
-        if (this._disposed)
+        if (_disposed)
             throw new ObjectDisposedException(nameof(WavePlayerManager));
 
         var waveOut = new WaveOutEvent
@@ -33,16 +53,16 @@ public class WavePlayerManager : IDisposable
             NumberOfBuffers = 3
         };
 
-        if (this._settings.OutputDevice >= 0)
+        if (_settings.OutputDevice >= 0)
         {
-            waveOut.DeviceNumber = this._settings.OutputDevice;
+            waveOut.DeviceNumber = _settings.OutputDevice;
         }
 
         // ボリューム設定
-        waveOut.Volume = (float)Math.Max(0.0, Math.Min(1.0, this._settings.Volume));
+        waveOut.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
 
         Log.Debug("WavePlayer を作成しました - デバイス: {Device}, ボリューム: {Volume}",
-            this._settings.OutputDevice, this._settings.Volume);
+            _settings.OutputDevice, _settings.Volume);
 
         return waveOut;
     }
@@ -53,16 +73,16 @@ public class WavePlayerManager : IDisposable
     /// <returns>共有WavePlayerインスタンス</returns>
     public IWavePlayer GetOrCreateSharedWavePlayer()
     {
-        if (this._disposed)
+        if (_disposed)
             throw new ObjectDisposedException(nameof(WavePlayerManager));
 
-        if (this._wavePlayer == null)
+        if (_wavePlayer == null)
         {
-            this._wavePlayer = this.CreateWavePlayer();
+            _wavePlayer = CreateWavePlayer();
             Log.Debug("共有WavePlayerインスタンスを作成しました");
         }
 
-        return this._wavePlayer;
+        return _wavePlayer;
     }
 
     /// <summary>
@@ -71,13 +91,13 @@ public class WavePlayerManager : IDisposable
     /// <param name="wavePlayer">設定するWavePlayer</param>
     public void SetSharedWavePlayer(IWavePlayer wavePlayer)
     {
-        if (this._disposed)
+        if (_disposed)
             throw new ObjectDisposedException(nameof(WavePlayerManager));
 
         // 既存のインスタンスを破棄
-        this._wavePlayer?.Dispose();
+        _wavePlayer?.Dispose();
 
-        this._wavePlayer = wavePlayer ?? throw new ArgumentNullException(nameof(wavePlayer));
+        _wavePlayer = wavePlayer ?? throw new ArgumentNullException(nameof(wavePlayer));
         Log.Debug("共有WavePlayerインスタンスが設定されました");
     }
 
@@ -85,13 +105,13 @@ public class WavePlayerManager : IDisposable
     /// 現在の共有WavePlayerインスタンスを取得します
     /// </summary>
     /// <returns>現在の共有WavePlayerインスタンス（設定されていない場合はnull）</returns>
-    public IWavePlayer? GetCurrentSharedWavePlayer() => this._wavePlayer;
+    public IWavePlayer? GetCurrentSharedWavePlayer() => _wavePlayer;
 
     /// <summary>
     /// 共有WavePlayerインスタンスが存在するかどうかを確認します
     /// </summary>
     /// <returns>存在する場合true</returns>
-    public bool HasSharedWavePlayer() => this._wavePlayer != null;
+    public bool HasSharedWavePlayer() => _wavePlayer != null;
 
     /// <summary>
     /// 共有WavePlayerインスタンスを停止します
@@ -100,9 +120,9 @@ public class WavePlayerManager : IDisposable
     {
         try
         {
-            if (this._wavePlayer != null)
+            if (_wavePlayer != null)
             {
-                this._wavePlayer.Stop();
+                _wavePlayer.Stop();
                 Log.Debug("共有WavePlayerインスタンスを停止しました");
             }
         }
@@ -119,10 +139,10 @@ public class WavePlayerManager : IDisposable
     {
         try
         {
-            if (this._wavePlayer != null)
+            if (_wavePlayer != null)
             {
-                this._wavePlayer.Dispose();
-                this._wavePlayer = null;
+                _wavePlayer.Dispose();
+                _wavePlayer = null;
                 Log.Debug("共有WavePlayerインスタンスを破棄しました");
             }
         }
@@ -141,9 +161,9 @@ public class WavePlayerManager : IDisposable
         return new AudioDeviceInfo
         {
             TotalDevices = 0,
-            CurrentDevice = this._settings.OutputDevice,
+            CurrentDevice = _settings.OutputDevice,
             CurrentDeviceName = "Default",
-            Volume = this._settings.Volume,
+            Volume = _settings.Volume,
             DesiredLatency = 100,
             NumberOfBuffers = 3
         };
@@ -162,31 +182,11 @@ public class WavePlayerManager : IDisposable
                 TotalDevices = 1,
                 CurrentDevice = 0,
                 CurrentDeviceName = "Default Audio Device",
-                Volume = this._settings.Volume,
+                Volume = _settings.Volume,
                 DesiredLatency = 100,
                 NumberOfBuffers = 3
             }
         };
-    }
-
-    public void Dispose()
-    {
-        if (!this._disposed)
-        {
-            try
-            {
-                this.DisposeSharedWavePlayer();
-                this._disposed = true;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "WavePlayerManagerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
-        }
     }
 }
 

@@ -1,45 +1,55 @@
-using System.Net;
-using System.Net.Http;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Models;
-using VoicevoxRunCached.Exceptions;
 using Serilog;
+using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
+using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services;
 
 public class VoiceVoxApiClient : IDisposable
 {
     private readonly HttpClient _httpClient;
-    private readonly VoiceVoxSettings _settings;
     private readonly RetryPolicyService _retryPolicyService;
-
-    public string BaseUrl => this._settings.BaseUrl;
-    public int ConnectionTimeout => this._settings.ConnectionTimeout;
+    private readonly VoiceVoxSettings _settings;
 
     public VoiceVoxApiClient(VoiceVoxSettings settings, RetryPolicyService? retryPolicyService = null)
     {
         // C# 13 nameof expression for type-safe parameter validation
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._retryPolicyService = retryPolicyService ?? new RetryPolicyService();
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _retryPolicyService = retryPolicyService ?? new RetryPolicyService();
 
-        this._httpClient = new HttpClient
+        _httpClient = new HttpClient
         {
-            BaseAddress = new Uri(this._settings.BaseUrl),
-            Timeout = TimeSpan.FromSeconds(this._settings.ConnectionTimeout)
+            BaseAddress = new Uri(_settings.BaseUrl),
+            Timeout = TimeSpan.FromSeconds(_settings.ConnectionTimeout)
         };
 
-        Log.Information("VoiceVoxApiClient を初期化しました - BaseUrl: {BaseUrl}, Timeout: {Timeout}s", this._settings.BaseUrl, this._settings.ConnectionTimeout);
+        Log.Information("VoiceVoxApiClient を初期化しました - BaseUrl: {BaseUrl}, Timeout: {Timeout}s", _settings.BaseUrl, _settings.ConnectionTimeout);
+    }
+
+    public string BaseUrl => _settings.BaseUrl;
+    public int ConnectionTimeout => _settings.ConnectionTimeout;
+
+    // C# 13 Enhanced auto-property with JsonSerializerOptions
+    private static JsonSerializerOptions JsonOptions { get; } = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
+
+    public void Dispose()
+    {
+        _httpClient?.Dispose();
     }
 
     public async Task<List<Speaker>> GetSpeakersAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{this._settings.BaseUrl}/speakers");
-            var response = await this.SendRequestAsync(request, cancellationToken);
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_settings.BaseUrl}/speakers");
+            var response = await SendRequestAsync(request, cancellationToken);
             var content = await response.Content.ReadAsStringAsync(cancellationToken);
 
             var speakers = JsonSerializer.Deserialize<List<Speaker>>(content, JsonOptions);
@@ -130,20 +140,14 @@ public class VoiceVoxApiClient : IDisposable
         }
     }
 
-    // C# 13 Enhanced auto-property with JsonSerializerOptions
-    private static JsonSerializerOptions JsonOptions { get; } = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-    };
-
     public async Task InitializeSpeakerAsync(int speakerId, CancellationToken cancellationToken = default)
     {
         Log.Debug("スピーカー {SpeakerId} を初期化中...", speakerId);
-        await this._retryPolicyService.ExecuteWithRetryAsync(async () =>
+        await _retryPolicyService.ExecuteWithRetryAsync(async () =>
         {
-            return await this.ExecuteApiCallAsync(async () =>
+            return await ExecuteApiCallAsync(async () =>
             {
-                var response = await this._httpClient.PostAsync($"/initialize_speaker?speaker={speakerId}", null, cancellationToken);
+                var response = await _httpClient.PostAsync($"/initialize_speaker?speaker={speakerId}", null, cancellationToken);
                 response.EnsureSuccessStatusCode();
                 Log.Information("スピーカー {SpeakerId} の初期化が完了しました", speakerId);
                 return true; // Return value for generic method
@@ -171,11 +175,11 @@ public class VoiceVoxApiClient : IDisposable
             if (request.Volume != 1.0)
                 queryString += $"&volume_scale={request.Volume}";
 
-            var url = $"{this._settings.BaseUrl}/audio_query?{queryString}";
+            var url = $"{_settings.BaseUrl}/audio_query?{queryString}";
             Log.Information("Request URL: {Url}", url);
 
             var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
-            var response = await this.SendRequestAsync(httpRequest, cancellationToken);
+            var response = await SendRequestAsync(httpRequest, cancellationToken);
             var content = await response.Content.ReadAsStringAsync(cancellationToken);
 
             Log.Debug("Audio query generated successfully - Length: {Length} characters", content.Length);
@@ -274,7 +278,7 @@ public class VoiceVoxApiClient : IDisposable
             Log.Information("Synthesizing audio for speaker {SpeakerId} with audioQuery length: {Length}", speakerId, audioQuery.Length);
 
             // VoiceVox APIの/synthesisエンドポイントはクエリパラメータでspeakerを受け取り、ボディでaudio_queryを受け取る
-            var url = $"{this._settings.BaseUrl}/synthesis?speaker={speakerId}";
+            var url = $"{_settings.BaseUrl}/synthesis?speaker={speakerId}";
             Log.Information("Synthesis URL: {Url}", url);
 
             var content = new StringContent(audioQuery, Encoding.UTF8, "application/json");
@@ -284,7 +288,7 @@ public class VoiceVoxApiClient : IDisposable
             };
 
             Log.Information("Sending synthesis request to VoiceVox API...");
-            var response = await this.SendRequestAsync(httpRequest, cancellationToken);
+            var response = await SendRequestAsync(httpRequest, cancellationToken);
             Log.Information("Synthesis response received, status: {StatusCode}", response.StatusCode);
             return await response.Content.ReadAsByteArrayAsync(cancellationToken);
         }
@@ -395,14 +399,14 @@ public class VoiceVoxApiClient : IDisposable
         try
         {
             Log.Information("Sending HTTP request to: {Method} {RequestUri}", request.Method, request.RequestUri);
-            var response = await this._httpClient.SendAsync(request, cancellationToken);
+            var response = await _httpClient.SendAsync(request, cancellationToken);
             Log.Information("HTTP response received: {StatusCode}", response.StatusCode);
 
             // 詳細なエラーハンドリング
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                var errorMessage = this.GetUserFriendlyErrorMessage(response.StatusCode, errorContent);
+                var errorMessage = GetUserFriendlyErrorMessage(response.StatusCode, errorContent);
                 throw new HttpRequestException(errorMessage, null, response.StatusCode);
             }
 
@@ -448,17 +452,13 @@ public class VoiceVoxApiClient : IDisposable
         };
     }
 
-    public void Dispose()
-    {
-        this._httpClient?.Dispose();
-    }
-
     private static string ApplyVoiceParametersToAudioQueryJson(string audioQueryJson, VoiceRequest request)
     {
         try
         {
             var node = JsonNode.Parse(audioQueryJson) as JsonObject;
-            if (node == null) return audioQueryJson;
+            if (node == null)
+                return audioQueryJson;
 
             static double Clamp(double v, double min, double max) => v < min ? min : (v > max ? max : v);
 

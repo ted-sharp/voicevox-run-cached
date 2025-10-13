@@ -1,11 +1,8 @@
-using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Running;
+﻿using BenchmarkDotNet.Attributes;
 using NAudio.Wave;
-using NAudio.Lame;
-using NAudio.MediaFoundation;
-using VoicevoxRunCached.Services;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
+using VoicevoxRunCached.Services;
 
 namespace VoicevoxRunCached.Benchmarks;
 
@@ -13,41 +10,41 @@ namespace VoicevoxRunCached.Benchmarks;
 [SimpleJob]
 public class AudioProcessingBenchmarks
 {
-    private byte[] _sampleWavData = null!;
     private AudioCacheManager _cacheManager = null!;
     private MemoryCacheService _memoryCache = null!;
+    private byte[] _sampleWavData = null!;
     private VoiceRequest _testRequest = null!;
 
     [GlobalSetup]
     public void Setup()
     {
         // サンプルWAVデータを生成（1秒間の44.1kHz 16bit モノラル）
-        this._sampleWavData = this.GenerateSampleWavData();
+        _sampleWavData = GenerateSampleWavData();
 
         var cacheSettings = new CacheSettings("./benchmark-cache/", 30, 1.0, true);
-        this._memoryCache = new MemoryCacheService(cacheSettings);
-        this._cacheManager = new AudioCacheManager(cacheSettings, this._memoryCache);
+        _memoryCache = new MemoryCacheService(cacheSettings);
+        _cacheManager = new AudioCacheManager(cacheSettings, _memoryCache);
 
-        this._testRequest = new VoiceRequest("テスト用の音声データです。", 1, 1.0, 0.0, 1.0);
+        _testRequest = new VoiceRequest("テスト用の音声データです。", 1, 1.0, 0.0, 1.0);
     }
 
     [GlobalCleanup]
     public void Cleanup()
     {
-        this._cacheManager?.Dispose();
-        this._memoryCache?.Dispose();
+        _cacheManager?.Dispose();
+        _memoryCache?.Dispose();
     }
 
     [Benchmark]
     public byte[] WavToMp3Conversion()
     {
-        return this.ConvertWavToMp3(this._sampleWavData);
+        return ConvertWavToMp3(_sampleWavData);
     }
 
     [Benchmark]
     public string CacheKeyGeneration()
     {
-        return this._cacheManager.ComputeCacheKey(this._testRequest);
+        return _cacheManager.ComputeCacheKey(_testRequest);
     }
 
     [Benchmark]
@@ -57,8 +54,8 @@ public class AudioProcessingBenchmarks
         var data = new byte[1024];
         new Random().NextBytes(data);
 
-        this._memoryCache.Set(key, data);
-        var retrieved = this._memoryCache.Get<byte[]>(key);
+        _memoryCache.Set(key, data);
+        var retrieved = _memoryCache.Get<byte[]>(key);
 
         await Task.CompletedTask;
     }
@@ -69,8 +66,8 @@ public class AudioProcessingBenchmarks
         var data = new byte[1024];
         new Random().NextBytes(data);
 
-        await this._cacheManager.SaveAudioCacheAsync(this._testRequest, data);
-        var retrieved = await this._cacheManager.GetCachedAudioAsync(this._testRequest);
+        await _cacheManager.SaveAudioCacheAsync(_testRequest, data);
+        var retrieved = await _cacheManager.GetCachedAudioAsync(_testRequest);
 
         await Task.CompletedTask;
     }

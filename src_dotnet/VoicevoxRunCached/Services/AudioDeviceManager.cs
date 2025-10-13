@@ -1,9 +1,8 @@
+﻿using NAudio.CoreAudioApi;
 using NAudio.Wave;
-using NAudio.MediaFoundation;
-using NAudio.CoreAudioApi;
+using Serilog;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
-using Serilog;
 
 namespace VoicevoxRunCached.Services;
 
@@ -12,24 +11,24 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class AudioDeviceManager : IDisposable
 {
+    private readonly Task? _devicePreparationTask;
     private readonly AudioSettings _settings;
-    private MMDevice? _wasapiDevice;
-    private Task? _devicePreparationTask;
     private bool _disposed;
+    private MMDevice? _wasapiDevice;
 
     public AudioDeviceManager(AudioSettings settings)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         MediaFoundationManager.EnsureInitialized();
 
         // 設定でデバイス事前準備が有効な場合、開始
-        if (this._settings.PrepareDevice)
+        if (_settings.PrepareDevice)
         {
-            this._devicePreparationTask = Task.Run(async () =>
+            _devicePreparationTask = Task.Run(async () =>
             {
                 try
                 {
-                    await this.PrewarmAudioDeviceAsync(this._settings.PreparationDurationMs);
+                    await PrewarmAudioDeviceAsync(_settings.PreparationDurationMs);
                 }
                 catch
                 {
@@ -40,6 +39,64 @@ public class AudioDeviceManager : IDisposable
         }
     }
 
+    public void Dispose()
+    {
+        if (!_disposed)
+        {
+            try
+            {
+                // デバイス準備タスクのクリーンアップ
+                if (_devicePreparationTask != null)
+                {
+                    try
+                    {
+                        // 非同期タスクの適切な破棄
+                        if (!_devicePreparationTask.IsCompleted)
+                        {
+                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(AudioConstants.DevicePreparationCleanupTimeoutSeconds));
+                            _devicePreparationTask.Wait(cts.Token);
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        Log.Debug("デバイス準備タスクのクリーンアップがタイムアウトしました");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "デバイス準備タスクのクリーンアップ中にエラーが発生しました");
+                    }
+                }
+
+                // WASAPIデバイスのクリーンアップ
+                if (_wasapiDevice != null)
+                {
+                    try
+                    {
+                        _wasapiDevice.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warning(ex, "WASAPIデバイスの破棄中にエラーが発生しました");
+                    }
+                    finally
+                    {
+                        _wasapiDevice = null;
+                    }
+                }
+
+                _disposed = true;
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "AudioDeviceManagerの破棄中にエラーが発生しました");
+            }
+            finally
+            {
+                GC.SuppressFinalize(this);
+            }
+        }
+    }
+
     /// <summary>
     /// 設定に基づいて適切なWavePlayerを作成します
     /// </summary>
@@ -47,13 +104,13 @@ public class AudioDeviceManager : IDisposable
     public IWavePlayer CreateWavePlayer()
     {
         // WASAPIエンドポイントIDが指定されている場合は優先
-        if (!String.IsNullOrWhiteSpace(this._settings.OutputDeviceId))
+        if (!String.IsNullOrWhiteSpace(_settings.OutputDeviceId))
         {
             try
             {
                 using var enumerator = new MMDeviceEnumerator();
-                this._wasapiDevice = enumerator.GetDevice(this._settings.OutputDeviceId);
-                return new WasapiOut(this._wasapiDevice, AudioClientShareMode.Shared, false, 100);
+                _wasapiDevice = enumerator.GetDevice(_settings.OutputDeviceId);
+                return new WasapiOut(_wasapiDevice, AudioClientShareMode.Shared, false, 100);
             }
             catch
             {
@@ -69,9 +126,9 @@ public class AudioDeviceManager : IDisposable
             NumberOfBuffers = 3
         };
 
-        if (this._settings.OutputDevice >= 0)
+        if (_settings.OutputDevice >= 0)
         {
-            waveOut.DeviceNumber = this._settings.OutputDevice;
+            waveOut.DeviceNumber = _settings.OutputDevice;
         }
 
         return waveOut;
@@ -87,7 +144,7 @@ public class AudioDeviceManager : IDisposable
         try
         {
             // 無音音声を作成してデバイスを初期化
-            var generateSilence = this._settings.PreparationVolume <= 0;
+            var generateSilence = _settings.PreparationVolume <= 0;
             var silentWavData = AudioConversionUtility.CreateMinimalWavData(durationMs, generateSilence: generateSilence);
 
             using var audioStream = new MemoryStream(silentWavData);
@@ -95,9 +152,9 @@ public class AudioDeviceManager : IDisposable
             using var wavePlayer = new WaveOutEvent();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(AudioConstants.DevicePreparationTimeoutSeconds)); // デバイス準備のタイムアウト
 
-            if (this._settings.OutputDevice >= 0)
+            if (_settings.OutputDevice >= 0)
             {
-                wavePlayer.DeviceNumber = this._settings.OutputDevice;
+                wavePlayer.DeviceNumber = _settings.OutputDevice;
             }
 
             // メイン再生と同じバッファ設定を使用
@@ -106,13 +163,13 @@ public class AudioDeviceManager : IDisposable
 
             // 効果的なデバイス準備のため、非常に低いが聞こえる音量を使用
             // 音量が0の場合は完全に無音
-            if (this._settings.PreparationVolume <= 0)
+            if (_settings.PreparationVolume <= 0)
             {
                 wavePlayer.Volume = 0.0f; // 完全に無音
             }
             else
             {
-                wavePlayer.Volume = (float)Math.Max(0.001, Math.Min(1.0, this._settings.PreparationVolume));
+                wavePlayer.Volume = (float)Math.Max(0.001, Math.Min(1.0, _settings.PreparationVolume));
             }
 
             var tcs = new TaskCompletionSource<bool>();
@@ -144,11 +201,11 @@ public class AudioDeviceManager : IDisposable
     /// <returns>準備完了を表すTask</returns>
     public async Task EnsureDeviceReadyAsync()
     {
-        if (this._settings.PrepareDevice && this._devicePreparationTask != null)
+        if (_settings.PrepareDevice && _devicePreparationTask != null)
         {
             try
             {
-                await this._devicePreparationTask;
+                await _devicePreparationTask;
             }
             catch
             {
@@ -175,78 +232,20 @@ public class AudioDeviceManager : IDisposable
         }
     }
 
-    public void Dispose()
-    {
-        if (!this._disposed)
-        {
-            try
-            {
-                // デバイス準備タスクのクリーンアップ
-                if (this._devicePreparationTask != null)
-                {
-                    try
-                    {
-                        // 非同期タスクの適切な破棄
-                        if (!this._devicePreparationTask.IsCompleted)
-                        {
-                            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(AudioConstants.DevicePreparationCleanupTimeoutSeconds));
-                            this._devicePreparationTask.Wait(cts.Token);
-                        }
-                    }
-                    catch (OperationCanceledException)
-                    {
-                        Log.Debug("デバイス準備タスクのクリーンアップがタイムアウトしました");
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warning(ex, "デバイス準備タスクのクリーンアップ中にエラーが発生しました");
-                    }
-                }
-
-                // WASAPIデバイスのクリーンアップ
-                if (this._wasapiDevice != null)
-                {
-                    try
-                    {
-                        this._wasapiDevice.Dispose();
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warning(ex, "WASAPIデバイスの破棄中にエラーが発生しました");
-                    }
-                    finally
-                    {
-                        this._wasapiDevice = null;
-                    }
-                }
-
-                this._disposed = true;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "AudioDeviceManagerの破棄中にエラーが発生しました");
-            }
-            finally
-            {
-                GC.SuppressFinalize(this);
-            }
-        }
-    }
-
     // ファイナライザー（安全性のため）
     ~AudioDeviceManager()
     {
-        this.Dispose(false);
+        Dispose(false);
     }
 
     protected virtual void Dispose(bool disposing)
     {
-        if (!this._disposed)
+        if (!_disposed)
         {
             if (disposing)
             {
                 // マネージドリソースの破棄
-                this.Dispose();
+                Dispose();
             }
             else
             {

@@ -1,5 +1,4 @@
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Configuration;
 using Serilog;
 using Serilog.Events;
 using Serilog.Sinks.SystemConsole.Themes;
@@ -12,14 +11,14 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class LoggingManager
 {
-    private readonly LoggingSettings _settings;
     private readonly IConfiguration _configuration;
+    private readonly LoggingSettings _settings;
     private bool _isInitialized = false;
 
     public LoggingManager(LoggingSettings settings, IConfiguration configuration)
     {
-        this._settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        this._configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
     }
 
     /// <summary>
@@ -27,39 +26,39 @@ public class LoggingManager
     /// </summary>
     public void ConfigureSerilog()
     {
-        if (this._isInitialized)
+        if (_isInitialized)
         {
             Log.Warning("Serilogは既に初期化されています");
             return;
         }
 
         var loggerConfiguration = new LoggerConfiguration()
-            .MinimumLevel.Is(this.GetLogLevel(this._settings.Level))
+            .MinimumLevel.Is(GetLogLevel(_settings.Level))
             .Enrich.FromLogContext()
             .Enrich.WithProperty("Application", "VoicevoxRunCached")
-            .Enrich.WithProperty("Version", this.GetApplicationVersion())
+            .Enrich.WithProperty("Version", GetApplicationVersion())
             .Enrich.WithProperty("Environment", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production");
 
         // コンソール出力の設定
-        this.ConfigureConsoleLogging(loggerConfiguration);
+        ConfigureConsoleLogging(loggerConfiguration);
 
         // ファイル出力の設定（有効な場合）
-        if (this._settings.EnableFileLogging)
+        if (_settings.EnableFileLogging)
         {
-            this.ConfigureFileLogging(loggerConfiguration);
+            ConfigureFileLogging(loggerConfiguration);
         }
 
         // パフォーマンスメトリクスの設定
-        this.ConfigurePerformanceLogging(loggerConfiguration);
+        ConfigurePerformanceLogging(loggerConfiguration);
 
         // グローバルロガーを設定
         Log.Logger = loggerConfiguration.CreateLogger();
 
         // アプリケーション開始ログ
         Log.Information("VoicevoxRunCached アプリケーションが開始されました - ログレベル: {LogLevel}, ファイル出力: {FileLogging}",
-            this._settings.Level, this._settings.EnableFileLogging);
+            _settings.Level, _settings.EnableFileLogging);
 
-        this._isInitialized = true;
+        _isInitialized = true;
     }
 
     /// <summary>
@@ -67,7 +66,7 @@ public class LoggingManager
     /// </summary>
     private void ConfigureConsoleLogging(LoggerConfiguration config)
     {
-        if (this._settings.Format.ToLowerInvariant() == "json")
+        if (_settings.Format.ToLowerInvariant() == "json")
         {
             // JSON形式の構造化ログ
             config.WriteTo.Console(
@@ -96,8 +95,8 @@ public class LoggingManager
         config.WriteTo.File(
             path: logFilePath,
             rollingInterval: RollingInterval.Day,
-            retainedFileCountLimit: this._settings.MaxFileCount,
-            fileSizeLimitBytes: this._settings.MaxFileSizeMB * 1024 * 1024,
+            retainedFileCountLimit: _settings.MaxFileCount,
+            fileSizeLimitBytes: _settings.MaxFileSizeMB * 1024 * 1024,
             rollOnFileSizeLimit: true,
             outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}",
             shared: true,
@@ -240,11 +239,11 @@ public class LoggingManager
     /// </summary>
     public void Cleanup()
     {
-        if (this._isInitialized)
+        if (_isInitialized)
         {
             Log.Information("VoicevoxRunCached アプリケーションが終了します");
             Log.CloseAndFlush();
-            this._isInitialized = false;
+            _isInitialized = false;
         }
     }
 }

@@ -1,6 +1,5 @@
+﻿using Serilog;
 using VoicevoxRunCached.Models;
-using VoicevoxRunCached.Services;
-using Serilog;
 
 namespace VoicevoxRunCached.Services.Audio;
 
@@ -13,7 +12,7 @@ public class FillerInsertionService
 
     public FillerInsertionService(FillerManager? fillerManager = null)
     {
-        this._fillerManager = fillerManager;
+        _fillerManager = fillerManager;
     }
 
     /// <summary>
@@ -25,7 +24,7 @@ public class FillerInsertionService
     /// <returns>フィラー音声データ（挿入不要の場合はnull）</returns>
     public async Task<byte[]?> CheckAndGetFillerAsync(int currentIndex, List<TextSegment> segments, CancellationToken cancellationToken = default)
     {
-        if (this._fillerManager == null)
+        if (_fillerManager == null)
         {
             Log.Debug("フィラーマネージャーが設定されていないため、フィラーは挿入されません");
             return null;
@@ -39,14 +38,14 @@ public class FillerInsertionService
         }
 
         var nextSegment = segments[currentIndex + 1];
-        bool nextSegmentReady = this.IsSegmentReady(nextSegment);
+        bool nextSegmentReady = IsSegmentReady(nextSegment);
 
         if (!nextSegmentReady)
         {
             try
             {
                 Log.Debug("次のセグメントの準備が間に合わないため、フィラー音声を取得します");
-                var fillerAudio = await this._fillerManager.GetRandomFillerAudioAsync();
+                var fillerAudio = await _fillerManager.GetRandomFillerAudioAsync();
                 if (fillerAudio != null)
                 {
                     Log.Information("フィラー音声を取得しました (サイズ: {Size} bytes)", fillerAudio.Length);
@@ -91,13 +90,13 @@ public class FillerInsertionService
     /// <returns>フィラー挿入が必要な場合true</returns>
     public bool NeedsFillerInsertion(int currentIndex, List<TextSegment> segments)
     {
-        if (this._fillerManager == null || currentIndex >= segments.Count - 1)
+        if (_fillerManager == null || currentIndex >= segments.Count - 1)
         {
             return false;
         }
 
         var nextSegment = segments[currentIndex + 1];
-        return !this.IsSegmentReady(nextSegment);
+        return !IsSegmentReady(nextSegment);
     }
 
     /// <summary>
@@ -107,7 +106,7 @@ public class FillerInsertionService
     /// <returns>フィラー挿入の統計情報</returns>
     public FillerInsertionStats GetFillerInsertionStats(List<TextSegment> segments)
     {
-        if (this._fillerManager == null)
+        if (_fillerManager == null)
         {
             return new FillerInsertionStats { TotalSegments = segments.Count, FillerInsertions = 0 };
         }
@@ -115,7 +114,7 @@ public class FillerInsertionService
         int fillerInsertions = 0;
         for (int i = 0; i < segments.Count - 1; i++)
         {
-            if (this.NeedsFillerInsertion(i, segments))
+            if (NeedsFillerInsertion(i, segments))
             {
                 fillerInsertions++;
             }

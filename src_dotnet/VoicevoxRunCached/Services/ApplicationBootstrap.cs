@@ -1,9 +1,8 @@
-using Microsoft.Extensions.Logging;
+﻿using System.Runtime.InteropServices;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Serilog;
-using System.Runtime.InteropServices;
 using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Configuration.Validators;
 
 namespace VoicevoxRunCached.Services;
 
@@ -12,6 +11,9 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class ApplicationBootstrap
 {
+    private const int STD_OUTPUT_HANDLE = -11;
+    private const uint ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004;
+
     /// <summary>
     /// アプリケーションの初期化を実行します
     /// </summary>
@@ -119,7 +121,4 @@ public class ApplicationBootstrap
 
     [DllImport("kernel32.dll")]
     private static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
-
-    private const int STD_OUTPUT_HANDLE = -11;
-    private const uint ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004;
 }
