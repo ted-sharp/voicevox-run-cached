@@ -31,7 +31,7 @@ public class CacheCommandHandler
             cacheManager.ClearAllCache();
 
             // フィラーキャッシュも設定されたフィラーディレクトリを使用してクリア
-            var fillerManager = new FillerManager(_settings.Filler, cacheManager, _settings.VoiceVox.DefaultSpeaker);
+            var fillerManager = new FillerManager(_settings.Filler, _settings.VoiceVox.DefaultSpeaker);
             await fillerManager.ClearFillerCacheAsync();
 
             ConsoleHelper.WriteSuccess("Cache cleared successfully!", _logger);

@@ -6,16 +6,14 @@ namespace VoicevoxRunCached.Services;
 
 public class FillerManager
 {
-    private readonly AudioCacheManager _cacheManager;
     private readonly int _defaultSpeaker;
     private readonly Random _random = new Random(); // スレッドセーフなRandomインスタンス
     private readonly FillerSettings _settings;
     private string? _lastUsedFiller; // 最後に使用したフィラーを記録
 
-    public FillerManager(FillerSettings settings, AudioCacheManager cacheManager, int defaultSpeakerId)
+    public FillerManager(FillerSettings settings, int defaultSpeakerId)
     {
         _settings = settings;
-        _cacheManager = cacheManager;
         _defaultSpeaker = defaultSpeakerId;
         ResolveFillerBaseDirectory();
 
@@ -64,7 +62,7 @@ public class FillerManager
             };
 
             // Check if already cached (mp3 or wav)
-            var cacheKey = _cacheManager.ComputeCacheKey(fillerRequest);
+            var cacheKey = AudioCacheManager.ComputeCacheKey(fillerRequest);
             var fillerCacheMp3 = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
             var fillerCacheWav = Path.Combine(_settings.Directory, $"{cacheKey}.wav");
 
@@ -138,7 +136,7 @@ public class FillerManager
             Volume = 1.0
         };
 
-        var cacheKey = _cacheManager.ComputeCacheKey(fillerRequest);
+        var cacheKey = AudioCacheManager.ComputeCacheKey(fillerRequest);
         var fillerCacheMp3 = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
         var fillerCacheWav = Path.Combine(_settings.Directory, $"{cacheKey}.wav");
 
@@ -182,7 +180,7 @@ public class FillerManager
         return null;
     }
 
-    private async Task SaveFillerAudioAsync(string filePath, byte[] audioData)
+    private static async Task SaveFillerAudioAsync(string filePath, byte[] audioData)
     {
         var converted = await ConvertWavToMp3Async(audioData);
         // Detect whether converted data is actually MP3 or WAV, then choose extension accordingly

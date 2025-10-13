@@ -152,7 +152,7 @@ public class IndividualSegmentPlayer : IDisposable
     /// <param name="isFirstSegment">最初のセグメントかどうか</param>
     /// <param name="cancellationToken">キャンセレーショントークン</param>
     /// <returns>遅延完了を表すTask</returns>
-    private async Task ExecuteSegmentDelayAsync(bool isFirstSegment, CancellationToken cancellationToken)
+    private static async Task ExecuteSegmentDelayAsync(bool isFirstSegment, CancellationToken cancellationToken)
     {
         if (isFirstSegment)
         {
@@ -173,7 +173,7 @@ public class IndividualSegmentPlayer : IDisposable
     /// </summary>
     /// <param name="isFirstSegment">最初のセグメントかどうか</param>
     /// <returns>遅延時間（ミリ秒）</returns>
-    private int CalculatePlaybackDelay(bool isFirstSegment)
+    private static int CalculatePlaybackDelay(bool isFirstSegment)
     {
         return isFirstSegment ? 150 : 100; // 最初のセグメントは長めの遅延
     }

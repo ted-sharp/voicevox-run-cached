@@ -91,7 +91,7 @@ public class AudioFormatDetector
     /// フォーマットが不明な場合のフォールバック処理
     /// MP3を優先して試行し、失敗した場合はWAVとして処理
     /// </summary>
-    private WaveStream CreateFallbackWaveStream(MemoryStream audioStream)
+    private static WaveStream CreateFallbackWaveStream(MemoryStream audioStream)
     {
         try
         {

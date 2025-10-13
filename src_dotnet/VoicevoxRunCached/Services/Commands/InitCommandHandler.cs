@@ -33,8 +33,7 @@ public class InitCommandHandler
                 return 1;
             }
 
-            var cacheManager = new AudioCacheManager(_settings.Cache);
-            var fillerManager = new FillerManager(_settings.Filler, cacheManager, _settings.VoiceVox.DefaultSpeaker);
+            var fillerManager = new FillerManager(_settings.Filler, _settings.VoiceVox.DefaultSpeaker);
 
             ConsoleHelper.WriteLine("Initializing filler cache...", _logger);
             await fillerManager.InitializeFillerCacheAsync(_settings);

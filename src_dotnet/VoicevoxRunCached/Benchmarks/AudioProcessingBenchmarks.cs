@@ -50,7 +50,7 @@ public class AudioProcessingBenchmarks
     [Benchmark]
     public string CacheKeyGeneration()
     {
-        return _cacheManager.ComputeCacheKey(_testRequest);
+        return AudioCacheManager.ComputeCacheKey(_testRequest);
     }
 
     [Benchmark]

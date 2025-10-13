@@ -75,7 +75,7 @@ public class FillerInsertionService
     /// </summary>
     /// <param name="segment">チェックするセグメント</param>
     /// <returns>準備完了の場合true</returns>
-    private bool IsSegmentReady(TextSegment segment)
+    private static bool IsSegmentReady(TextSegment segment)
     {
         return segment.IsCached &&
                segment.AudioData != null &&

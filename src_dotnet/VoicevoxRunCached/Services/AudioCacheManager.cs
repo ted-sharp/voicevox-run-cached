@@ -335,7 +335,7 @@ public class AudioCacheManager : IDisposable
         }
     }
 
-    public string ComputeCacheKey(VoiceRequest request)
+    public static string ComputeCacheKey(VoiceRequest request)
     {
         var keyString = String.Format(System.Globalization.CultureInfo.InvariantCulture,
             "{0}|{1}|{2:F2}|{3:F2}|{4:F2}", request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
