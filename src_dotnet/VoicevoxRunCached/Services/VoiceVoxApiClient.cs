@@ -54,7 +54,7 @@ public class VoiceVoxApiClient : IDisposable
 
     public async Task<List<Speaker>> GetSpeakersAsync(CancellationToken cancellationToken = default)
     {
-        try
+        return await ExecuteApiCallWithErrorHandlingAsync(async () =>
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_settings.BaseUrl}/speakers");
             var response = await SendRequestAsync(request, cancellationToken);
@@ -62,59 +62,7 @@ public class VoiceVoxApiClient : IDisposable
 
             var speakers = JsonSerializer.Deserialize<List<Speaker>>(content, JsonOptions);
             return speakers ?? [];
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode.HasValue)
-        {
-            Log.Error(ex, "Failed to get speakers from VoiceVox API - StatusCode: {StatusCode}", ex.StatusCode);
-            throw CreateVoiceVoxApiExceptionFromHttpStatus(ex.StatusCode.Value, "Failed to get speakers", ex);
-        }
-        catch (TaskCanceledException ex) when (cancellationToken.IsCancellationRequested)
-        {
-            Log.Information("Speakers取得がキャンセルされました");
-            throw new VoicevoxRunCachedException(
-                ErrorCodes.General.OperationCancelled,
-                "Speakers retrieval was cancelled",
-                "スピーカー情報の取得がキャンセルされました。",
-                ex,
-                "操作を再実行してください。"
-            );
-        }
-        catch (TaskCanceledException ex)
-        {
-            Log.Error(ex, "Speakers取得がタイムアウトしました");
-            throw new VoiceVoxApiException(
-                ErrorCodes.Api.ApiTimeout,
-                $"Speakers retrieval timed out: {ex.Message}",
-                "スピーカー情報の取得がタイムアウトしました。",
-                null,
-                null,
-                "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。"
-            );
-        }
-        catch (JsonException ex)
-        {
-            Log.Error(ex, "SpeakersレスポンスのJSON解析に失敗しました");
-            throw new VoiceVoxApiException(
-                ErrorCodes.Api.ApiResponseInvalid,
-                $"Failed to parse speakers response: {ex.Message}",
-                "スピーカー情報の解析に失敗しました。",
-                null,
-                null,
-                "VOICEVOXエンジンのバージョンを確認し、必要に応じて更新してください。"
-            );
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Unexpected error while getting speakers");
-            throw new VoiceVoxApiException(
-                ErrorCodes.General.UnknownError,
-                $"Unexpected error while getting speakers: {ex.Message}",
-                "スピーカー情報の取得中に予期しないエラーが発生しました。",
-                ex,
-                null,
-                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
-            );
-        }
+        }, "get speakers", cancellationToken);
     }
 
     public async Task InitializeSpeakerAsync(int speakerId, CancellationToken cancellationToken = default)
@@ -134,7 +82,7 @@ public class VoiceVoxApiClient : IDisposable
 
     public async Task<string> GenerateAudioQueryAsync(VoiceRequest request, CancellationToken cancellationToken = default)
     {
-        try
+        return await ExecuteApiCallWithErrorHandlingAsync(async () =>
         {
             // デバッグ用のログ出力
             Log.Information("Generating audio query for request: Text='{Text}', SpeakerId={SpeakerId}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
@@ -161,64 +109,12 @@ public class VoiceVoxApiClient : IDisposable
 
             Log.Debug("Audio query generated successfully - Length: {Length} characters", content.Length);
             return content;
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode.HasValue)
-        {
-            Log.Error(ex, "Failed to generate audio query - StatusCode: {StatusCode}", ex.StatusCode);
-            throw CreateVoiceVoxApiExceptionFromHttpStatus(ex.StatusCode.Value, "Failed to generate audio query", ex);
-        }
-        catch (TaskCanceledException ex) when (cancellationToken.IsCancellationRequested)
-        {
-            Log.Information("Audio query生成がキャンセルされました");
-            throw new VoicevoxRunCachedException(
-                ErrorCodes.General.OperationCancelled,
-                "Audio query generation was cancelled",
-                "音声クエリの生成がキャンセルされました。",
-                ex,
-                "操作を再実行してください。"
-            );
-        }
-        catch (TaskCanceledException ex)
-        {
-            Log.Error(ex, "Audio query生成がタイムアウトしました");
-            throw new VoiceVoxApiException(
-                ErrorCodes.Api.ApiTimeout,
-                $"Audio query generation timed out: {ex.Message}",
-                "音声クエリの生成がタイムアウトしました。",
-                null,
-                null,
-                "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。"
-            );
-        }
-        catch (JsonException ex)
-        {
-            Log.Error(ex, "Audio queryレスポンスのJSON解析に失敗しました");
-            throw new VoiceVoxApiException(
-                ErrorCodes.Api.ApiResponseInvalid,
-                $"Failed to parse audio query response: {ex.Message}",
-                "音声クエリの解析に失敗しました。",
-                null,
-                null,
-                "VOICEVOXエンジンのバージョンを確認し、必要に応じて更新してください。"
-            );
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "Audio query生成中に予期しないエラーが発生しました");
-            throw new VoiceVoxApiException(
-                ErrorCodes.General.UnknownError,
-                $"Unexpected error during audio query generation: {ex.Message}",
-                "音声クエリの生成中に予期しないエラーが発生しました。",
-                ex,
-                null,
-                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
-            );
-        }
+        }, "generate audio query", cancellationToken);
     }
 
     public async Task<byte[]> SynthesizeAudioAsync(string audioQuery, int speakerId, CancellationToken cancellationToken = default)
     {
-        try
+        return await ExecuteApiCallWithErrorHandlingAsync(async () =>
         {
             // デバッグ用のログ出力
             Log.Information("Synthesizing audio for speaker {SpeakerId} with audioQuery length: {Length}", speakerId, audioQuery.Length);
@@ -237,47 +133,7 @@ public class VoiceVoxApiClient : IDisposable
             var response = await SendRequestAsync(httpRequest, cancellationToken);
             Log.Information("Synthesis response received, status: {StatusCode}", response.StatusCode);
             return await response.Content.ReadAsByteArrayAsync(cancellationToken);
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode.HasValue)
-        {
-            Log.Error(ex, "Failed to synthesize audio - SpeakerId: {SpeakerId}, StatusCode: {StatusCode}", speakerId, ex.StatusCode);
-            throw CreateVoiceVoxApiExceptionFromHttpStatus(ex.StatusCode.Value, "Failed to synthesize audio", ex);
-        }
-        catch (TaskCanceledException ex) when (cancellationToken.IsCancellationRequested)
-        {
-            Log.Information("音声合成がキャンセルされました - SpeakerId: {SpeakerId}", speakerId);
-            throw new VoicevoxRunCachedException(
-                ErrorCodes.General.OperationCancelled,
-                "Audio synthesis was cancelled",
-                "音声合成がキャンセルされました。",
-                ex,
-                "操作を再実行してください。"
-            );
-        }
-        catch (TaskCanceledException ex)
-        {
-            Log.Error(ex, "音声合成がタイムアウトしました - SpeakerId: {SpeakerId}", speakerId);
-            throw new VoiceVoxApiException(
-                ErrorCodes.Api.ApiTimeout,
-                $"Audio synthesis timed out: {ex.Message}",
-                "音声合成がタイムアウトしました。",
-                null,
-                null,
-                "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。"
-            );
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "音声合成中に予期しないエラーが発生しました - SpeakerId: {SpeakerId}", speakerId);
-            throw new VoiceVoxApiException(
-                ErrorCodes.General.UnknownError,
-                $"Unexpected error during audio synthesis: {ex.Message}",
-                "音声合成中に予期しないエラーが発生しました。",
-                ex,
-                null,
-                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
-            );
-        }
+        }, "synthesize audio", cancellationToken);
     }
 
     // C# 13 Enhanced helper method with generic return type
@@ -294,6 +150,72 @@ public class VoiceVoxApiClient : IDisposable
         catch (TaskCanceledException ex)
         {
             throw new InvalidOperationException($"{errorMessage}: Request timed out", ex);
+        }
+    }
+
+    /// <summary>
+    /// API呼び出しを実行し、共通のエラーハンドリングを適用します
+    /// </summary>
+    private async Task<T> ExecuteApiCallWithErrorHandlingAsync<T>(
+        Func<Task<T>> apiCall,
+        string operationName,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await apiCall();
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode.HasValue)
+        {
+            Log.Error(ex, "Failed to {OperationName} - StatusCode: {StatusCode}", operationName, ex.StatusCode);
+            throw CreateVoiceVoxApiExceptionFromHttpStatus(ex.StatusCode.Value, $"Failed to {operationName}", ex);
+        }
+        catch (TaskCanceledException ex) when (cancellationToken.IsCancellationRequested)
+        {
+            Log.Information("{OperationName}がキャンセルされました", operationName);
+            throw new VoicevoxRunCachedException(
+                ErrorCodes.General.OperationCancelled,
+                $"{operationName} was cancelled",
+                $"{operationName}がキャンセルされました。",
+                ex,
+                "操作を再実行してください。"
+            );
+        }
+        catch (TaskCanceledException ex)
+        {
+            Log.Error(ex, "{OperationName}がタイムアウトしました", operationName);
+            throw new VoiceVoxApiException(
+                ErrorCodes.Api.ApiTimeout,
+                $"{operationName} timed out: {ex.Message}",
+                $"{operationName}がタイムアウトしました。",
+                null,
+                null,
+                "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。"
+            );
+        }
+        catch (JsonException ex)
+        {
+            Log.Error(ex, "{OperationName}レスポンスのJSON解析に失敗しました", operationName);
+            throw new VoiceVoxApiException(
+                ErrorCodes.Api.ApiResponseInvalid,
+                $"Failed to parse {operationName} response: {ex.Message}",
+                $"{operationName}の解析に失敗しました。",
+                null,
+                null,
+                "VOICEVOXエンジンのバージョンを確認し、必要に応じて更新してください。"
+            );
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "{OperationName}中に予期しないエラーが発生しました", operationName);
+            throw new VoiceVoxApiException(
+                ErrorCodes.General.UnknownError,
+                $"Unexpected error during {operationName}: {ex.Message}",
+                $"{operationName}中に予期しないエラーが発生しました。",
+                ex,
+                null,
+                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
+            );
         }
     }
 

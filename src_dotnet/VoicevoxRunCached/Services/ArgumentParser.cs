@@ -7,6 +7,16 @@ using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services;
 
+/// <summary>
+/// テキスト読み上げコマンドのオプション
+/// </summary>
+public record TextToSpeechOptions(
+    bool NoCache,
+    bool CacheOnly,
+    bool Verbose,
+    string? OutPath,
+    bool NoPlay);
+
 public static class ArgumentParser
 {
     // フラグ引数の定義（--flag → --flag true）
@@ -145,6 +155,33 @@ public static class ArgumentParser
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// テキスト読み上げコマンドのオプションを解析します
+    /// </summary>
+    /// <param name="args">コマンドライン引数</param>
+    /// <returns>解析されたオプション</returns>
+    public static TextToSpeechOptions ParseTextToSpeechOptions(string[] args)
+    {
+        var processedArgs = PreprocessArgs(args);
+        var noCache = processedArgs.Contains("--no-cache");
+        var cacheOnly = processedArgs.Contains("--cache-only");
+        var verbose = processedArgs.Contains("--verbose");
+        var noPlay = processedArgs.Contains("--no-play");
+
+        // --out=形式と--out/-o形式の両方をサポート
+        var outPath = processedArgs.FirstOrDefault(arg => arg.StartsWith("--out="))?.Substring("--out=".Length)
+            ?? GetStringOption(args, "--out")
+            ?? GetStringOption(args, "-o");
+
+        return new TextToSpeechOptions(
+            NoCache: noCache,
+            CacheOnly: cacheOnly,
+            Verbose: verbose,
+            OutPath: outPath,
+            NoPlay: noPlay
+        );
     }
 
     public static void ShowUsage()

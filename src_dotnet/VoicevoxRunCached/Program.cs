@@ -51,12 +51,7 @@ static class Program
         }
         catch (Exception ex)
         {
-            var userMessage = ErrorHandlingUtility.GetUserFriendlyMessageFromException(ex);
-            var solution = ErrorHandlingUtility.GetSuggestedSolutionFromException(ex);
-            var errorCode = ErrorHandlingUtility.GetErrorCodeFromException(ex);
-            Console.WriteLine($"\e[31mFatal Error: {userMessage} - {ex.Message}\e[0m");
-            Console.WriteLine($"\e[33m{solution}\e[0m");
-            return ErrorHandlingUtility.GetExitCodeFromErrorCode(errorCode);
+            return ErrorHandlingUtility.HandleExceptionAndGetExitCode(ex);
         }
     }
 }

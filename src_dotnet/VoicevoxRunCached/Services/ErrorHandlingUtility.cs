@@ -159,4 +159,32 @@ public static class ErrorHandlingUtility
         logger.LogInformation("ユーザーメッセージ: {UserMessage}", userMessage);
         logger.LogInformation("推奨される解決策: {SuggestedSolution}", suggestedSolution);
     }
+
+    /// <summary>
+    /// 例外を処理して、エラーメッセージを出力し、終了コードを返します
+    /// </summary>
+    /// <param name="ex">処理する例外</param>
+    /// <param name="logger">ロガー（オプション）</param>
+    /// <param name="operation">操作名（ログ用、オプション）</param>
+    /// <param name="context">コンテキスト（ログ用、オプション）</param>
+    /// <returns>終了コード</returns>
+    public static int HandleExceptionAndGetExitCode(Exception ex, ILogger? logger = null, string? operation = null, string? context = null)
+    {
+        var errorCode = GetErrorCodeFromException(ex);
+        var userMessage = GetUserFriendlyMessageFromException(ex);
+        var solution = GetSuggestedSolutionFromException(ex);
+
+        // ログに記録
+        if (logger != null && !String.IsNullOrEmpty(operation))
+        {
+            logger.LogError(ex, "エラーが発生しました - 操作: {Operation}, エラーコード: {ErrorCode}, コンテキスト: {Context}",
+                operation, errorCode, context ?? "なし");
+        }
+
+        // コンソールに出力
+        ConsoleHelper.WriteError($"Error: {userMessage} - {ex.Message}", logger);
+        ConsoleHelper.WriteLine($"解決策: {solution}", logger);
+
+        return GetExitCodeFromErrorCode(errorCode);
+    }
 }
