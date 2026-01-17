@@ -21,6 +21,11 @@ public static class AudioConstants
     public const int SubsequentSegmentDelayMs = 20;
 
     /// <summary>
+    /// バッファフラッシュのための遅延時間（ミリ秒）
+    /// </summary>
+    public const int BufferFlushDelayMs = 150;
+
+    /// <summary>
     /// FFmpeg変換のタイムアウト時間（ミリ秒）
     /// </summary>
     public const int FfmpegTimeoutMs = 30000;

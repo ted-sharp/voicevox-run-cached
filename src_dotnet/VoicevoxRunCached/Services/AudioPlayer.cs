@@ -51,7 +51,7 @@ public class AudioPlayer : IDisposable
         await _deviceManager.EnsureDeviceReadyAsync();
 
         // 再生制御クラスに委譲
-        await _playbackController.PlayAudioStreamingAsync(audioData, cacheCallback, cancellationToken);
+        await _playbackController.PlayAudioAsync(audioData, cacheCallback, cancellationToken);
     }
 
     /// <summary>
@@ -107,7 +107,7 @@ public class AudioPlayer : IDisposable
         await _deviceManager.EnsureDeviceReadyAsync();
 
         // 再生制御クラスに委譲
-        await _playbackController.PlayAudioAsync(audioData, cancellationToken);
+        await _playbackController.PlayAudioAsync(audioData, cancellationToken: cancellationToken);
     }
 
     /// <summary>
