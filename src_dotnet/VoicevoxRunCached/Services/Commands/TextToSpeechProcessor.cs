@@ -8,13 +8,15 @@ namespace VoicevoxRunCached.Services.Commands;
 /// <summary>
 /// テキスト読み上げのメイン処理フロー制御を行うクラス
 /// </summary>
-public class TextToSpeechProcessor
+public class TextToSpeechProcessor : IDisposable
 {
     private readonly AudioExportService _audioExportService;
+    private readonly AudioPlaybackController _playbackController;
     private readonly EngineCoordinator _engineCoordinator;
     private readonly ILogger _logger;
     private readonly SegmentProcessor _segmentProcessor;
     private readonly AppSettings _settings;
+    private bool _disposed;
 
     public TextToSpeechProcessor(AppSettings settings, ILogger logger)
     {
@@ -23,6 +25,32 @@ public class TextToSpeechProcessor
         _engineCoordinator = new EngineCoordinator(settings.VoiceVox, logger);
         _audioExportService = new AudioExportService(settings, logger);
         _segmentProcessor = new SegmentProcessor(settings, logger);
+        _playbackController = new AudioPlaybackController(settings.Audio, new AudioFormatDetector());
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!_disposed)
+        {
+            if (disposing)
+            {
+                try
+                {
+                    _playbackController?.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogError(ex, "TextToSpeechProcessorの破棄中にエラーが発生しました");
+                }
+            }
+            _disposed = true;
+        }
     }
 
     /// <summary>
@@ -159,14 +187,11 @@ public class TextToSpeechProcessor
 
     private async Task PlayAudioSegmentsAsync(List<TextSegment> segments, CancellationToken cancellationToken)
     {
-        var formatDetector = new AudioFormatDetector();
-        var playbackController = new AudioPlaybackController(_settings.Audio, formatDetector);
-
         foreach (var segment in segments)
         {
             if (segment.AudioData != null)
             {
-                await playbackController.PlayAudioAsync(segment.AudioData, cancellationToken);
+                await _playbackController.PlayAudioAsync(segment.AudioData, cancellationToken: cancellationToken);
             }
         }
     }
