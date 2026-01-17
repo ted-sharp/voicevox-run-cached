@@ -89,10 +89,27 @@ public class TextToSpeechProcessor : IDisposable
                 return 1;
             }
 
+            // キャッシュのみモードの場合、キャッシュされていないセグメントがあるかチェック
+            if (cacheOnly)
+            {
+                var uncachedSegments = segments.Where(s => !s.IsCached).ToList();
+                if (uncachedSegments.Count > 0)
+                {
+                    ConsoleHelper.WriteWarning($"Warning: {uncachedSegments.Count} segments are not cached", _logger);
+                    return 1;
+                }
+            }
+
             // キャッシュにないセグメントを合成する
             await SynthesizeMissingSegmentsAsync(segments, request, noCache, cancellationToken);
 
-            await PlayAudioSegmentsAsync(segments, cancellationToken);
+            // 音声再生処理（フィラー機能付き）
+            var playbackResult = await ProcessAudioPlaybackAsync(segments, verbose, cancellationToken);
+            if (playbackResult != 0)
+            {
+                return playbackResult;
+            }
+
             await WaitForExportTaskAsync(exportTask);
 
             if (verbose)
@@ -188,14 +205,40 @@ public class TextToSpeechProcessor : IDisposable
         return 0;
     }
 
-    private async Task PlayAudioSegmentsAsync(List<TextSegment> segments, CancellationToken cancellationToken)
+    /// <summary>
+    /// 音声再生処理を実行します（フィラー機能付き）
+    /// </summary>
+    /// <param name="segments">セグメントのリスト</param>
+    /// <param name="verbose">詳細出力フラグ</param>
+    /// <param name="cancellationToken">キャンセレーショントークン</param>
+    /// <returns>処理結果の終了コード</returns>
+    private async Task<int> ProcessAudioPlaybackAsync(List<TextSegment> segments, bool verbose, CancellationToken cancellationToken)
     {
-        foreach (var segment in segments)
+        try
         {
-            if (segment.AudioData != null)
+            var playbackStartTime = DateTime.UtcNow;
+
+            // 音声再生処理
+            var cacheManager = new AudioCacheManager(_settings.Cache);
+            using var processingChannel = new AudioProcessingChannel(cacheManager, new VoiceVoxApiClient(_settings.VoiceVox));
+            var fillerManager = new FillerManager(_settings.Filler, _settings.VoiceVox.DefaultSpeaker);
+
+            await _audioPlayer.PlayAudioSequentiallyWithGenerationAsync(
+                segments, processingChannel, fillerManager, cancellationToken);
+
+            var playbackElapsed = (DateTime.UtcNow - playbackStartTime).TotalMilliseconds;
+            if (verbose)
             {
-                await _audioPlayer.PlayAudioAsync(segment.AudioData, cancellationToken);
+                ConsoleHelper.WriteLine($"Audio playback completed in {playbackElapsed:F1}ms", _logger);
             }
+
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "音声再生処理中にエラーが発生しました");
+            ConsoleHelper.WriteError($"Error: Failed to play audio: {ex.Message}", _logger);
+            return 1;
         }
     }
 
