@@ -386,10 +386,41 @@ public class AudioCacheManager : IDisposable
 
             Log.Information("すべてのキャッシュをクリアしました - メモリ・ディスク共にクリア済み");
         }
+        catch (UnauthorizedAccessException ex)
+        {
+            Log.Error(ex, "キャッシュのクリア中にアクセス権限エラーが発生しました");
+            throw new CacheException(
+                ErrorCodes.Cache.CachePermissionDenied,
+                $"Access denied while clearing cache: {ex.Message}",
+                "キャッシュのクリア中にアクセス権限エラーが発生しました。",
+                null,
+                _settings.Directory,
+                "キャッシュディレクトリのアクセス権限を確認してください。"
+            );
+        }
+        catch (IOException ex)
+        {
+            Log.Error(ex, "キャッシュのクリア中にI/Oエラーが発生しました");
+            throw new CacheException(
+                ErrorCodes.Cache.CacheReadError,
+                $"I/O error while clearing cache: {ex.Message}",
+                "キャッシュのクリア中にI/Oエラーが発生しました。",
+                null,
+                _settings.Directory,
+                "ディスクの状態とキャッシュディレクトリの権限を確認してください。"
+            );
+        }
         catch (Exception ex)
         {
             Log.Error(ex, "キャッシュのクリアに失敗しました");
-            throw new InvalidOperationException($"Failed to clear cache: {ex.Message}", ex);
+            throw new CacheException(
+                ErrorCodes.General.UnknownError,
+                $"Failed to clear cache: {ex.Message}",
+                "キャッシュのクリアに失敗しました。",
+                null,
+                _settings.Directory,
+                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
+            );
         }
     }
 

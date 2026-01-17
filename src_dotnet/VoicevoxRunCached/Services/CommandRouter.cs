@@ -61,7 +61,7 @@ public class CommandRouter
                 ConsoleHelper.WriteLine($"解決策: {ex.SuggestedSolution}", _logger);
             }
 
-            return GetExitCodeFromErrorCode(ex.ErrorCode);
+            return ErrorHandlingUtility.GetExitCodeFromErrorCode(ex.ErrorCode);
         }
         catch (OperationCanceledException)
         {
@@ -71,57 +71,54 @@ public class CommandRouter
         }
         catch (ArgumentException ex)
         {
-            _logger.LogError(ex, "コマンドの引数が無効です: {Command}, Args: {Args}", command, String.Join(" ", subArgs));
-            ConsoleHelper.WriteError($"Error: 無効な引数が指定されました - {ex.Message}", _logger);
-            ConsoleHelper.WriteLine("使用方法を確認するには --help オプションを使用してください。", _logger);
-            return 1;
+            var userMessage = ErrorHandlingUtility.GetUserFriendlyMessageFromException(ex);
+            var solution = ErrorHandlingUtility.GetSuggestedSolutionFromException(ex);
+            var errorCode = ErrorHandlingUtility.GetErrorCodeFromException(ex);
+            _logger.LogError(ex, "コマンドの引数が無効です: {Command}, Args: {Args}, ErrorCode: {ErrorCode}", command, String.Join(" ", subArgs), errorCode);
+            ConsoleHelper.WriteError($"Error: {userMessage} - {ex.Message}", _logger);
+            ConsoleHelper.WriteLine($"解決策: {solution}", _logger);
+            return ErrorHandlingUtility.GetExitCodeFromErrorCode(errorCode);
         }
         catch (InvalidOperationException ex)
         {
-            _logger.LogError(ex, "コマンドの実行に必要な前提条件が満たされていません: {Command}", command);
-            ConsoleHelper.WriteError($"Error: {ex.Message}", _logger);
-            return 1;
+            var userMessage = ErrorHandlingUtility.GetUserFriendlyMessageFromException(ex);
+            var solution = ErrorHandlingUtility.GetSuggestedSolutionFromException(ex);
+            var errorCode = ErrorHandlingUtility.GetErrorCodeFromException(ex);
+            _logger.LogError(ex, "コマンドの実行に必要な前提条件が満たされていません: {Command}, ErrorCode: {ErrorCode}", command, errorCode);
+            ConsoleHelper.WriteError($"Error: {userMessage} - {ex.Message}", _logger);
+            ConsoleHelper.WriteLine($"解決策: {solution}", _logger);
+            return ErrorHandlingUtility.GetExitCodeFromErrorCode(errorCode);
         }
         catch (UnauthorizedAccessException ex)
         {
-            _logger.LogError(ex, "コマンド実行に必要な権限がありません: {Command}", command);
-            ConsoleHelper.WriteError($"Error: アクセス権限がありません - {ex.Message}", _logger);
-            ConsoleHelper.WriteLine("管理者権限で実行するか、必要な権限を確認してください。", _logger);
-            return 1;
+            var userMessage = ErrorHandlingUtility.GetUserFriendlyMessageFromException(ex);
+            var solution = ErrorHandlingUtility.GetSuggestedSolutionFromException(ex);
+            var errorCode = ErrorHandlingUtility.GetErrorCodeFromException(ex);
+            _logger.LogError(ex, "コマンド実行に必要な権限がありません: {Command}, ErrorCode: {ErrorCode}", command, errorCode);
+            ConsoleHelper.WriteError($"Error: {userMessage} - {ex.Message}", _logger);
+            ConsoleHelper.WriteLine($"解決策: {solution}", _logger);
+            return ErrorHandlingUtility.GetExitCodeFromErrorCode(errorCode);
         }
         catch (IOException ex)
         {
-            _logger.LogError(ex, "ファイルまたはディレクトリの操作に失敗しました: {Command}", command);
-            ConsoleHelper.WriteError($"Error: ファイル操作に失敗しました - {ex.Message}", _logger);
-            return 1;
+            var userMessage = ErrorHandlingUtility.GetUserFriendlyMessageFromException(ex);
+            var solution = ErrorHandlingUtility.GetSuggestedSolutionFromException(ex);
+            var errorCode = ErrorHandlingUtility.GetErrorCodeFromException(ex);
+            _logger.LogError(ex, "ファイルまたはディレクトリの操作に失敗しました: {Command}, ErrorCode: {ErrorCode}", command, errorCode);
+            ConsoleHelper.WriteError($"Error: {userMessage} - {ex.Message}", _logger);
+            ConsoleHelper.WriteLine($"解決策: {solution}", _logger);
+            return ErrorHandlingUtility.GetExitCodeFromErrorCode(errorCode);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "コマンド実行中に予期しないエラーが発生しました: {Command}", command);
-            ConsoleHelper.WriteError($"Error: 予期しないエラーが発生しました - {ex.Message}", _logger);
-            ConsoleHelper.WriteLine("アプリケーションを再起動し、問題が続く場合はログを確認してください。", _logger);
-            return 1;
+            var userMessage = ErrorHandlingUtility.GetUserFriendlyMessageFromException(ex);
+            var solution = ErrorHandlingUtility.GetSuggestedSolutionFromException(ex);
+            var errorCode = ErrorHandlingUtility.GetErrorCodeFromException(ex);
+            _logger.LogError(ex, "コマンド実行中に予期しないエラーが発生しました: {Command}, ErrorCode: {ErrorCode}", command, errorCode);
+            ConsoleHelper.WriteError($"Error: {userMessage} - {ex.Message}", _logger);
+            ConsoleHelper.WriteLine($"解決策: {solution}", _logger);
+            return ErrorHandlingUtility.GetExitCodeFromErrorCode(errorCode);
         }
-    }
-
-    /// <summary>
-    /// エラーコードから終了コードを取得します
-    /// </summary>
-    private int GetExitCodeFromErrorCode(string errorCode)
-    {
-        if (String.IsNullOrEmpty(errorCode))
-            return 1;
-
-        var category = ErrorCodes.GetCategory(errorCode);
-        return category switch
-        {
-            "Configuration" => 2,
-            "Engine" => 3,
-            "Cache" => 4,
-            "Audio" => 5,
-            "API" => 6,
-            _ => 1
-        };
     }
 
     /// <summary>

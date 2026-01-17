@@ -63,41 +63,10 @@ public class VoiceVoxApiClient : IDisposable
             var speakers = JsonSerializer.Deserialize<List<Speaker>>(content, JsonOptions);
             return speakers ?? [];
         }
-        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.ServiceUnavailable)
-        {
-            Log.Error(ex, "VOICEVOXエンジンが利用できません - StatusCode: {StatusCode}", ex.StatusCode);
-            throw new VoiceVoxApiException(
-                ErrorCodes.Engine.EngineNotAvailable,
-                $"Failed to get speakers: {ex.Message}",
-                "VOICEVOXエンジンが利用できません。エンジンが起動しているか確認してください。",
-                ex.StatusCode,
-                null,
-                "VOICEVOXエンジンを起動するか、設定のBaseUrlを確認してください。"
-            );
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.NotFound)
-        {
-            Log.Error(ex, "Speakersエンドポイントが見つかりません - StatusCode: {StatusCode}", ex.StatusCode);
-            throw new VoiceVoxApiException(
-                ErrorCodes.Api.ApiRequestFailed,
-                $"Speakers endpoint not found: {ex.Message}",
-                "スピーカー情報の取得に失敗しました。VOICEVOXエンジンのバージョンを確認してください。",
-                ex.StatusCode,
-                null,
-                "VOICEVOXエンジンを最新版に更新してください。"
-            );
-        }
-        catch (HttpRequestException ex)
+        catch (HttpRequestException ex) when (ex.StatusCode.HasValue)
         {
             Log.Error(ex, "Failed to get speakers from VoiceVox API - StatusCode: {StatusCode}", ex.StatusCode);
-            throw new VoiceVoxApiException(
-                ErrorCodes.Api.ApiRequestFailed,
-                $"Failed to get speakers: {ex.Message}",
-                "スピーカー情報の取得に失敗しました。",
-                ex.StatusCode,
-                null,
-                "ネットワーク接続とVOICEVOXエンジンの状態を確認してください。"
-            );
+            throw CreateVoiceVoxApiExceptionFromHttpStatus(ex.StatusCode.Value, "Failed to get speakers", ex);
         }
         catch (TaskCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
@@ -193,41 +162,10 @@ public class VoiceVoxApiClient : IDisposable
             Log.Debug("Audio query generated successfully - Length: {Length} characters", content.Length);
             return content;
         }
-        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.BadRequest)
+        catch (HttpRequestException ex) when (ex.StatusCode.HasValue)
         {
-            Log.Error(ex, "Audio query生成リクエストが無効です - StatusCode: {StatusCode}", ex.StatusCode);
-            throw new VoiceVoxApiException(
-                ErrorCodes.Api.ApiRequestFailed,
-                $"Invalid audio query request: {ex.Message}",
-                "音声クエリの生成リクエストが無効です。テキスト内容とパラメータを確認してください。",
-                ex.StatusCode,
-                null,
-                "テキストが空でないこと、スピーカーIDが有効であることを確認してください。"
-            );
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.ServiceUnavailable)
-        {
-            Log.Error(ex, "VOICEVOXエンジンが利用できません - StatusCode: {StatusCode}", ex.StatusCode);
-            throw new VoiceVoxApiException(
-                ErrorCodes.Engine.EngineNotAvailable,
-                $"VOICEVOX engine unavailable: {ex.Message}",
-                "VOICEVOXエンジンが利用できません。エンジンが起動しているか確認してください。",
-                ex.StatusCode,
-                null,
-                "VOICEVOXエンジンを起動するか、設定のBaseUrlを確認してください。"
-            );
-        }
-        catch (HttpRequestException ex)
-        {
-            Log.Error(ex, "Audio query生成に失敗しました - StatusCode: {StatusCode}", ex.StatusCode);
-            throw new VoiceVoxApiException(
-                ErrorCodes.Api.ApiRequestFailed,
-                $"Failed to generate audio query: {ex.Message}",
-                "音声クエリの生成に失敗しました。",
-                ex.StatusCode,
-                null,
-                "ネットワーク接続とVOICEVOXエンジンの状態を確認してください。"
-            );
+            Log.Error(ex, "Failed to generate audio query - StatusCode: {StatusCode}", ex.StatusCode);
+            throw CreateVoiceVoxApiExceptionFromHttpStatus(ex.StatusCode.Value, "Failed to generate audio query", ex);
         }
         catch (TaskCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
@@ -300,53 +238,10 @@ public class VoiceVoxApiClient : IDisposable
             Log.Information("Synthesis response received, status: {StatusCode}", response.StatusCode);
             return await response.Content.ReadAsByteArrayAsync(cancellationToken);
         }
-        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.BadRequest)
+        catch (HttpRequestException ex) when (ex.StatusCode.HasValue)
         {
-            Log.Error(ex, "音声合成リクエストが無効です - SpeakerId: {SpeakerId}, StatusCode: {StatusCode}", speakerId, ex.StatusCode);
-            throw new VoiceVoxApiException(
-                ErrorCodes.Api.ApiRequestFailed,
-                $"Invalid synthesis request: {ex.Message}",
-                "音声合成リクエストが無効です。スピーカーIDと音声クエリを確認してください。",
-                ex.StatusCode,
-                null,
-                "スピーカーIDが有効であること、音声クエリが正しい形式であることを確認してください。"
-            );
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.ServiceUnavailable)
-        {
-            Log.Error(ex, "VOICEVOXエンジンが利用できません - SpeakerId: {SpeakerId}, StatusCode: {StatusCode}", speakerId, ex.StatusCode);
-            throw new VoiceVoxApiException(
-                ErrorCodes.Engine.EngineNotAvailable,
-                $"VOICEVOX engine unavailable: {ex.Message}",
-                "VOICEVOXエンジンが利用できません。エンジンが起動しているか確認してください。",
-                ex.StatusCode,
-                null,
-                "VOICEVOXエンジンを起動するか、設定のBaseUrlを確認してください。"
-            );
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.InternalServerError)
-        {
-            Log.Error(ex, "VOICEVOXエンジンで内部エラーが発生しました - SpeakerId: {SpeakerId}, StatusCode: {StatusCode}", speakerId, ex.StatusCode);
-            throw new VoiceVoxApiException(
-                ErrorCodes.Engine.EngineProcessError,
-                $"VOICEVOX engine internal error: {ex.Message}",
-                "VOICEVOXエンジンで内部エラーが発生しました。",
-                ex.StatusCode,
-                null,
-                "VOICEVOXエンジンを再起動してください。問題が続く場合は、エンジンのログを確認してください。"
-            );
-        }
-        catch (HttpRequestException ex)
-        {
-            Log.Error(ex, "音声合成に失敗しました - SpeakerId: {SpeakerId}, StatusCode: {StatusCode}", speakerId, ex.StatusCode);
-            throw new VoiceVoxApiException(
-                ErrorCodes.Api.ApiRequestFailed,
-                $"Failed to synthesize audio: {ex.Message}",
-                "音声合成に失敗しました。",
-                ex.StatusCode,
-                null,
-                "ネットワーク接続とVOICEVOXエンジンの状態を確認してください。"
-            );
+            Log.Error(ex, "Failed to synthesize audio - SpeakerId: {SpeakerId}, StatusCode: {StatusCode}", speakerId, ex.StatusCode);
+            throw CreateVoiceVoxApiExceptionFromHttpStatus(ex.StatusCode.Value, "Failed to synthesize audio", ex);
         }
         catch (TaskCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
@@ -402,6 +297,28 @@ public class VoiceVoxApiClient : IDisposable
         }
     }
 
+    /// <summary>
+    /// HTTPステータスコードからVoiceVoxApiExceptionを生成します
+    /// </summary>
+    private static VoiceVoxApiException CreateVoiceVoxApiExceptionFromHttpStatus(
+        HttpStatusCode statusCode, string operation, Exception? innerException = null)
+    {
+        var errorCode = ErrorHandlingUtility.GetErrorCodeFromHttpStatus(statusCode);
+        var userMessage = ErrorHandlingUtility.GetUserFriendlyMessageFromHttpStatus(statusCode);
+        var solution = ErrorHandlingUtility.GetSuggestedSolutionFromHttpStatus(statusCode);
+
+        if (innerException != null)
+        {
+            return new VoiceVoxApiException(errorCode, $"{operation} failed", userMessage,
+                innerException, statusCode, null, solution);
+        }
+        else
+        {
+            return new VoiceVoxApiException(errorCode, $"{operation} failed", userMessage,
+                statusCode, null, solution);
+        }
+    }
+
     private async Task<HttpResponseMessage> SendRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
     {
         try
@@ -413,9 +330,7 @@ public class VoiceVoxApiClient : IDisposable
             // 詳細なエラーハンドリング
             if (!response.IsSuccessStatusCode)
             {
-                var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-                var errorMessage = GetUserFriendlyErrorMessage(response.StatusCode, errorContent);
-                throw new HttpRequestException(errorMessage, null, response.StatusCode);
+                throw new HttpRequestException($"HTTP {response.StatusCode}", null, response.StatusCode);
             }
 
             return response;
@@ -444,19 +359,4 @@ public class VoiceVoxApiClient : IDisposable
         }
     }
 
-    private string GetUserFriendlyErrorMessage(HttpStatusCode statusCode, string? errorContent)
-    {
-        return statusCode switch
-        {
-            HttpStatusCode.BadRequest => $"VoiceVox API request was invalid. Please check your parameters. Details: {errorContent}",
-            HttpStatusCode.Unauthorized => "VoiceVox API authentication failed. Please check your API key or permissions.",
-            HttpStatusCode.Forbidden => "VoiceVox API access denied. Please check your permissions.",
-            HttpStatusCode.NotFound => "VoiceVox API endpoint not found. Please check the API version and endpoint.",
-            HttpStatusCode.TooManyRequests => "VoiceVox API rate limit exceeded. Please wait before making another request.",
-            HttpStatusCode.InternalServerError => $"VoiceVox API server error. Please try again later. Details: {errorContent}",
-            HttpStatusCode.ServiceUnavailable => "VoiceVox API service is temporarily unavailable. Please try again later.",
-            HttpStatusCode.GatewayTimeout => "VoiceVox API request timed out. Please try again later.",
-            _ => $"VoiceVox API error (HTTP {statusCode}). Details: {errorContent}"
-        };
-    }
 }
