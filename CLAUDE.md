@@ -56,7 +56,7 @@ dotnet format
 - **Configuration/AppSettings.cs**: Strongly-typed configuration management
 
 ### Technology Stack
-- **.NET 9.0**: Primary framework with C# 13 features
+- **.NET 10**: Primary framework with C# 14 features
 - **NAudio + NAudio.Lame**: Audio playback and MP3 encoding/decoding
 - **HttpClient**: REST API communication
 - **Microsoft.Extensions.Configuration**: JSON configuration management
@@ -179,7 +179,7 @@ test                 Run test with comprehensive message from appsettings.json
 - ProgressSpinner provides non-blocking console feedback during operations
 
 ### Code Standards
-- All services use primary constructors and modern C# 13 patterns
+- All services use primary constructors and modern C# 14 patterns
 - FluentValidation for configuration validation
 - Serilog for structured logging with multiple sinks
 - Polly for retry policies and resilience

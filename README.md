@@ -487,8 +487,8 @@ VoicevoxRunCached.exe --init
 
 ### 開発環境
 
-- .NET 9.0
-- C# 13（最新言語機能）
+- .NET 10
+- C# 14（最新言語機能）
 - NAudio（音声処理）
 - NAudio.Lame（MP3エンコード）
 - Microsoft.Extensions.Configuration（設定管理）
@@ -518,7 +518,7 @@ _publish_zip.cmd
 - `_publish_zip.cmd`が自動的にバージョンを参照してZIPファイル名を決定
 
 #### 技術的特徴
-- **C# 13の最新機能を活用**:
+- **C# 14の最新機能を活用**:
   - Primary constructors
   - Collection expressions
   - Enhanced pattern matching
@@ -616,7 +616,7 @@ C:\Users\ユーザー名\.claude\settings.json
 
 **ビルド済みプロジェクトの場合:**
 ```
-C:\\git\\git-vo\\voicevox-run-cached\\src_dotnet\\VoicevoxRunCached\\bin\\Release\\net9.0\\VoicevoxRunCached.exe
+C:\\git\\git-vo\\voicevox-run-cached\\src_dotnet\\VoicevoxRunCached\\bin\\Release\\net10\\VoicevoxRunCached.exe
 ```
 
 **配布版を使用する場合:**
