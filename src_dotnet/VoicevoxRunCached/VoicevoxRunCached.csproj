@@ -9,7 +9,7 @@
     <ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>None</ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>
 
     <!-- Version Information -->
-    <Version>1.6.0</Version>
+    <Version>2.0.0</Version>
     <AssemblyVersion>1.6.0.0</AssemblyVersion>
     <FileVersion>1.6.0.0</FileVersion>
     <Product>VoicevoxRunCached</Product>
