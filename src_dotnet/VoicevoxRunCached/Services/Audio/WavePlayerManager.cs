@@ -54,8 +54,8 @@ public class WavePlayerManager : IDisposable
 
         var waveOut = new WaveOutEvent
         {
-            DesiredLatency = 100,
-            NumberOfBuffers = 3
+            DesiredLatency = _settings.DesiredLatency,
+            NumberOfBuffers = _settings.NumberOfBuffers
         };
 
         if (_settings.OutputDevice >= 0)
@@ -169,8 +169,8 @@ public class WavePlayerManager : IDisposable
             CurrentDevice = _settings.OutputDevice,
             CurrentDeviceName = "Default",
             Volume = _settings.Volume,
-            DesiredLatency = 100,
-            NumberOfBuffers = 3
+            DesiredLatency = _settings.DesiredLatency,
+            NumberOfBuffers = _settings.NumberOfBuffers
         };
     }
 
@@ -188,8 +188,8 @@ public class WavePlayerManager : IDisposable
                 CurrentDevice = 0,
                 CurrentDeviceName = "Default Audio Device",
                 Volume = _settings.Volume,
-                DesiredLatency = 100,
-                NumberOfBuffers = 3
+                DesiredLatency = _settings.DesiredLatency,
+                NumberOfBuffers = _settings.NumberOfBuffers
             }
         };
     }
