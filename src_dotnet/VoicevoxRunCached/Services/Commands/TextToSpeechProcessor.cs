@@ -75,13 +75,7 @@ public class TextToSpeechProcessor : IDisposable
                 return 1;
             }
 
-            var exportTask = StartExportTaskIfNeeded(request, outPath, cancellationToken);
-
-            if (noPlay)
-            {
-                return await HandleNoPlayModeAsync(exportTask, verbose, totalStartTime);
-            }
-
+            // セグメント処理（常に実行）
             var segments = await _segmentProcessor.ProcessSegmentsAsync(request, noCache, cancellationToken);
             if (segments.Count == 0)
             {
@@ -100,8 +94,25 @@ public class TextToSpeechProcessor : IDisposable
                 }
             }
 
-            // キャッシュにないセグメントを合成する
+            // キャッシュにないセグメントを合成する（常に実行）
             await SynthesizeMissingSegmentsAsync(segments, request, noCache, cancellationToken);
+
+            // --no-playが指定されている場合、再生をスキップ
+            if (noPlay)
+            {
+                // ファイル出力（--out指定時）
+                if (!String.IsNullOrWhiteSpace(outPath))
+                {
+                    await _audioExportService.ExportSegmentsAsync(segments, outPath, cancellationToken);
+                }
+
+                ConsoleHelper.WriteSuccess("Done (no-play mode)!", _logger);
+                if (verbose)
+                {
+                    ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms", _logger);
+                }
+                return 0;
+            }
 
             // 音声再生処理（フィラー機能付き）
             var playbackResult = await ProcessAudioPlaybackAsync(segments, verbose, cancellationToken);
@@ -110,7 +121,11 @@ public class TextToSpeechProcessor : IDisposable
                 return playbackResult;
             }
 
-            await WaitForExportTaskAsync(exportTask);
+            // ファイル出力（--out指定時、再生後）
+            if (!String.IsNullOrWhiteSpace(outPath))
+            {
+                await _audioExportService.ExportSegmentsAsync(segments, outPath, cancellationToken);
+            }
 
             if (verbose)
             {
@@ -164,46 +179,6 @@ public class TextToSpeechProcessor : IDisposable
         return true;
     }
 
-    private Task StartExportTaskIfNeeded(VoiceRequest request, string? outPath, CancellationToken cancellationToken)
-    {
-        if (String.IsNullOrWhiteSpace(outPath))
-        {
-            return Task.CompletedTask;
-        }
-
-        return Task.Run(async () =>
-        {
-            try
-            {
-                await _audioExportService.ExportAudioAsync(request, outPath, cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                // キャンセルされた場合は何もしない
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "音声ファイルの出力に失敗しました");
-            }
-        }, cancellationToken);
-    }
-
-    private async Task<int> HandleNoPlayModeAsync(Task? exportTask, bool verbose, DateTime totalStartTime)
-    {
-        if (exportTask != null)
-        {
-            await exportTask;
-        }
-
-        ConsoleHelper.WriteSuccess("Done (no-play mode)!", _logger);
-
-        if (verbose)
-        {
-            ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms", _logger);
-        }
-
-        return 0;
-    }
 
     /// <summary>
     /// 音声再生処理を実行します（フィラー機能付き）
@@ -239,27 +214,6 @@ public class TextToSpeechProcessor : IDisposable
             _logger.LogError(ex, "音声再生処理中にエラーが発生しました");
             ConsoleHelper.WriteError($"Error: Failed to play audio: {ex.Message}", _logger);
             return 1;
-        }
-    }
-
-    private async Task WaitForExportTaskAsync(Task? exportTask)
-    {
-        if (exportTask == null)
-        {
-            return;
-        }
-
-        try
-        {
-            await exportTask;
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogInformation("音声ファイルの出力がキャンセルされました");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "音声ファイルの出力に失敗しました");
         }
     }
 
