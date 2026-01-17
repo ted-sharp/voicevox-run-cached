@@ -1,4 +1,5 @@
 ﻿using BenchmarkDotNet.Attributes;
+using Microsoft.Extensions.Caching.Memory;
 using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
@@ -11,7 +12,7 @@ namespace VoicevoxRunCached.Benchmarks;
 public class AudioProcessingBenchmarks
 {
     private AudioCacheManager _cacheManager = null!;
-    private MemoryCacheService _memoryCache = null!;
+    private IMemoryCache _memoryCache = null!;
     private byte[] _sampleWavData = null!;
     private VoiceRequest _testRequest = null!;
 
@@ -26,9 +27,13 @@ public class AudioProcessingBenchmarks
             Directory = "./benchmark-cache/",
             ExpirationDays = 30,
             MaxSizeGb = 1.0,
-            UseExecutableBaseDirectory = true
+            UseExecutableBaseDirectory = true,
+            MemoryCacheSizeMb = 100
         };
-        _memoryCache = new MemoryCacheService(cacheSettings);
+        _memoryCache = new MemoryCache(new MemoryCacheOptions
+        {
+            SizeLimit = cacheSettings.MemoryCacheSizeMb * 1024L * 1024L
+        });
         _cacheManager = new AudioCacheManager(cacheSettings, _memoryCache);
 
         _testRequest = new VoiceRequest("テスト用の音声データです。", 1);
@@ -38,7 +43,7 @@ public class AudioProcessingBenchmarks
     public void Cleanup()
     {
         _cacheManager.Dispose();
-        _memoryCache.Dispose();
+        (_memoryCache as MemoryCache)?.Dispose();
     }
 
     [Benchmark]
@@ -60,7 +65,7 @@ public class AudioProcessingBenchmarks
         var data = new byte[1024];
         new Random().NextBytes(data);
 
-        _memoryCache.Set(key, data);
+        _memoryCache.Set(key, data, new MemoryCacheEntryOptions().SetSize(data.Length));
         _ = _memoryCache.Get<byte[]>(key);
 
         await Task.CompletedTask;

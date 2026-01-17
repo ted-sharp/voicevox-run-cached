@@ -182,12 +182,12 @@ public class LoggingManager
     /// <summary>
     /// キャッシュ統計の記録
     /// </summary>
-    public static void LogCacheStatistics(CacheStatistics stats)
+    public static void LogCacheStatistics(AudioCacheStatistics stats)
     {
-        Log.Information("キャッシュ統計 - 総アイテム数: {TotalItems}, 有効アイテム: {ValidItems}, 使用率: {UsagePercentage:F1}%, ヒット率: {HitRate:P1}",
-            stats.TotalItems,
-            stats.ValidItems,
-            stats.UsagePercentage,
+        Log.Information("キャッシュ統計 - ディスクファイル数: {DiskFileCount}, メモリエントリ数: {MemoryCacheEntries}, 使用サイズ: {UsedSizeBytes:N0} bytes, ヒット率: {HitRate:P1}",
+            stats.DiskFileCount,
+            stats.MemoryCacheEntries,
+            stats.UsedSizeBytes,
             stats.HitRate);
     }
 

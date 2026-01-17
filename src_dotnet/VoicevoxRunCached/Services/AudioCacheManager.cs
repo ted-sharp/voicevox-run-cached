@@ -1,41 +1,48 @@
 ﻿using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.Caching.Memory;
 using Serilog;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
-using VoicevoxRunCached.Services.Cache;
+using VoicevoxRunCached.Utilities;
 
 namespace VoicevoxRunCached.Services;
 
 /// <summary>
 /// 音声キャッシュの統合管理を行うサービス
-/// 各専門クラスを統合制御し、音声データの高速アクセスを提供します。
+/// メモリ・ディスクキャッシュとクリーンアップを統合制御し、音声データの高速アクセスを提供します。
 /// </summary>
 public class AudioCacheManager : IDisposable
 {
-    // C# 13 ref readonly parameter for better performance with large structs
     private static readonly SHA256 Sha256 = SHA256.Create();
-    private readonly CacheCleanupService _cleanupService;
-    private readonly DiskCacheService _diskCacheService;
-    private readonly MemoryCacheService _memoryCache;
+    private readonly IMemoryCache _memoryCache;
     private readonly CacheSettings _settings;
-    private readonly CacheStatisticsService _statisticsService;
+    private readonly TimeSpan _cacheExpiration;
     private bool _disposed;
 
-    public AudioCacheManager(CacheSettings settings, MemoryCacheService? memoryCache = null)
+    // 統計情報
+    private long _hitCount;
+    private long _missCount;
+    private int _memoryCacheEntries;
+
+    public AudioCacheManager(CacheSettings settings, IMemoryCache? memoryCache = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _memoryCache = memoryCache ?? new MemoryCacheService(settings);
+        _cacheExpiration = TimeSpan.FromDays(settings.ExpirationDays);
+
+        var cacheOptions = new MemoryCacheOptions
+        {
+            SizeLimit = settings.MemoryCacheSizeMb * 1024L * 1024L
+        };
+        _memoryCache = memoryCache ?? new MemoryCache(cacheOptions);
 
         ResolveCacheBaseDirectory();
+        EnsureCacheDirectoryExists();
 
-        // 各専門クラスのインスタンスを作成
-        _diskCacheService = new DiskCacheService(settings);
-        _cleanupService = new CacheCleanupService(settings, _diskCacheService);
-        _statisticsService = new CacheStatisticsService(settings, _diskCacheService, _memoryCache);
-
-        Log.Information("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}, メモリキャッシュ: 有効", _settings.Directory);
+        Log.Information("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}, メモリキャッシュ: 有効, 最大サイズ: {MaxSizeMB}MB",
+            _settings.Directory, settings.MemoryCacheSizeMb);
     }
 
     public void Dispose()
@@ -52,7 +59,10 @@ public class AudioCacheManager : IDisposable
             {
                 try
                 {
-                    _memoryCache.Dispose();
+                    if (_memoryCache is MemoryCache mc)
+                    {
+                        mc.Dispose();
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -60,6 +70,15 @@ public class AudioCacheManager : IDisposable
                 }
             }
             _disposed = true;
+        }
+    }
+
+    private void EnsureCacheDirectoryExists()
+    {
+        if (!Directory.Exists(_settings.Directory))
+        {
+            Directory.CreateDirectory(_settings.Directory);
+            Log.Debug("キャッシュディレクトリを作成しました: {Directory}", _settings.Directory);
         }
     }
 
@@ -75,22 +94,25 @@ public class AudioCacheManager : IDisposable
         try
         {
             // まずメモリキャッシュをチェック
-            var memoryCached = _memoryCache.Get<byte[]>(cacheKey);
-            if (memoryCached != null)
+            if (_memoryCache.TryGetValue(cacheKey, out byte[]? memoryCached) && memoryCached != null)
             {
+                Interlocked.Increment(ref _hitCount);
                 Log.Debug("メモリキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, memoryCached.Length);
                 return memoryCached;
             }
 
             // メモリキャッシュにない場合はディスクキャッシュをチェック
-            var audioData = await _diskCacheService.LoadAudioFromDiskAsync(cacheKey);
+            var audioData = await LoadAudioFromDiskAsync(cacheKey);
             if (audioData != null)
             {
+                Interlocked.Increment(ref _hitCount);
                 // ディスクから読み込めた場合はメモリキャッシュに保存（次回は高速アクセス）
-                _memoryCache.Set(cacheKey, audioData);
+                SetMemoryCache(cacheKey, audioData);
+                return audioData;
             }
 
-            return audioData;
+            Interlocked.Increment(ref _missCount);
+            return null;
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -130,6 +152,20 @@ public class AudioCacheManager : IDisposable
         }
     }
 
+    private void SetMemoryCache(string cacheKey, byte[] data)
+    {
+        var entryOptions = new MemoryCacheEntryOptions()
+            .SetSize(data.Length)
+            .SetAbsoluteExpiration(_cacheExpiration)
+            .RegisterPostEvictionCallback((key, value, reason, state) =>
+            {
+                Interlocked.Decrement(ref _memoryCacheEntries);
+            });
+
+        _memoryCache.Set(cacheKey, data, entryOptions);
+        Interlocked.Increment(ref _memoryCacheEntries);
+    }
+
     /// <summary>
     /// 音声データをキャッシュに保存します
     /// </summary>
@@ -143,16 +179,16 @@ public class AudioCacheManager : IDisposable
         try
         {
             // ディスクキャッシュに保存
-            await _diskCacheService.SaveAudioToDiskAsync(request, audioData, cacheKey);
+            await SaveAudioToDiskAsync(request, audioData, cacheKey);
 
             // WAVをMP3に変換してメモリキャッシュに保存
             var mp3Data = AudioConversionUtility.ConvertWavToMp3(audioData);
-            _memoryCache.Set(cacheKey, mp3Data);
+            SetMemoryCache(cacheKey, mp3Data);
 
             Log.Debug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes", cacheKey, mp3Data.Length);
 
             // 保存後、バックグラウンドでサイズ制限ポリシーを適用
-            _ = _cleanupService.RunBackgroundCleanupAsync();
+            _ = RunBackgroundCleanupAsync();
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -212,8 +248,43 @@ public class AudioCacheManager : IDisposable
     {
         try
         {
-            await _cleanupService.CleanupExpiredCacheAsync();
-            Log.Information("期限切れキャッシュのクリーンアップが完了しました");
+            if (!Directory.Exists(_settings.Directory))
+            {
+                return;
+            }
+
+            var metaFiles = Directory.GetFiles(_settings.Directory, "*.meta.json");
+            var expiredKeys = new List<string>();
+
+            foreach (var metaFile in metaFiles)
+            {
+                try
+                {
+                    var metaJson = await File.ReadAllTextAsync(metaFile);
+                    var metadata = JsonSerializer.Deserialize<CacheMetadata>(metaJson);
+
+                    if (metadata == null || DateTime.UtcNow - metadata.CreatedAt > _cacheExpiration)
+                    {
+                        var cacheKey = Path.GetFileNameWithoutExtension(metaFile).Replace(".meta", "");
+                        expiredKeys.Add(cacheKey);
+                    }
+                }
+                catch
+                {
+                    var cacheKey = Path.GetFileNameWithoutExtension(metaFile).Replace(".meta", "");
+                    expiredKeys.Add(cacheKey);
+                }
+            }
+
+            foreach (var cacheKey in expiredKeys)
+            {
+                DeleteCacheFile(cacheKey);
+            }
+
+            if (expiredKeys.Count > 0)
+            {
+                Log.Information("期限切れキャッシュをクリーンアップしました - {Count} ファイル", expiredKeys.Count);
+            }
         }
         catch (OperationCanceledException)
         {
@@ -270,7 +341,112 @@ public class AudioCacheManager : IDisposable
     /// <param name="cancellationToken">キャンセレーショントークン</param>
     public void CleanupByMaxSize(CancellationToken cancellationToken = default)
     {
-        _cleanupService.CleanupByMaxSize(cancellationToken);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!Directory.Exists(_settings.Directory))
+            {
+                return;
+            }
+
+            var dirInfo = new DirectoryInfo(_settings.Directory);
+            var files = dirInfo.GetFiles("*.mp3", SearchOption.TopDirectoryOnly)
+                .Select(f => new
+                {
+                    File = f,
+                    Meta = new FileInfo(Path.Combine(_settings.Directory, Path.GetFileNameWithoutExtension(f.Name) + ".meta.json"))
+                })
+                .ToList();
+
+            long totalBytes = files.Sum(x => x.File.Length);
+            long maxBytes = (long)(Math.Max(0.0, _settings.MaxSizeGb) * 1024 * 1024 * 1024);
+
+            if (maxBytes <= 0 || totalBytes <= maxBytes)
+            {
+                return;
+            }
+
+            var ordered = files.OrderBy(x => GetFileTimestamp(x.File, x.Meta)).ToList();
+
+            var deletedFiles = 0;
+            foreach (var entry in ordered)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (totalBytes <= maxBytes)
+                {
+                    break;
+                }
+
+                try
+                {
+                    var cacheKey = Path.GetFileNameWithoutExtension(entry.File.Name);
+                    DeleteCacheFile(cacheKey);
+                    totalBytes -= entry.File.Length;
+                    deletedFiles++;
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "サイズクリーンアップ中のファイル削除に失敗: {File}", entry.File.Name);
+                }
+            }
+
+            if (deletedFiles > 0)
+            {
+                Log.Information("サイズ制限によるキャッシュクリーンアップが完了しました - {Count} ファイル削除", deletedFiles);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Log.Debug("サイズクリーンアップがキャンセルされました");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "サイズクリーンアップに失敗しました");
+        }
+    }
+
+    private static DateTime GetFileTimestamp(FileInfo file, FileInfo metaFile)
+    {
+        try
+        {
+            if (metaFile.Exists)
+            {
+                var metaJson = File.ReadAllText(metaFile.FullName);
+                var meta = JsonSerializer.Deserialize<CacheMetadata>(metaJson);
+                if (meta != null)
+                {
+                    return meta.CreatedAt;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "Failed to read metadata file, using LastWriteTimeUtc instead");
+        }
+        return file.LastWriteTimeUtc;
+    }
+
+    private Task RunBackgroundCleanupAsync()
+    {
+        return Task.Run(() =>
+        {
+            try
+            {
+                using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+                CleanupByMaxSize(cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                Log.Debug("バックグラウンドキャッシュクリーンアップがタイムアウトしました");
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "バックグラウンドキャッシュクリーンアップに失敗しました");
+            }
+        }, CancellationToken.None);
     }
 
 
@@ -373,15 +549,18 @@ public class AudioCacheManager : IDisposable
         try
         {
             // メモリキャッシュをクリア
-            _memoryCache.Clear();
+            if (_memoryCache is MemoryCache mc)
+            {
+                mc.Compact(1.0);
+            }
+            _memoryCacheEntries = 0;
 
             // ディスクキャッシュをクリア
-            // ディスクキャッシュのクリア処理を実装
-            var cacheFiles = _diskCacheService.GetCacheFiles();
+            var cacheFiles = GetCacheFiles();
             foreach (var file in cacheFiles)
             {
                 var cacheKey = Path.GetFileNameWithoutExtension(file);
-                _diskCacheService.DeleteCacheFile(cacheKey);
+                DeleteCacheFile(cacheKey);
             }
 
             Log.Information("すべてのキャッシュをクリアしました - メモリ・ディスク共にクリア済み");
@@ -430,7 +609,24 @@ public class AudioCacheManager : IDisposable
     /// <returns>キャッシュの統計情報</returns>
     public AudioCacheStatistics GetCacheStatistics()
     {
-        return _statisticsService.GetCombinedCacheStatistics();
+        try
+        {
+            var diskStats = GetDiskCacheStatistics();
+            return new AudioCacheStatistics
+            {
+                TotalSizeBytes = diskStats.TotalSize,
+                UsedSizeBytes = diskStats.TotalSize,
+                CacheHits = Interlocked.Read(ref _hitCount),
+                CacheMisses = Interlocked.Read(ref _missCount),
+                DiskFileCount = diskStats.TotalFiles,
+                MemoryCacheEntries = _memoryCacheEntries
+            };
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "キャッシュ統計情報の取得に失敗しました");
+            return new AudioCacheStatistics();
+        }
     }
 
     /// <summary>
@@ -439,7 +635,35 @@ public class AudioCacheManager : IDisposable
     /// <returns>詳細統計情報</returns>
     public DetailedCacheStatistics GetDetailedStatistics()
     {
-        return _statisticsService.GetDetailedStatistics();
+        try
+        {
+            var diskStats = GetDiskCacheStatistics();
+            var maxSizeBytes = (long)(Math.Max(0.0, _settings.MaxSizeGb) * 1024 * 1024 * 1024);
+            var maxMemorySizeBytes = _settings.MemoryCacheSizeMb * 1024 * 1024;
+            var hits = Interlocked.Read(ref _hitCount);
+            var misses = Interlocked.Read(ref _missCount);
+
+            return new DetailedCacheStatistics
+            {
+                DiskTotalSizeBytes = diskStats.TotalSize,
+                DiskUsedSizeBytes = diskStats.TotalSize,
+                DiskFileCount = diskStats.TotalFiles,
+                DiskMaxSizeBytes = maxSizeBytes,
+                DiskUsageRatio = maxSizeBytes > 0 ? (double)diskStats.TotalSize / maxSizeBytes : 0.0,
+                MemoryCacheEntries = _memoryCacheEntries,
+                MemoryMaxSizeBytes = maxMemorySizeBytes,
+                MemoryCacheHits = hits,
+                MemoryCacheMisses = misses,
+                MemoryHitRatio = hits + misses > 0 ? (double)hits / (hits + misses) : 0.0,
+                ExpirationDays = _settings.ExpirationDays,
+                CacheDirectory = _settings.Directory
+            };
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "詳細統計情報の取得に失敗しました");
+            return new DetailedCacheStatistics();
+        }
     }
 
     /// <summary>
@@ -448,8 +672,231 @@ public class AudioCacheManager : IDisposable
     /// <returns>効率分析結果</returns>
     public CacheEfficiencyAnalysis AnalyzeCacheEfficiency()
     {
-        return _statisticsService.AnalyzeCacheEfficiency();
+        try
+        {
+            var diskStats = GetDiskCacheStatistics();
+            var maxSizeBytes = (long)(Math.Max(0.0, _settings.MaxSizeGb) * 1024 * 1024 * 1024);
+            var hits = Interlocked.Read(ref _hitCount);
+            var misses = Interlocked.Read(ref _missCount);
+            var totalAccesses = hits + misses;
+            var hitRatio = totalAccesses > 0 ? (double)hits / totalAccesses : 0.0;
+
+            var efficiency = CalculateEfficiencyScore(hitRatio, diskStats.TotalSize, maxSizeBytes, diskStats.TotalFiles);
+
+            return new CacheEfficiencyAnalysis
+            {
+                OverallHitRatio = hitRatio,
+                EfficiencyScore = efficiency,
+                EfficiencyRating = GetEfficiencyRating(efficiency),
+                SpaceUtilization = maxSizeBytes > 0 ? (double)diskStats.TotalSize / maxSizeBytes : 0.0,
+                AverageFileSize = diskStats.TotalFiles > 0 ? diskStats.TotalSize / diskStats.TotalFiles : 0,
+                Recommendations = GenerateRecommendations(hitRatio, diskStats.TotalSize, maxSizeBytes, diskStats.TotalFiles)
+            };
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "キャッシュ効率分析に失敗しました");
+            return new CacheEfficiencyAnalysis
+            {
+                OverallHitRatio = 0.0,
+                EfficiencyScore = 0.0,
+                EfficiencyRating = "Unknown",
+                SpaceUtilization = 0.0,
+                AverageFileSize = 0,
+                Recommendations = new List<string> { "統計情報の取得に失敗しました。" }
+            };
+        }
     }
+
+    private double CalculateEfficiencyScore(double hitRatio, long usedSize, long maxSize, int fileCount)
+    {
+        var hitScore = hitRatio * 40;
+        var spaceScore = maxSize > 0 ? (1.0 - (double)usedSize / maxSize) * 30 : 30;
+        var fileScore = fileCount > 0 ? Math.Min(30, fileCount / 10.0) : 0;
+        return Math.Max(0, Math.Min(100, hitScore + spaceScore + fileScore));
+    }
+
+    private static string GetEfficiencyRating(double score)
+    {
+        return score switch
+        {
+            >= 90 => "Excellent",
+            >= 80 => "Good",
+            >= 70 => "Fair",
+            >= 60 => "Poor",
+            _ => "Very Poor"
+        };
+    }
+
+    private static List<string> GenerateRecommendations(double hitRatio, long usedSize, long maxSize, int fileCount)
+    {
+        var recommendations = new List<string>();
+
+        if (hitRatio < 0.5)
+        {
+            recommendations.Add("ヒット率が低いです。メモリキャッシュサイズの増加を検討してください。");
+        }
+
+        if (maxSize > 0 && (double)usedSize / maxSize > 0.9)
+        {
+            recommendations.Add("ディスクキャッシュの使用率が高いです。サイズ制限の増加またはクリーンアップ頻度の調整を検討してください。");
+        }
+
+        if (fileCount > 1000)
+        {
+            recommendations.Add("キャッシュファイル数が多いです。定期的なクリーンアップを実行してください。");
+        }
+
+        if (fileCount < 10)
+        {
+            recommendations.Add("キャッシュファイル数が少ないです。より多くのコンテンツをキャッシュすることで効率が向上する可能性があります。");
+        }
+
+        if (recommendations.Count == 0)
+        {
+            recommendations.Add("キャッシュは効率的に動作しています。");
+        }
+
+        return recommendations;
+    }
+
+    #region Disk Cache Operations
+
+    private async Task<byte[]?> LoadAudioFromDiskAsync(string cacheKey, CancellationToken cancellationToken = default)
+    {
+        var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
+        var metaFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
+
+        if (!File.Exists(audioFilePath) || !File.Exists(metaFilePath))
+        {
+            Log.Debug("キャッシュミス: {CacheKey} - ファイルが存在しません", cacheKey);
+            return null;
+        }
+
+        try
+        {
+            var metaJson = await File.ReadAllTextAsync(metaFilePath, cancellationToken);
+            var metadata = JsonSerializer.Deserialize<CacheMetadata>(metaJson);
+
+            if (metadata == null || !IsMetadataValid(metadata))
+            {
+                Log.Debug("キャッシュミス: {CacheKey} - メタデータが無効", cacheKey);
+                DeleteCacheFile(cacheKey);
+                return null;
+            }
+
+            if (DateTime.UtcNow - metadata.CreatedAt > _cacheExpiration)
+            {
+                Log.Debug("キャッシュミス: {CacheKey} - メタデータが期限切れ", cacheKey);
+                DeleteCacheFile(cacheKey);
+                return null;
+            }
+
+            var audioData = await File.ReadAllBytesAsync(audioFilePath, cancellationToken);
+            Log.Debug("ディスクキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, audioData.Length);
+            return audioData;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "キャッシュファイルの読み込みに失敗: {CacheKey}", cacheKey);
+            DeleteCacheFile(cacheKey);
+            return null;
+        }
+    }
+
+    private async Task SaveAudioToDiskAsync(VoiceRequest request, byte[] audioData, string cacheKey)
+    {
+        var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
+        var metaFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
+
+        var metadata = new CacheMetadata
+        {
+            CreatedAt = DateTime.UtcNow,
+            Text = request.Text,
+            SpeakerId = request.SpeakerId,
+            Speed = request.Speed,
+            Pitch = request.Pitch,
+            Volume = request.Volume
+        };
+
+        var mp3Data = AudioConversionUtility.ConvertWavToMp3(audioData);
+        await File.WriteAllBytesAsync(audioFilePath, mp3Data);
+
+        var metaJson = JsonSerializer.Serialize(metadata, JsonSerializerOptionsCache.Indented);
+        await File.WriteAllTextAsync(metaFilePath, metaJson);
+
+        Log.Debug("キャッシュファイルを保存しました: {CacheKey}, サイズ: {Size} bytes", cacheKey, mp3Data.Length);
+    }
+
+    private void DeleteCacheFile(string cacheKey)
+    {
+        try
+        {
+            var audioFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
+            var metaFilePath = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
+
+            if (File.Exists(audioFilePath))
+                File.Delete(audioFilePath);
+            if (File.Exists(metaFilePath))
+                File.Delete(metaFilePath);
+
+            Log.Debug("キャッシュファイルを削除しました: {CacheKey}", cacheKey);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "キャッシュファイルの削除に失敗: {CacheKey}", cacheKey);
+        }
+    }
+
+    private string[] GetCacheFiles()
+    {
+        try
+        {
+            return Directory.GetFiles(_settings.Directory, "*.mp3");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "ファイル一覧の取得に失敗: {Directory}", _settings.Directory);
+            return Array.Empty<string>();
+        }
+    }
+
+    private (int TotalFiles, long TotalSize) GetDiskCacheStatistics()
+    {
+        try
+        {
+            var cacheFiles = GetCacheFiles();
+            var totalSize = 0L;
+            var validFiles = 0;
+
+            foreach (var filePath in cacheFiles)
+            {
+                try
+                {
+                    var fileInfo = new FileInfo(filePath);
+                    totalSize += fileInfo.Length;
+                    validFiles++;
+                }
+                catch { }
+            }
+
+            return (validFiles, totalSize);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "キャッシュ統計情報の取得に失敗しました");
+            return (0, 0);
+        }
+    }
+
+    private static bool IsMetadataValid(CacheMetadata metadata)
+    {
+        return !String.IsNullOrWhiteSpace(metadata.Text) &&
+               metadata.SpeakerId > 0 &&
+               metadata.CreatedAt != default;
+    }
+
+    #endregion
 }
 
 /// <summary>
@@ -506,6 +953,40 @@ public class CacheMetadata
     public double Speed { get; set; }
     public double Pitch { get; set; }
     public double Volume { get; set; }
+}
+
+/// <summary>
+/// 詳細なキャッシュ統計情報
+/// </summary>
+public class DetailedCacheStatistics
+{
+    public long DiskTotalSizeBytes { get; set; }
+    public long DiskUsedSizeBytes { get; set; }
+    public int DiskFileCount { get; set; }
+    public long DiskMaxSizeBytes { get; set; }
+    public double DiskUsageRatio { get; set; }
+
+    public int MemoryCacheEntries { get; set; }
+    public long MemoryMaxSizeBytes { get; set; }
+    public long MemoryCacheHits { get; set; }
+    public long MemoryCacheMisses { get; set; }
+    public double MemoryHitRatio { get; set; }
+
+    public int ExpirationDays { get; set; }
+    public string CacheDirectory { get; set; } = String.Empty;
+}
+
+/// <summary>
+/// キャッシュ効率性の分析結果
+/// </summary>
+public class CacheEfficiencyAnalysis
+{
+    public double OverallHitRatio { get; set; }
+    public double EfficiencyScore { get; set; }
+    public string EfficiencyRating { get; set; } = String.Empty;
+    public double SpaceUtilization { get; set; }
+    public long AverageFileSize { get; set; }
+    public List<string> Recommendations { get; set; } = new();
 }
 
 

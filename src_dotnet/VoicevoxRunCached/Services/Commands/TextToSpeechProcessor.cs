@@ -11,7 +11,7 @@ namespace VoicevoxRunCached.Services.Commands;
 public class TextToSpeechProcessor : IDisposable
 {
     private readonly AudioExportService _audioExportService;
-    private readonly AudioPlaybackController _playbackController;
+    private readonly AudioPlayer _audioPlayer;
     private readonly EngineCoordinator _engineCoordinator;
     private readonly ILogger _logger;
     private readonly SegmentProcessor _segmentProcessor;
@@ -25,7 +25,7 @@ public class TextToSpeechProcessor : IDisposable
         _engineCoordinator = new EngineCoordinator(settings.VoiceVox, logger);
         _audioExportService = new AudioExportService(settings, logger);
         _segmentProcessor = new SegmentProcessor(settings, logger);
-        _playbackController = new AudioPlaybackController(settings.Audio, new AudioFormatDetector());
+        _audioPlayer = new AudioPlayer(settings.Audio);
     }
 
     public void Dispose()
@@ -42,7 +42,7 @@ public class TextToSpeechProcessor : IDisposable
             {
                 try
                 {
-                    _playbackController?.Dispose();
+                    _audioPlayer?.Dispose();
                 }
                 catch (Exception ex)
                 {
@@ -88,6 +88,9 @@ public class TextToSpeechProcessor : IDisposable
                 ConsoleHelper.WriteError("Error: No segments to process", _logger);
                 return 1;
             }
+
+            // キャッシュにないセグメントを合成する
+            await SynthesizeMissingSegmentsAsync(segments, request, noCache, cancellationToken);
 
             await PlayAudioSegmentsAsync(segments, cancellationToken);
             await WaitForExportTaskAsync(exportTask);
@@ -191,7 +194,7 @@ public class TextToSpeechProcessor : IDisposable
         {
             if (segment.AudioData != null)
             {
-                await _playbackController.PlayAudioAsync(segment.AudioData, cancellationToken: cancellationToken);
+                await _audioPlayer.PlayAudioAsync(segment.AudioData, cancellationToken);
             }
         }
     }
@@ -214,6 +217,55 @@ public class TextToSpeechProcessor : IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "音声ファイルの出力に失敗しました");
+        }
+    }
+
+    private async Task SynthesizeMissingSegmentsAsync(List<TextSegment> segments, VoiceRequest originalRequest, bool noCache, CancellationToken cancellationToken)
+    {
+        var missingSegments = segments.Where(s => s.AudioData == null).ToList();
+        if (missingSegments.Count == 0)
+        {
+            return;
+        }
+
+        _logger.LogInformation("Synthesizing {Count} missing segments...", missingSegments.Count);
+
+        using var client = new VoiceVoxApiClient(_settings.VoiceVox);
+        using var cacheManager = new AudioCacheManager(_settings.Cache);
+
+        await client.InitializeSpeakerAsync(originalRequest.SpeakerId, cancellationToken);
+
+        foreach (var segment in missingSegments)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var segmentRequest = new VoiceRequest
+                {
+                    Text = segment.Text,
+                    SpeakerId = originalRequest.SpeakerId,
+                    Speed = originalRequest.Speed,
+                    Pitch = originalRequest.Pitch,
+                    Volume = originalRequest.Volume
+                };
+
+                // 音声合成
+                var audioQuery = await client.GenerateAudioQueryAsync(segmentRequest, cancellationToken);
+                var wavData = await client.SynthesizeAudioAsync(audioQuery, originalRequest.SpeakerId, cancellationToken);
+
+                segment.AudioData = wavData;
+
+                // キャッシュに保存（noCacheフラグがfalseの場合のみ）
+                if (!noCache)
+                {
+                    await cacheManager.SaveAudioCacheAsync(segmentRequest, wavData);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to synthesize segment: {Text}", segment.Text);
+            }
         }
     }
 }
