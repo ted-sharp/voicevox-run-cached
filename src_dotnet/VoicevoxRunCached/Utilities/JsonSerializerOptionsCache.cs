@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Text.Encodings.Web;
+using System.Text.Json;
 
 namespace VoicevoxRunCached.Utilities;
 
@@ -8,19 +9,21 @@ namespace VoicevoxRunCached.Utilities;
 public static class JsonSerializerOptionsCache
 {
     /// <summary>
-    /// インデントありのJsonSerializerOptions
+    /// インデントありのJsonSerializerOptions（日本語を直接保存）
     /// </summary>
     public static JsonSerializerOptions Indented { get; } = new()
     {
-        WriteIndented = true
+        WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 
     /// <summary>
-    /// コンパクト（インデントなし）のJsonSerializerOptions
+    /// コンパクト（インデントなし）のJsonSerializerOptions（日本語を直接保存）
     /// </summary>
     public static JsonSerializerOptions Compact { get; } = new()
     {
-        WriteIndented = false
+        WriteIndented = false,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 }
 
