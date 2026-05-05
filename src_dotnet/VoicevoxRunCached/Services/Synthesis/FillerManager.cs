@@ -11,6 +11,8 @@ public class FillerManager
     private readonly int _defaultSpeaker;
     private readonly FillerSettings _settings;
     private readonly ILogger _logger;
+    // 直近フィラー記録は singleton 状態。consumer は基本 1 スレッドだが、将来並列化が
+    // 入っても tearing しないよう Volatile.Read/Write で guard する。
     private string? _lastUsedFiller;
 
     public FillerManager(FillerSettings settings, int defaultSpeakerId, ILogger? logger = null)
@@ -89,7 +91,7 @@ public class FillerManager
         }
 
         string selectedFiller = SelectFillerText();
-        _lastUsedFiller = selectedFiller;
+        System.Threading.Volatile.Write(ref _lastUsedFiller, selectedFiller);
         _logger.LogDebug("ランダムフィラー音声を選択: \"{Text}\"", selectedFiller);
 
         var fillerRequest = BuildFillerRequest(selectedFiller);
@@ -136,8 +138,9 @@ public class FillerManager
             return _settings.FillerTexts[0];
         }
 
+        var lastUsed = System.Threading.Volatile.Read(ref _lastUsedFiller);
         var availableFillers = _settings.FillerTexts
-            .Where(f => f != _lastUsedFiller)
+            .Where(f => f != lastUsed)
             .ToArray();
 
         if (availableFillers.Length == 0)

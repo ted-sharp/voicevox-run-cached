@@ -41,12 +41,27 @@ public static class ArgumentParser
         "-o"
     }.ToFrozenSet();
 
+    // 同じ args 配列に対する PreprocessArgs を 1 コマンド実行内で複数の API
+    // (ParseArguments / ParseTextToSpeechOptions / GetBoolOption …) から繰り返し呼ぶため、
+    // 直近 1 件だけ thread-local にキャッシュする。配列参照が同じなら再処理を省く。
+    [ThreadStatic]
+    private static string[]? _lastPreprocessInput;
+    [ThreadStatic]
+    private static string[]? _lastPreprocessOutput;
+
     /// <summary>
     /// コマンドライン引数を前処理して、IConfigurationで使用できる形式に変換
     /// </summary>
     public static string[] PreprocessArgs(string[] args)
     {
-        return ArgsHelper.PreprocessArgs(args, FlagArgs, ShortArgs);
+        if (ReferenceEquals(_lastPreprocessInput, args) && _lastPreprocessOutput != null)
+        {
+            return _lastPreprocessOutput;
+        }
+        var processed = ArgsHelper.PreprocessArgs(args, FlagArgs, ShortArgs);
+        _lastPreprocessInput = args;
+        _lastPreprocessOutput = processed;
+        return processed;
     }
 
     /// <summary>

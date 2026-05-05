@@ -5,7 +5,6 @@ using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
-using VoicevoxRunCached.Services.Audio;
 
 namespace VoicevoxRunCached.Services.Audio;
 
@@ -250,8 +249,8 @@ public class AudioPlayer : IDisposable
             reader = _formatDetector.CreateWaveStream(audioData);
 
             var tcs = new TaskCompletionSource<bool>();
-            EventHandler<StoppedEventArgs>? handler = null;
-            handler = (_, e) =>
+            // ローカル関数化することで自己参照に null 抑制 (`handler!`) が要らなくなる。
+            void OnPlaybackStopped(object? sender, StoppedEventArgs e)
             {
                 if (e.Exception != null)
                 {
@@ -261,10 +260,9 @@ public class AudioPlayer : IDisposable
                 {
                     tcs.TrySetResult(true);
                 }
-
-                wavePlayer.PlaybackStopped -= handler!;
-            };
-            wavePlayer.PlaybackStopped += handler;
+                wavePlayer.PlaybackStopped -= OnPlaybackStopped;
+            }
+            wavePlayer.PlaybackStopped += OnPlaybackStopped;
 
             wavePlayer.Init(reader);
             await Task.Delay(leadingDelayMs, cancellationToken);

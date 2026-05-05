@@ -27,7 +27,7 @@ public class CacheCommandHandler
         try
         {
             using var spinner = new ProgressSpinner("Clearing audio cache...");
-            _cacheManager.ClearAllCache();
+            await _cacheManager.ClearAllCacheAsync();
 
             await _fillerManager.ClearFillerCacheAsync();
 

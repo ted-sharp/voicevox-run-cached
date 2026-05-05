@@ -10,6 +10,19 @@ public class VoiceRequest(string text = "", int speakerId = 0, double speed = 1.
     public double Speed { get; set; } = speed;
     public double Pitch { get; set; } = pitch;
     public double Volume { get; set; } = volume;
+
+    /// <summary>
+    /// 音声パラメータ (SpeakerId/Speed/Pitch/Volume) を引き継ぎ、Text だけ差し替えた新しい <see cref="VoiceRequest"/> を返す。
+    /// セグメント単位の合成 / フィラー / キャッシュ参照で同じ生成パターンを共有するためのヘルパ。
+    /// </summary>
+    public VoiceRequest WithText(string text) => new()
+    {
+        Text = text,
+        SpeakerId = this.SpeakerId,
+        Speed = this.Speed,
+        Pitch = this.Pitch,
+        Volume = this.Volume,
+    };
 }
 
 public class AudioQueryResponse

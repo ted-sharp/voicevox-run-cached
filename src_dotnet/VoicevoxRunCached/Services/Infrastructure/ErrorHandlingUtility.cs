@@ -10,118 +10,104 @@ namespace VoicevoxRunCached.Services.Infrastructure;
 public static class ErrorHandlingUtility
 {
     /// <summary>
-    /// HTTPステータスコードから適切なエラーコードを取得します
+    /// エラーコード・ユーザーメッセージ・推奨解決策を 1 度の switch でまとめて取り出すための record。
+    /// HTTP/例外ごとの分岐をここに集約することで、3 種の switch を 1 つに減らしている。
     /// </summary>
-    public static string GetErrorCodeFromHttpStatus(HttpStatusCode statusCode)
-    {
-        return statusCode switch
-        {
-            HttpStatusCode.BadRequest => ErrorCodes.Api.ApiRequestFailed,
-            HttpStatusCode.Unauthorized => ErrorCodes.Api.ApiAuthenticationError,
-            HttpStatusCode.Forbidden => ErrorCodes.General.PermissionDenied,
-            HttpStatusCode.NotFound => ErrorCodes.General.ResourceNotFound,
-            HttpStatusCode.TooManyRequests => ErrorCodes.Api.ApiRateLimitExceeded,
-            HttpStatusCode.InternalServerError => ErrorCodes.Engine.EngineProcessError,
-            HttpStatusCode.ServiceUnavailable => ErrorCodes.Engine.EngineNotAvailable,
-            HttpStatusCode.GatewayTimeout => ErrorCodes.Api.ApiTimeout,
-            HttpStatusCode.RequestTimeout => ErrorCodes.Api.ApiTimeout,
-            _ => ErrorCodes.Api.ApiRequestFailed
-        };
-    }
+    public readonly record struct ErrorContext(string Code, string UserMessage, string Solution);
 
     /// <summary>
-    /// HTTPステータスコードからユーザーフレンドリーなエラーメッセージを取得します
+    /// HTTPステータスコードからエラー文脈 (Code, UserMessage, Solution) を取得します
     /// </summary>
-    public static string GetUserFriendlyMessageFromHttpStatus(HttpStatusCode statusCode)
+    public static ErrorContext FromHttpStatus(HttpStatusCode statusCode) => statusCode switch
     {
-        return statusCode switch
-        {
-            HttpStatusCode.BadRequest => "リクエストが無効です。パラメータを確認してください。",
-            HttpStatusCode.Unauthorized => "認証に失敗しました。APIキーまたは権限を確認してください。",
-            HttpStatusCode.Forbidden => "アクセスが拒否されました。権限を確認してください。",
-            HttpStatusCode.NotFound => "リソースが見つかりません。APIバージョンとエンドポイントを確認してください。",
-            HttpStatusCode.TooManyRequests => "レート制限を超過しました。しばらく待ってから再試行してください。",
-            HttpStatusCode.InternalServerError => "サーバーで内部エラーが発生しました。しばらく待ってから再試行してください。",
-            HttpStatusCode.ServiceUnavailable => "サービスが一時的に利用できません。しばらく待ってから再試行してください。",
-            HttpStatusCode.GatewayTimeout => "リクエストがタイムアウトしました。しばらく待ってから再試行してください。",
-            HttpStatusCode.RequestTimeout => "リクエストがタイムアウトしました。しばらく待ってから再試行してください。",
-            _ => "APIリクエストでエラーが発生しました。"
-        };
-    }
+        HttpStatusCode.BadRequest => new(
+            ErrorCodes.Api.ApiRequestFailed,
+            "リクエストが無効です。パラメータを確認してください。",
+            "リクエストパラメータの形式と値を確認してください。"),
+        HttpStatusCode.Unauthorized => new(
+            ErrorCodes.Api.ApiAuthenticationError,
+            "認証に失敗しました。APIキーまたは権限を確認してください。",
+            "APIキーが正しく設定されているか確認してください。"),
+        HttpStatusCode.Forbidden => new(
+            ErrorCodes.General.PermissionDenied,
+            "アクセスが拒否されました。権限を確認してください。",
+            "必要な権限があるか確認してください。"),
+        HttpStatusCode.NotFound => new(
+            ErrorCodes.General.ResourceNotFound,
+            "リソースが見つかりません。APIバージョンとエンドポイントを確認してください。",
+            "APIエンドポイントのURLが正しいか確認してください。"),
+        HttpStatusCode.TooManyRequests => new(
+            ErrorCodes.Api.ApiRateLimitExceeded,
+            "レート制限を超過しました。しばらく待ってから再試行してください。",
+            "リクエスト頻度を下げてください。"),
+        HttpStatusCode.InternalServerError => new(
+            ErrorCodes.Engine.EngineProcessError,
+            "サーバーで内部エラーが発生しました。しばらく待ってから再試行してください。",
+            "VOICEVOXエンジンを再起動してください。"),
+        HttpStatusCode.ServiceUnavailable => new(
+            ErrorCodes.Engine.EngineNotAvailable,
+            "サービスが一時的に利用できません。しばらく待ってから再試行してください。",
+            "VOICEVOXエンジンが起動しているか確認してください。"),
+        HttpStatusCode.GatewayTimeout => new(
+            ErrorCodes.Api.ApiTimeout,
+            "リクエストがタイムアウトしました。しばらく待ってから再試行してください。",
+            "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。"),
+        HttpStatusCode.RequestTimeout => new(
+            ErrorCodes.Api.ApiTimeout,
+            "リクエストがタイムアウトしました。しばらく待ってから再試行してください。",
+            "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。"),
+        _ => new(
+            ErrorCodes.Api.ApiRequestFailed,
+            "APIリクエストでエラーが発生しました。",
+            "ネットワーク接続とVOICEVOXエンジンの状態を確認してください。"),
+    };
 
     /// <summary>
-    /// HTTPステータスコードから推奨される解決策を取得します
+    /// 例外からエラー文脈 (Code, UserMessage, Solution) を取得します
     /// </summary>
-    public static string GetSuggestedSolutionFromHttpStatus(HttpStatusCode statusCode)
+    public static ErrorContext FromException(Exception exception) => exception switch
     {
-        return statusCode switch
-        {
-            HttpStatusCode.BadRequest => "リクエストパラメータの形式と値を確認してください。",
-            HttpStatusCode.Unauthorized => "APIキーが正しく設定されているか確認してください。",
-            HttpStatusCode.Forbidden => "必要な権限があるか確認してください。",
-            HttpStatusCode.NotFound => "APIエンドポイントのURLが正しいか確認してください。",
-            HttpStatusCode.TooManyRequests => "リクエスト頻度を下げてください。",
-            HttpStatusCode.InternalServerError => "VOICEVOXエンジンを再起動してください。",
-            HttpStatusCode.ServiceUnavailable => "VOICEVOXエンジンが起動しているか確認してください。",
-            HttpStatusCode.GatewayTimeout => "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。",
-            HttpStatusCode.RequestTimeout => "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。",
-            _ => "ネットワーク接続とVOICEVOXエンジンの状態を確認してください。"
-        };
-    }
+        UnauthorizedAccessException => new(
+            ErrorCodes.General.PermissionDenied,
+            "アクセス権限がありません。",
+            "管理者権限で実行するか、必要な権限を確認してください。"),
+        IOException => new(
+            ErrorCodes.Cache.CacheReadError,
+            "ファイルまたはディレクトリの操作に失敗しました。",
+            "ファイルの存在とアクセス権限を確認してください。"),
+        ArgumentException => new(
+            ErrorCodes.General.InvalidArguments,
+            "無効な引数が指定されました。",
+            "コマンドライン引数を確認し、--helpオプションで使用方法を確認してください。"),
+        InvalidOperationException => new(
+            ErrorCodes.General.InvalidArguments,
+            "操作に必要な前提条件が満たされていません。",
+            "アプリケーションの設定と前提条件を確認してください。"),
+        TaskCanceledException => new(
+            ErrorCodes.Api.ApiTimeout,
+            "操作がタイムアウトしました。",
+            "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。"),
+        OperationCanceledException => new(
+            ErrorCodes.General.OperationCancelled,
+            "操作がキャンセルされました。",
+            "操作を再実行してください。"),
+        TimeoutException => new(
+            ErrorCodes.General.TimeoutError,
+            "操作がタイムアウトしました。",
+            "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。"),
+        _ => new(
+            ErrorCodes.General.UnknownError,
+            "予期しないエラーが発生しました。",
+            "アプリケーションを再起動し、問題が続く場合はログを確認してください。"),
+    };
 
-    /// <summary>
-    /// 例外から適切なエラーコードを取得します
-    /// </summary>
-    public static string GetErrorCodeFromException(Exception exception)
-    {
-        return exception switch
-        {
-            UnauthorizedAccessException => ErrorCodes.General.PermissionDenied,
-            IOException => ErrorCodes.Cache.CacheReadError,
-            ArgumentException => ErrorCodes.General.InvalidArguments,
-            InvalidOperationException => ErrorCodes.General.InvalidArguments,
-            TaskCanceledException => ErrorCodes.Api.ApiTimeout,
-            OperationCanceledException => ErrorCodes.General.OperationCancelled,
-            TimeoutException => ErrorCodes.General.TimeoutError,
-            _ => ErrorCodes.General.UnknownError
-        };
-    }
+    public static string GetErrorCodeFromHttpStatus(HttpStatusCode statusCode) => FromHttpStatus(statusCode).Code;
+    public static string GetUserFriendlyMessageFromHttpStatus(HttpStatusCode statusCode) => FromHttpStatus(statusCode).UserMessage;
+    public static string GetSuggestedSolutionFromHttpStatus(HttpStatusCode statusCode) => FromHttpStatus(statusCode).Solution;
 
-    /// <summary>
-    /// 例外からユーザーフレンドリーなエラーメッセージを取得します
-    /// </summary>
-    public static string GetUserFriendlyMessageFromException(Exception exception)
-    {
-        return exception switch
-        {
-            UnauthorizedAccessException => "アクセス権限がありません。",
-            IOException => "ファイルまたはディレクトリの操作に失敗しました。",
-            ArgumentException => "無効な引数が指定されました。",
-            InvalidOperationException => "操作に必要な前提条件が満たされていません。",
-            TaskCanceledException => "操作がタイムアウトしました。",
-            OperationCanceledException => "操作がキャンセルされました。",
-            TimeoutException => "操作がタイムアウトしました。",
-            _ => "予期しないエラーが発生しました。"
-        };
-    }
-
-    /// <summary>
-    /// 例外から推奨される解決策を取得します
-    /// </summary>
-    public static string GetSuggestedSolutionFromException(Exception exception)
-    {
-        return exception switch
-        {
-            UnauthorizedAccessException => "管理者権限で実行するか、必要な権限を確認してください。",
-            IOException => "ファイルの存在とアクセス権限を確認してください。",
-            ArgumentException => "コマンドライン引数を確認し、--helpオプションで使用方法を確認してください。",
-            InvalidOperationException => "アプリケーションの設定と前提条件を確認してください。",
-            TaskCanceledException => "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。",
-            OperationCanceledException => "操作を再実行してください。",
-            TimeoutException => "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。",
-            _ => "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
-        };
-    }
+    public static string GetErrorCodeFromException(Exception exception) => FromException(exception).Code;
+    public static string GetUserFriendlyMessageFromException(Exception exception) => FromException(exception).UserMessage;
+    public static string GetSuggestedSolutionFromException(Exception exception) => FromException(exception).Solution;
 
     /// <summary>
     /// エラーコードから終了コードを取得します
@@ -139,7 +125,7 @@ public static class ErrorHandlingUtility
             "Cache" => 4,
             "Audio" => 5,
             "API" => 6,
-            _ => 1
+            _ => 1,
         };
     }
 
@@ -148,43 +134,31 @@ public static class ErrorHandlingUtility
     /// </summary>
     public static void LogErrorDetails(ILogger logger, Exception exception, string operation, string? context = null)
     {
-        var errorCode = GetErrorCodeFromException(exception);
-        var userMessage = GetUserFriendlyMessageFromException(exception);
-        var suggestedSolution = GetSuggestedSolutionFromException(exception);
-
+        var ctx = FromException(exception);
         logger.LogError(exception,
             "エラーが発生しました - 操作: {Operation}, エラーコード: {ErrorCode}, コンテキスト: {Context}",
-            operation, errorCode, context ?? "なし");
+            operation, ctx.Code, context ?? "なし");
 
-        logger.LogInformation("ユーザーメッセージ: {UserMessage}", userMessage);
-        logger.LogInformation("推奨される解決策: {SuggestedSolution}", suggestedSolution);
+        logger.LogInformation("ユーザーメッセージ: {UserMessage}", ctx.UserMessage);
+        logger.LogInformation("推奨される解決策: {SuggestedSolution}", ctx.Solution);
     }
 
     /// <summary>
     /// 例外を処理して、エラーメッセージを出力し、終了コードを返します
     /// </summary>
-    /// <param name="ex">処理する例外</param>
-    /// <param name="logger">ロガー（オプション）</param>
-    /// <param name="operation">操作名（ログ用、オプション）</param>
-    /// <param name="context">コンテキスト（ログ用、オプション）</param>
-    /// <returns>終了コード</returns>
     public static int HandleExceptionAndGetExitCode(Exception ex, ILogger? logger = null, string? operation = null, string? context = null)
     {
-        var errorCode = GetErrorCodeFromException(ex);
-        var userMessage = GetUserFriendlyMessageFromException(ex);
-        var solution = GetSuggestedSolutionFromException(ex);
+        var ctx = FromException(ex);
 
-        // ログに記録
         if (logger != null && !String.IsNullOrEmpty(operation))
         {
             logger.LogError(ex, "エラーが発生しました - 操作: {Operation}, エラーコード: {ErrorCode}, コンテキスト: {Context}",
-                operation, errorCode, context ?? "なし");
+                operation, ctx.Code, context ?? "なし");
         }
 
-        // コンソールに出力
-        ConsoleHelper.WriteError($"Error: {userMessage} - {ex.Message}", logger);
-        ConsoleHelper.WriteLine($"解決策: {solution}", logger);
+        ConsoleHelper.WriteError($"Error: {ctx.UserMessage} - {ex.Message}", logger);
+        ConsoleHelper.WriteLine($"解決策: {ctx.Solution}", logger);
 
-        return GetExitCodeFromErrorCode(errorCode);
+        return GetExitCodeFromErrorCode(ctx.Code);
     }
 }

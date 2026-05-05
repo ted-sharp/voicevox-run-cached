@@ -61,6 +61,7 @@ public static class ErrorCodes
             Audio.AudioDeviceError => "音声デバイスでエラーが発生しました",
             Audio.AudioEncodingFailed => "音声のエンコードに失敗しました",
             Audio.MediaFoundationInitFailed => "MediaFoundationの初期化に失敗しました",
+            Audio.AudioFileExportFailed => "音声ファイルの出力に失敗しました",
 
             // API
             Api.ApiRequestFailed => "APIリクエストに失敗しました",
@@ -122,6 +123,7 @@ public static class ErrorCodes
         public const string AudioDeviceError = "AUDIO_004";
         public const string AudioEncodingFailed = "AUDIO_005";
         public const string MediaFoundationInitFailed = "AUDIO_006";
+        public const string AudioFileExportFailed = "AUDIO_007";
     }
 
     // API関連のエラーコード

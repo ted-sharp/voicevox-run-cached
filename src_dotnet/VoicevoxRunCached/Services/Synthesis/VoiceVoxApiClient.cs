@@ -162,15 +162,16 @@ public class VoiceVoxApiClient : IDisposable
             case HttpRequestException httpEx when httpEx.StatusCode.HasValue:
                 {
                     var statusCode = httpEx.StatusCode.Value;
+                    var ctx = ErrorHandlingUtility.FromHttpStatus(statusCode);
                     _logger.LogError(httpEx, "{OperationName} に失敗 - StatusCode: {StatusCode}", operationName, statusCode);
                     return new VoiceVoxApiException(
-                        ErrorHandlingUtility.GetErrorCodeFromHttpStatus(statusCode),
+                        ctx.Code,
                         $"{operationName} failed",
-                        ErrorHandlingUtility.GetUserFriendlyMessageFromHttpStatus(statusCode),
+                        ctx.UserMessage,
                         httpEx,
                         statusCode,
                         null,
-                        ErrorHandlingUtility.GetSuggestedSolutionFromHttpStatus(statusCode));
+                        ctx.Solution);
                 }
 
             case TaskCanceledException tcEx:
@@ -214,10 +215,12 @@ public class VoiceVoxApiClient : IDisposable
         var response = await _httpClient.SendAsync(request, cancellationToken);
         _logger.LogDebug("HTTP response: {StatusCode}", response.StatusCode);
 
+        // 失敗時は呼び出し元の using に戻らないので、ローカル所有のまま明示 Dispose する。
         if (!response.IsSuccessStatusCode)
         {
+            var statusCode = response.StatusCode;
             response.Dispose();
-            throw new HttpRequestException($"HTTP {(int)response.StatusCode} {response.StatusCode}", null, response.StatusCode);
+            throw new HttpRequestException($"HTTP {(int)statusCode} {statusCode}", null, statusCode);
         }
 
         return response;

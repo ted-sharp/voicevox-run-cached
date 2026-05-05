@@ -15,12 +15,14 @@ public class DiskCacheStore
     private readonly CacheSettings _settings;
     private readonly TimeSpan _expiration;
     private readonly ILogger _logger;
+    private readonly IClock _clock;
 
-    public DiskCacheStore(CacheSettings settings, ILogger? logger = null)
+    public DiskCacheStore(CacheSettings settings, ILogger? logger = null, IClock? clock = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _expiration = TimeSpan.FromDays(settings.ExpirationDays);
         _logger = logger ?? NullLogger.Instance;
+        _clock = clock ?? SystemClock.Instance;
         // パスの正規化は ApplicationBootstrap.BuildAppSettings 側で完了済み
         EnsureDirectoryExists();
     }
@@ -52,7 +54,7 @@ public class DiskCacheStore
                 return null;
             }
 
-            if (DateTime.UtcNow - metadata.CreatedAt > _expiration)
+            if (_clock.UtcNow - metadata.CreatedAt > _expiration)
             {
                 _logger.LogDebug("キャッシュミス: {CacheKey} - メタデータが期限切れ", cacheKey);
                 Delete(cacheKey);
@@ -80,7 +82,7 @@ public class DiskCacheStore
 
         var metadata = new CacheMetadata
         {
-            CreatedAt = DateTime.UtcNow,
+            CreatedAt = _clock.UtcNow,
             Text = request.Text,
             SpeakerId = request.SpeakerId,
             Speed = request.Speed,
@@ -160,36 +162,28 @@ public class DiskCacheStore
     /// <summary>
     /// cacheKey 指定でメタデータを読む。失敗時 null。
     /// </summary>
-    public async Task<CacheMetadata?> ReadMetadataAsync(string cacheKey, CancellationToken cancellationToken = default)
+    public Task<CacheMetadata?> ReadMetadataAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
         var (_, metaPath) = ResolvePaths(cacheKey);
-        if (!File.Exists(metaPath))
-            return null;
-
-        try
-        {
-            var json = await File.ReadAllTextAsync(metaPath, cancellationToken);
-            return JsonSerializer.Deserialize<CacheMetadata>(json);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to read metadata file: {Path}", metaPath);
-            return null;
-        }
+        return ReadMetadataFromPathAsync(metaPath, cancellationToken);
     }
 
     /// <summary>
-    /// 同期版のメタデータ読み込み (eviction の同期ループから利用)。引数は metaFilePath そのもの。
+    /// メタデータファイルパスを直接指定して非同期に読み込む (eviction が dir 列挙から渡してくる用途)。
     /// </summary>
-    public CacheMetadata? ReadMetadata(string metaFilePath)
+    public async Task<CacheMetadata?> ReadMetadataFromPathAsync(string metaFilePath, CancellationToken cancellationToken = default)
     {
         if (!File.Exists(metaFilePath))
             return null;
 
         try
         {
-            var json = File.ReadAllText(metaFilePath);
+            var json = await File.ReadAllTextAsync(metaFilePath, cancellationToken);
             return JsonSerializer.Deserialize<CacheMetadata>(json);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {

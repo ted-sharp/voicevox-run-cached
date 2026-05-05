@@ -2,7 +2,6 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
-using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Services.Cache;
 
@@ -15,116 +14,65 @@ public class CacheEvictionPolicy
     private readonly CacheSettings _settings;
     private readonly TimeSpan _expiration;
     private readonly ILogger _logger;
+    private readonly IClock _clock;
 
-    public CacheEvictionPolicy(DiskCacheStore disk, CacheSettings settings, ILogger? logger = null)
+    public CacheEvictionPolicy(DiskCacheStore disk, CacheSettings settings, ILogger? logger = null, IClock? clock = null)
     {
         _disk = disk ?? throw new ArgumentNullException(nameof(disk));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _expiration = TimeSpan.FromDays(settings.ExpirationDays);
         _logger = logger ?? NullLogger.Instance;
+        _clock = clock ?? SystemClock.Instance;
     }
 
     /// <summary>
     /// 期限切れキャッシュを削除する。
     /// </summary>
-    public async Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
+    public Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
-        try
-        {
-            if (!Directory.Exists(_settings.Directory))
-                return;
-
-            var metaFiles = _disk.GetMetadataFiles();
-            var expiredKeys = new List<string>();
-
-            foreach (var metaFile in metaFiles)
+        return CacheErrorMapper.WithMappingAsync<object?>(
+            CacheErrorMapper.OperationKind.Cleanup,
+            "キャッシュクリーンアップ",
+            null,
+            _settings.Directory,
+            _logger,
+            async () =>
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                if (!Directory.Exists(_settings.Directory))
+                    return null;
 
-                try
+                var metaFiles = _disk.GetMetadataFiles();
+                var expiredKeys = new List<string>();
+
+                foreach (var metaFile in metaFiles)
                 {
-                    var metadata = _disk.ReadMetadata(metaFile);
-                    if (metadata == null || DateTime.UtcNow - metadata.CreatedAt > _expiration)
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var metadata = await _disk.ReadMetadataFromPathAsync(metaFile, cancellationToken);
+                    if (metadata == null || _clock.UtcNow - metadata.CreatedAt > _expiration)
                     {
                         expiredKeys.Add(DiskCacheStore.ExtractKeyFromMetadataPath(metaFile));
                     }
                 }
-                catch
+
+                foreach (var key in expiredKeys)
                 {
-                    expiredKeys.Add(DiskCacheStore.ExtractKeyFromMetadataPath(metaFile));
+                    _disk.Delete(key);
                 }
-            }
 
-            foreach (var key in expiredKeys)
-            {
-                _disk.Delete(key);
-            }
+                if (expiredKeys.Count > 0)
+                {
+                    _logger.LogInformation("期限切れキャッシュをクリーンアップしました - {Count} ファイル", expiredKeys.Count);
+                }
 
-            if (expiredKeys.Count > 0)
-            {
-                _logger.LogInformation("期限切れキャッシュをクリーンアップしました - {Count} ファイル", expiredKeys.Count);
-            }
-
-            await Task.CompletedTask;
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogInformation("キャッシュクリーンアップがキャンセルされました");
-            throw new VoicevoxRunCachedException(
-                ErrorCodes.General.OperationCancelled,
-                "Cache cleanup was cancelled",
-                "キャッシュクリーンアップがキャンセルされました。",
-                null,
-                "操作を再実行してください。"
-            );
-        }
-        catch (VoicevoxRunCachedException)
-        {
-            // 既にドメイン例外に整形済みのものは二重 wrap せず素通し
-            throw;
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            _logger.LogError(ex, "キャッシュクリーンアップ中にアクセス権限エラーが発生しました");
-            throw new CacheException(
-                ErrorCodes.Cache.CachePermissionDenied,
-                $"Access denied during cache cleanup: {ex.Message}",
-                "キャッシュクリーンアップ中にアクセス権限エラーが発生しました。",
-                null,
-                _settings.Directory,
-                "キャッシュディレクトリのアクセス権限を確認してください。"
-            );
-        }
-        catch (IOException ex)
-        {
-            _logger.LogError(ex, "キャッシュクリーンアップ中にI/Oエラーが発生しました");
-            throw new CacheException(
-                ErrorCodes.Cache.CacheReadError,
-                $"I/O error during cache cleanup: {ex.Message}",
-                "キャッシュクリーンアップ中にI/Oエラーが発生しました。",
-                null,
-                _settings.Directory,
-                "ディスクの状態とキャッシュディレクトリの権限を確認してください。"
-            );
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "キャッシュクリーンアップ中に予期しないエラーが発生しました");
-            throw new CacheException(
-                ErrorCodes.General.UnknownError,
-                $"Unexpected error during cache cleanup: {ex.Message}",
-                "キャッシュクリーンアップ中に予期しないエラーが発生しました。",
-                null,
-                _settings.Directory,
-                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
-            );
-        }
+                return null;
+            });
     }
 
     /// <summary>
     /// MaxSizeGb を超えていれば古いものから削除する。
     /// </summary>
-    public void CleanupByMaxSize(CancellationToken cancellationToken = default)
+    public async Task CleanupByMaxSizeAsync(CancellationToken cancellationToken = default)
     {
         try
         {
@@ -135,12 +83,10 @@ public class CacheEvictionPolicy
 
             var dirInfo = new DirectoryInfo(_settings.Directory);
             var entries = dirInfo.GetFiles("*.mp3", SearchOption.TopDirectoryOnly)
-                .Select(f => new
-                {
-                    File = f,
-                    Meta = new FileInfo(Path.Combine(_settings.Directory,
-                        Path.GetFileNameWithoutExtension(f.Name) + ".meta.json"))
-                })
+                .Select(f => new FileEntry(
+                    f,
+                    new FileInfo(Path.Combine(_settings.Directory,
+                        Path.GetFileNameWithoutExtension(f.Name) + ".meta.json"))))
                 .ToList();
 
             long totalBytes = entries.Sum(x => x.File.Length);
@@ -149,7 +95,16 @@ public class CacheEvictionPolicy
             if (maxBytes <= 0 || totalBytes <= maxBytes)
                 return;
 
-            var ordered = entries.OrderBy(x => GetFileTimestamp(x.File, x.Meta)).ToList();
+            // タイムスタンプで降順比較するため、各エントリの timestamp を非同期で先に解決する
+            var withTimestamps = new List<(FileEntry Entry, DateTime Timestamp)>(entries.Count);
+            foreach (var entry in entries)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var ts = await ResolveTimestampAsync(entry, cancellationToken);
+                withTimestamps.Add((entry, ts));
+            }
+
+            var ordered = withTimestamps.OrderBy(x => x.Timestamp).Select(x => x.Entry).ToList();
 
             int deleted = 0;
             foreach (var entry in ordered)
@@ -193,13 +148,13 @@ public class CacheEvictionPolicy
     /// </summary>
     public Task RunBackgroundSizeCleanupAsync()
     {
-        return Task.Run(() =>
+        return Task.Run(async () =>
         {
             try
             {
                 using var cts = new CancellationTokenSource(
                     TimeSpan.FromMinutes(AudioConstants.CacheBackgroundEvictionTimeoutMinutes));
-                CleanupByMaxSize(cts.Token);
+                await CleanupByMaxSizeAsync(cts.Token);
             }
             catch (OperationCanceledException)
             {
@@ -212,14 +167,16 @@ public class CacheEvictionPolicy
         }, CancellationToken.None);
     }
 
-    private DateTime GetFileTimestamp(FileInfo file, FileInfo metaFile)
+    private async Task<DateTime> ResolveTimestampAsync(FileEntry entry, CancellationToken cancellationToken)
     {
-        if (metaFile.Exists)
+        if (entry.Meta.Exists)
         {
-            var meta = _disk.ReadMetadata(metaFile.FullName);
+            var meta = await _disk.ReadMetadataFromPathAsync(entry.Meta.FullName, cancellationToken);
             if (meta != null)
                 return meta.CreatedAt;
         }
-        return file.LastWriteTimeUtc;
+        return entry.File.LastWriteTimeUtc;
     }
+
+    private readonly record struct FileEntry(FileInfo File, FileInfo Meta);
 }

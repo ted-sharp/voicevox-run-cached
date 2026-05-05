@@ -83,7 +83,10 @@ public class RetryPolicyService
         var delay = CalculateDelay(retryCount, statusCode);
         var errorType = GetErrorType(exception);
 
-        _logger.LogWarning(exception, "{ErrorType} during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
+        // リトライ自体は正常フロー (5xx/429/timeout に対する既定の挙動) なので Debug。
+        // 全試行が失敗した時の `Non-retryable error` / `failed after maximum retry attempts` は
+        // 別のログパスで Error として残るため、運用ログ上の追跡性は保たれる。
+        _logger.LogDebug(exception, "{ErrorType} during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
             errorType, operationName, delay, retryCount, MaxRetryAttempts);
 
         await Task.Delay(delay, cancellationToken);

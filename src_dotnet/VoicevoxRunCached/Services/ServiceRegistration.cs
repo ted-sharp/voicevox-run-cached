@@ -31,6 +31,9 @@ public static class ServiceRegistration
         // ロガー (singleton)
         container.RegisterInstance(logger);
 
+        // 時刻プロバイダ (テストで mock 可能にするため抽象化)
+        container.RegisterInstance<IClock>(SystemClock.Instance);
+
         // MemoryCache は IMemoryCache として登録 (CacheSettings.MemoryCacheSizeMb をサイズ上限に)
         var memoryCacheOptions = new MemoryCacheOptions
         {

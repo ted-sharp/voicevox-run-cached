@@ -319,14 +319,7 @@ public class TextToSpeechProcessor
         }
     }
 
-    private static VoiceRequest BuildSegmentRequest(string text, VoiceRequest source) => new()
-    {
-        Text = text,
-        SpeakerId = source.SpeakerId,
-        Speed = source.Speed,
-        Pitch = source.Pitch,
-        Volume = source.Volume
-    };
+    private static VoiceRequest BuildSegmentRequest(string text, VoiceRequest source) => source.WithText(text);
 
     private void LogElapsedIfVerbose(bool verbose, DateTime startedAt)
     {

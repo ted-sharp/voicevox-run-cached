@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 using NAudio.Wave;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Synthesis;
@@ -38,11 +39,21 @@ public class AudioExportService
             ConsoleHelper.WriteLine("Output export was cancelled", _logger);
             throw;
         }
+        catch (VoicevoxRunCachedException)
+        {
+            // 既にドメイン例外化済み (API クライアント等) はそのまま伝播させる
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "音声ファイルの出力に失敗しました: {OutPath}", outPath);
             ConsoleHelper.WriteWarning($"Failed to save output to '{outPath}': {ex.Message}", _logger);
-            throw new InvalidOperationException($"音声ファイルの出力に失敗しました: {outPath}", ex);
+            throw new AudioProcessingException(
+                ErrorCodes.Audio.AudioFileExportFailed,
+                $"Failed to export audio file: {outPath}",
+                $"音声ファイルの出力に失敗しました: {outPath}",
+                ex,
+                "出力先ディレクトリの権限と空き容量を確認してください。");
         }
     }
 
@@ -55,21 +66,19 @@ public class AudioExportService
             var validSegments = segments.Where(s => s.AudioData != null && s.AudioData.Length > 0).ToList();
             if (validSegments.Count == 0)
             {
-                throw new InvalidOperationException("出力可能なセグメントがありません");
+                throw new AudioProcessingException(
+                    ErrorCodes.Audio.AudioFileExportFailed,
+                    "No valid segments to export",
+                    "出力可能なセグメントがありません。",
+                    "事前に合成を実行し、AudioData が埋まったセグメントを渡してください。");
             }
 
             var combinedWavData = await CombineWavSegmentsAsync(validSegments.Select(s => s.AudioData!).ToList(), cancellationToken);
 
             var extension = Path.GetExtension(outPath).ToLowerInvariant();
-            byte[] finalAudioData;
-            if (extension == ".mp3")
-            {
-                finalAudioData = AudioConversionUtility.ConvertWavToMp3(combinedWavData);
-            }
-            else
-            {
-                finalAudioData = combinedWavData;
-            }
+            byte[] finalAudioData = extension == ".mp3"
+                ? AudioConversionUtility.ConvertWavToMp3(combinedWavData)
+                : combinedWavData;
 
             await WriteOutputFileAsync(finalAudioData, outPath, cancellationToken);
 
@@ -81,11 +90,20 @@ public class AudioExportService
             ConsoleHelper.WriteLine("Output export was cancelled", _logger);
             throw;
         }
+        catch (VoicevoxRunCachedException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "セグメント音声ファイルの出力に失敗しました: {OutPath}", outPath);
             ConsoleHelper.WriteWarning($"Failed to save output to '{outPath}': {ex.Message}", _logger);
-            throw new InvalidOperationException($"音声ファイルの出力に失敗しました: {outPath}", ex);
+            throw new AudioProcessingException(
+                ErrorCodes.Audio.AudioFileExportFailed,
+                $"Failed to export combined segments: {outPath}",
+                $"音声ファイルの出力に失敗しました: {outPath}",
+                ex,
+                "出力先ディレクトリの権限と空き容量を確認してください。");
         }
     }
 
@@ -93,7 +111,11 @@ public class AudioExportService
     {
         if (wavDataList.Count == 0)
         {
-            throw new ArgumentException("WAVデータリストが空です", nameof(wavDataList));
+            throw new AudioProcessingException(
+                ErrorCodes.Audio.AudioFormatError,
+                "WAV data list is empty",
+                "結合対象の WAV データが空です。",
+                "合成済みセグメントを 1 件以上渡してください。");
         }
 
         if (wavDataList.Count == 1)
@@ -138,10 +160,23 @@ public class AudioExportService
             writer.Flush();
             return outputStream.ToArray();
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (VoicevoxRunCachedException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "WAVデータの結合中にエラーが発生しました");
-            throw new InvalidOperationException($"WAVデータの結合に失敗しました: {ex.Message}", ex);
+            throw new AudioProcessingException(
+                ErrorCodes.Audio.AudioFormatError,
+                $"Failed to combine WAV segments: {ex.Message}",
+                "WAVデータの結合に失敗しました。",
+                ex,
+                "セグメントのフォーマットが揃っているか確認してください。");
         }
     }
 

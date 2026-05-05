@@ -61,7 +61,7 @@ public class CacheEvictionPolicyTests
             await SeedAsync(disk, "k2", new byte[100], DateTime.UtcNow);
 
             // 上限 1GB なので 200B では削除されない
-            policy.CleanupByMaxSize();
+            await policy.CleanupByMaxSizeAsync();
 
             await Assert.That(File.Exists(Path.Combine(dir, "k1.mp3"))).IsTrue();
             await Assert.That(File.Exists(Path.Combine(dir, "k2.mp3"))).IsTrue();
@@ -80,7 +80,7 @@ public class CacheEvictionPolicyTests
             await SeedAsync(disk, "old", new byte[200], DateTime.UtcNow.AddDays(-2));
             await SeedAsync(disk, "new", new byte[200], DateTime.UtcNow);
 
-            policy.CleanupByMaxSize();
+            await policy.CleanupByMaxSizeAsync();
 
             // 古いものから削除される
             await Assert.That(File.Exists(Path.Combine(dir, "old.mp3"))).IsFalse();
