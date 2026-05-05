@@ -1,5 +1,5 @@
 ﻿using Microsoft.Extensions.Logging.Abstractions;
-using VoicevoxRunCached.Services;
+using VoicevoxRunCached.Services.Synthesis;
 
 namespace VoicevoxRunCached.Tests;
 

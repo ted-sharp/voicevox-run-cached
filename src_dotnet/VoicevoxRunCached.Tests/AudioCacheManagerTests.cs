@@ -1,5 +1,5 @@
-﻿using VoicevoxRunCached.Models;
-using VoicevoxRunCached.Services;
+using VoicevoxRunCached.Models;
+using VoicevoxRunCached.Services.Cache;
 
 namespace VoicevoxRunCached.Tests;
 
@@ -10,7 +10,7 @@ public class AudioCacheManagerTests
     {
         var request = new VoiceRequest("こんにちは", 1, 1.0, 0.0, 1.0);
 
-        var key = AudioCacheManager.ComputeCacheKey(request);
+        var key = CacheKeyGenerator.Compute(request);
 
         await Assert.That(key.Length).IsEqualTo(64);
         await Assert.That(key).Matches("^[0-9a-f]+$");
@@ -22,8 +22,8 @@ public class AudioCacheManagerTests
         var request1 = new VoiceRequest("テスト", 2, 1.5, 0.1, 0.8);
         var request2 = new VoiceRequest("テスト", 2, 1.5, 0.1, 0.8);
 
-        var key1 = AudioCacheManager.ComputeCacheKey(request1);
-        var key2 = AudioCacheManager.ComputeCacheKey(request2);
+        var key1 = CacheKeyGenerator.Compute(request1);
+        var key2 = CacheKeyGenerator.Compute(request2);
 
         await Assert.That(key1).IsEqualTo(key2);
     }
@@ -31,8 +31,8 @@ public class AudioCacheManagerTests
     [Test]
     public async Task ComputeCacheKey_DiffersWhenTextChanges()
     {
-        var a = AudioCacheManager.ComputeCacheKey(new VoiceRequest("foo", 1));
-        var b = AudioCacheManager.ComputeCacheKey(new VoiceRequest("bar", 1));
+        var a = CacheKeyGenerator.Compute(new VoiceRequest("foo", 1));
+        var b = CacheKeyGenerator.Compute(new VoiceRequest("bar", 1));
 
         await Assert.That(a).IsNotEqualTo(b);
     }
@@ -40,8 +40,8 @@ public class AudioCacheManagerTests
     [Test]
     public async Task ComputeCacheKey_DiffersWhenSpeakerChanges()
     {
-        var a = AudioCacheManager.ComputeCacheKey(new VoiceRequest("text", 1));
-        var b = AudioCacheManager.ComputeCacheKey(new VoiceRequest("text", 2));
+        var a = CacheKeyGenerator.Compute(new VoiceRequest("text", 1));
+        var b = CacheKeyGenerator.Compute(new VoiceRequest("text", 2));
 
         await Assert.That(a).IsNotEqualTo(b);
     }
@@ -49,8 +49,8 @@ public class AudioCacheManagerTests
     [Test]
     public async Task ComputeCacheKey_DiffersWhenSpeedChanges()
     {
-        var a = AudioCacheManager.ComputeCacheKey(new VoiceRequest("text", 1, speed: 1.0));
-        var b = AudioCacheManager.ComputeCacheKey(new VoiceRequest("text", 1, speed: 1.5));
+        var a = CacheKeyGenerator.Compute(new VoiceRequest("text", 1, speed: 1.0));
+        var b = CacheKeyGenerator.Compute(new VoiceRequest("text", 1, speed: 1.5));
 
         await Assert.That(a).IsNotEqualTo(b);
     }
@@ -62,10 +62,10 @@ public class AudioCacheManagerTests
         try
         {
             System.Threading.Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
-            var keyDe = AudioCacheManager.ComputeCacheKey(new VoiceRequest("text", 1, 1.5, 0.25, 0.8));
+            var keyDe = CacheKeyGenerator.Compute(new VoiceRequest("text", 1, 1.5, 0.25, 0.8));
 
             System.Threading.Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
-            var keyInv = AudioCacheManager.ComputeCacheKey(new VoiceRequest("text", 1, 1.5, 0.25, 0.8));
+            var keyInv = CacheKeyGenerator.Compute(new VoiceRequest("text", 1, 1.5, 0.25, 0.8));
 
             await Assert.That(keyDe).IsEqualTo(keyInv);
         }
@@ -78,8 +78,8 @@ public class AudioCacheManagerTests
     [Test]
     public async Task ComputeCacheKey_TreatsCloseFloatsAsSameDueTo2DecimalRounding()
     {
-        var a = AudioCacheManager.ComputeCacheKey(new VoiceRequest("text", 1, 1.001, 0.0, 1.0));
-        var b = AudioCacheManager.ComputeCacheKey(new VoiceRequest("text", 1, 1.004, 0.0, 1.0));
+        var a = CacheKeyGenerator.Compute(new VoiceRequest("text", 1, 1.001, 0.0, 1.0));
+        var b = CacheKeyGenerator.Compute(new VoiceRequest("text", 1, 1.004, 0.0, 1.0));
 
         await Assert.That(a).IsEqualTo(b);
     }

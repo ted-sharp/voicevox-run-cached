@@ -50,31 +50,50 @@ public static class ArgumentParser
     }
 
     /// <summary>
-    /// 前処理された引数からVoiceRequestを解析
+    /// 引数の先頭をテキスト、残りを音声オプションとして解析する。
     /// </summary>
     public static VoiceRequest? ParseArguments(string[] args, AppSettings settings, ILogger? logger = null)
     {
         if (args.Length == 0)
             return null;
 
-        var request = new VoiceRequest
-        {
-            Text = args[0],
-            SpeakerId = settings.VoiceVox.DefaultSpeaker,
-            Speed = 1.0,
-            Pitch = 0.0,
-            Volume = 1.0
-        };
+        var request = CreateDefaultRequest(args[0], settings);
+        ApplyVoiceOptions(args, optionsStartIndex: 1, request, logger);
 
-        // デバッグ用のログ出力
         logger?.LogDebug("引数解析結果 - Text='{Text}', SpeakerId={SpeakerId}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
             request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
 
-        // 前処理された引数を解析
+        return request;
+    }
+
+    /// <summary>
+    /// 既知のテキストと残りのオプション引数から VoiceRequest を構築する。
+    /// --test のように先頭引数がテキストでないコマンドから使用する。
+    /// </summary>
+    public static VoiceRequest BuildRequestFromOptions(string text, string[] optionArgs, AppSettings settings, ILogger? logger = null)
+    {
+        var request = CreateDefaultRequest(text, settings);
+        ApplyVoiceOptions(optionArgs, optionsStartIndex: 0, request, logger);
+        return request;
+    }
+
+    private static VoiceRequest CreateDefaultRequest(string text, AppSettings settings) => new()
+    {
+        Text = text,
+        SpeakerId = settings.VoiceVox.DefaultSpeaker,
+        Speed = 1.0,
+        Pitch = 0.0,
+        Volume = 1.0
+    };
+
+    /// <summary>
+    /// --speaker/--speed/--pitch/--volume を VoiceRequest に反映する。それ以外のフラグは読み飛ばす。
+    /// </summary>
+    private static void ApplyVoiceOptions(string[] args, int optionsStartIndex, VoiceRequest request, ILogger? logger)
+    {
         var processedArgs = PreprocessArgs(args);
 
-        // C# 13 Enhanced pattern matching for cleaner argument parsing
-        int i = 1;
+        int i = optionsStartIndex;
         while (i < processedArgs.Length)
         {
             switch (processedArgs[i])
@@ -113,8 +132,6 @@ public static class ArgumentParser
                     break;
             }
         }
-
-        return request;
     }
 
     /// <summary>

@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NAudio.Wave;
 using VoicevoxRunCached.Models;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Audio;
 
 /// <summary>
 /// 音声フォーマットの検出と適切な WaveStream の作成を行うクラス

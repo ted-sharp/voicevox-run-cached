@@ -2,7 +2,7 @@
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Exceptions;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Infrastructure;
 
 /// <summary>
 /// エラーハンドリングを統一化するためのユーティリティクラス

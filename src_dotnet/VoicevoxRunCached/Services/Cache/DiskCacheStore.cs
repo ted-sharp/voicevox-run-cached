@@ -21,7 +21,7 @@ public class DiskCacheStore
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _expiration = TimeSpan.FromDays(settings.ExpirationDays);
         _logger = logger ?? NullLogger.Instance;
-        ResolveBaseDirectory();
+        // パスの正規化は ApplicationBootstrap.BuildAppSettings 側で完了済み
         EnsureDirectoryExists();
     }
 
@@ -74,7 +74,7 @@ public class DiskCacheStore
     /// <summary>
     /// MP3 データとメタデータをディスクに保存する。
     /// </summary>
-    public async Task SaveAsync(VoiceRequest request, byte[] mp3Data, string cacheKey)
+    public async Task SaveAsync(VoiceRequest request, byte[] mp3Data, string cacheKey, CancellationToken cancellationToken = default)
     {
         var (audioPath, metaPath) = ResolvePaths(cacheKey);
 
@@ -88,10 +88,10 @@ public class DiskCacheStore
             Volume = request.Volume
         };
 
-        await File.WriteAllBytesAsync(audioPath, mp3Data);
+        await File.WriteAllBytesAsync(audioPath, mp3Data, cancellationToken);
 
         var metaJson = JsonSerializer.Serialize(metadata, JsonSerializerOptionsCache.Indented);
-        await File.WriteAllTextAsync(metaPath, metaJson);
+        await File.WriteAllTextAsync(metaPath, metaJson, cancellationToken);
 
         _logger.LogDebug("キャッシュファイルを保存しました: {CacheKey}, サイズ: {Size} bytes", cacheKey, mp3Data.Length);
     }
@@ -253,24 +253,6 @@ public class DiskCacheStore
         {
             System.IO.Directory.CreateDirectory(_settings.Directory);
             _logger.LogDebug("キャッシュディレクトリを作成しました: {Directory}", _settings.Directory);
-        }
-    }
-
-    private void ResolveBaseDirectory()
-    {
-        try
-        {
-            if (_settings.UseExecutableBaseDirectory && !Path.IsPathRooted(_settings.Directory))
-            {
-                var executablePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
-                var executableDirectory = Path.GetDirectoryName(executablePath) ?? System.IO.Directory.GetCurrentDirectory();
-                var combined = Path.Combine(executableDirectory, _settings.Directory);
-                _settings.Directory = Path.GetFullPath(combined);
-            }
-        }
-        catch
-        {
-            // 失敗時は元の設定値を保持
         }
     }
 }

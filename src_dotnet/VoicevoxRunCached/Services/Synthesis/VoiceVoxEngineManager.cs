@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Synthesis;
 
 public class VoiceVoxEngineManager : IDisposable
 {

@@ -99,8 +99,11 @@ public class CommandRouter
         _logger.LogInformation("Test command executed with message: {TestMessage}", testMessage);
         ConsoleHelper.WriteLine($"テストメッセージ: {testMessage}", _logger);
 
-        var testArgs = new[] { testMessage }.Concat(args).ToArray();
-        return await ExecuteTextToSpeechCommandAsync(testArgs, cancellationToken);
+        // --test 自体は引数の先頭にテキストを取らないので、Test.Message を直接乗せて
+        // 残りのオプション (--speed/--pitch/--out 等) を args そのまま再利用する。
+        var request = ArgumentParser.BuildRequestFromOptions(testMessage, args, _settings, _logger);
+        var options = ArgumentParser.ParseTextToSpeechOptions(args);
+        return await RunTextToSpeechAsync(request, options, cancellationToken);
     }
 
     private async Task<int> ExecuteTextToSpeechCommandAsync(string[] args, CancellationToken cancellationToken)
@@ -114,8 +117,12 @@ public class CommandRouter
         }
 
         var options = ArgumentParser.ParseTextToSpeechOptions(args);
+        return await RunTextToSpeechAsync(request, options, cancellationToken);
+    }
 
-        return await _ttsProcessor.ProcessTextToSpeechAsync(
+    private Task<int> RunTextToSpeechAsync(Models.VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken)
+    {
+        return _ttsProcessor.ProcessTextToSpeechAsync(
             request, options.NoCache, options.CacheOnly, options.Verbose, options.OutPath, options.NoPlay, cancellationToken);
     }
 }

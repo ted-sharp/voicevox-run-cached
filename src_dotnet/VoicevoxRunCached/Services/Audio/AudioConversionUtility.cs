@@ -3,7 +3,7 @@ using NAudio.Lame;
 using NAudio.Wave;
 using VoicevoxRunCached.Constants;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Audio;
 
 /// <summary>
 /// 音声フォーマット変換とユーティリティ機能を提供するクラス

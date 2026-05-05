@@ -1,6 +1,6 @@
 ﻿using VoicevoxRunCached.Constants;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Infrastructure;
 
 public class ProgressSpinner : IDisposable
 {

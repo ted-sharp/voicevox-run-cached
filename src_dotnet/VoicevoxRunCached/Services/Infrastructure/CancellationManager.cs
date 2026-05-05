@@ -1,6 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Infrastructure;
 
 /// <summary>
 /// キャンセレーション処理を統一管理するクラス

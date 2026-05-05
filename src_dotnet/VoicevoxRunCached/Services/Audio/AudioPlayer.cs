@@ -3,14 +3,19 @@ using Microsoft.Extensions.Logging;
 using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Audio;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Audio;
 
 /// <summary>
-/// 音声再生の統合制御。単一音声再生・セグメント順次再生・フィラー挿入を統合する。
+/// 音声再生の統合制御。Channel 経由で渡されるセグメントを順次再生し、合成待ち中はフィラー音声で隙間を埋める。
 /// </summary>
+/// <remarks>
+/// 共有 <c>WavePlayer</c> を使い回すことでセグメント間のデバイス open/close コストを排除し、
+/// 連続再生時の無音ギャップを最小化する。Dispose 時にまとめて停止する。
+/// </remarks>
 public class AudioPlayer : IDisposable
 {
     private readonly AudioDeviceManager _deviceManager;
@@ -53,86 +58,6 @@ public class AudioPlayer : IDisposable
         }
 
         _disposed = true;
-    }
-
-    /// <summary>
-    /// 単独の音声データを再生する。キャッシュ書き込みを並行で動かす場合は cacheCallback を渡す。
-    /// 各呼び出しごとに新しい WavePlayer を生成する (共有しない)。
-    /// </summary>
-    public async Task PlayAudioStreamingAsync(byte[] audioData, Func<byte[], Task>? cacheCallback = null, CancellationToken cancellationToken = default)
-    {
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(AudioPlayer));
-
-        await _deviceManager.EnsureDeviceReadyAsync();
-
-        Task? cacheTask = null;
-        if (cacheCallback != null)
-        {
-            cacheTask = Task.Run(async () =>
-            {
-                try
-                { await cacheCallback(audioData); }
-                catch (Exception ex) { _logger.LogWarning(ex, "音声のキャッシュ保存に失敗しました"); }
-            });
-        }
-
-        try
-        {
-            StopAudio();
-            _currentWavePlayer = _wavePlayerManager.CreateWavePlayer();
-
-            await PlayWaveAsync(
-                audioData,
-                _currentWavePlayer,
-                leadingDelayMs: AudioConstants.SubsequentSegmentDelayMs,
-                trailingDelayMs: AudioConstants.BufferFlushDelayMs,
-                useTimeout: false,
-                cancellationToken);
-
-            if (cacheTask != null)
-            {
-                await cacheTask;
-            }
-        }
-        finally
-        {
-            StopAudio();
-        }
-    }
-
-    /// <summary>
-    /// 単独の音声データを既存デバイスで再生する。
-    /// </summary>
-    public Task PlayAudioAsync(byte[] audioData, CancellationToken cancellationToken = default)
-        => PlayAudioStreamingAsync(audioData, cacheCallback: null, cancellationToken);
-
-    /// <summary>
-    /// 複数の音声セグメントを順次再生する (フィラー挿入なし)。
-    /// </summary>
-    public async Task PlayAudioSequentiallyAsync(List<byte[]> audioSegments, CancellationToken cancellationToken = default)
-    {
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(AudioPlayer));
-
-        await _deviceManager.EnsureDeviceReadyAsync();
-
-        try
-        {
-            _currentWavePlayer = _wavePlayerManager.GetOrCreateSharedWavePlayer();
-
-            foreach (var segment in audioSegments)
-            {
-                if (segment.Length == 0)
-                    continue;
-
-                await PlaySharedSegmentAsync(segment, isFirstSegment: false, cancellationToken);
-            }
-        }
-        finally
-        {
-            StopAudio();
-        }
     }
 
     /// <summary>
@@ -216,10 +141,19 @@ public class AudioPlayer : IDisposable
         {
             throw;
         }
+        catch (VoicevoxRunCachedException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "PlayStreamingAsync でエラーが発生しました");
-            throw new InvalidOperationException("ストリーミング再生中にエラーが発生しました", ex);
+            throw new AudioProcessingException(
+                ErrorCodes.Audio.AudioPlaybackFailed,
+                $"Streaming playback failed: {ex.Message}",
+                "ストリーミング再生中にエラーが発生しました。",
+                ex,
+                "音声デバイスの状態とログを確認してください。");
         }
         finally
         {
@@ -260,7 +194,6 @@ public class AudioPlayer : IDisposable
             _currentWavePlayer,
             leadingDelayMs,
             trailingDelayMs,
-            useTimeout: true,
             cancellationToken);
     }
 
@@ -272,14 +205,12 @@ public class AudioPlayer : IDisposable
         IWavePlayer wavePlayer,
         int leadingDelayMs,
         int trailingDelayMs,
-        bool useTimeout,
         CancellationToken cancellationToken)
     {
         WaveStream? reader = null;
         try
         {
-            _logger.LogDebug("PlayWaveAsync 開始 - サイズ: {Size} bytes, タイムアウト: {Timeout}",
-                audioData.Length, useTimeout);
+            _logger.LogDebug("PlayWaveAsync 開始 - サイズ: {Size} bytes", audioData.Length);
 
             reader = await _formatDetector.CreateWaveStreamAsync(audioData);
 
@@ -308,26 +239,19 @@ public class AudioPlayer : IDisposable
 
             await using var registration = cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
 
-            if (useTimeout)
+            var timeoutTask = Task.Delay(TimeSpan.FromMilliseconds(AudioConstants.DefaultPlaybackTimeoutMs), cancellationToken);
+            var completed = await Task.WhenAny(tcs.Task, timeoutTask);
+            if (completed == timeoutTask)
             {
-                var timeoutTask = Task.Delay(TimeSpan.FromMilliseconds(AudioConstants.DefaultPlaybackTimeoutMs), cancellationToken);
-                var completed = await Task.WhenAny(tcs.Task, timeoutTask);
-                if (completed == timeoutTask)
-                {
-                    _logger.LogWarning("セグメント再生がタイムアウトしました。強制停止します。");
-                    wavePlayer.Stop();
-                    throw new TimeoutException("セグメント再生がタイムアウトしました");
-                }
+                _logger.LogWarning("セグメント再生がタイムアウトしました。強制停止します。");
+                wavePlayer.Stop();
+                throw new TimeoutException("セグメント再生がタイムアウトしました");
             }
 
             await tcs.Task;
 
             await Task.Delay(trailingDelayMs, cancellationToken);
-
-            if (useTimeout)
-            {
-                wavePlayer.Stop();
-            }
+            wavePlayer.Stop();
 
             _logger.LogDebug("音声再生が完了しました (trailing: {Delay}ms)", trailingDelayMs);
         }
@@ -335,10 +259,19 @@ public class AudioPlayer : IDisposable
         {
             throw;
         }
+        catch (VoicevoxRunCachedException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "音声再生中にエラーが発生しました");
-            throw new InvalidOperationException($"Failed to play audio: {ex.Message}", ex);
+            throw new AudioProcessingException(
+                ErrorCodes.Audio.AudioPlaybackFailed,
+                $"Failed to play audio: {ex.Message}",
+                "音声再生中にエラーが発生しました。",
+                ex,
+                "音声デバイスの状態を確認してください。");
         }
         finally
         {
@@ -347,5 +280,4 @@ public class AudioPlayer : IDisposable
             catch (Exception ex) { _logger.LogDebug(ex, "Failed to dispose audio reader"); }
         }
     }
-
 }

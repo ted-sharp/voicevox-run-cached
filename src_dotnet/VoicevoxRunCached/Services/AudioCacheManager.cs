@@ -12,6 +12,16 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class AudioCacheManager : IDisposable
 {
+    /// <summary>
+    /// I/O 例外発生時にエラーコードを切り分けるための操作種別。
+    /// </summary>
+    private enum CacheOperationKind
+    {
+        Read,
+        Write,
+        Clear
+    }
+
     private readonly IMemoryCache _memoryCache;
     private readonly MemoryCacheStore _memory;
     private readonly DiskCacheStore _disk;
@@ -61,23 +71,23 @@ public class AudioCacheManager : IDisposable
         _disposed = true;
     }
 
-    public static string ComputeCacheKey(VoiceRequest request) => CacheKeyGenerator.Compute(request);
-
     /// <summary>
     /// キャッシュから音声データを取得する。メモリ→ディスクの順で fallback。
     /// </summary>
-    public Task<byte[]?> GetCachedAudioAsync(VoiceRequest request)
+    public Task<byte[]?> GetCachedAudioAsync(VoiceRequest request, CancellationToken cancellationToken = default)
     {
         var cacheKey = CacheKeyGenerator.Compute(request);
-        return WithCacheErrorHandling("キャッシュからの音声データ取得", cacheKey, async () =>
+        return WithCacheErrorHandling(CacheOperationKind.Read, "キャッシュからの音声データ取得", cacheKey, async () =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (_memory.TryGet(cacheKey, out byte[]? memoryCached) && memoryCached != null)
             {
                 _logger.LogDebug("メモリキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, memoryCached.Length);
                 return memoryCached;
             }
 
-            var audioData = await _disk.LoadAsync(cacheKey);
+            var audioData = await _disk.LoadAsync(cacheKey, cancellationToken);
             if (audioData != null)
             {
                 _memory.Set(cacheKey, audioData);
@@ -91,13 +101,15 @@ public class AudioCacheManager : IDisposable
     /// <summary>
     /// 音声データをキャッシュに保存する。WAV はディスク保存前に MP3 に変換される。
     /// </summary>
-    public Task SaveAudioCacheAsync(VoiceRequest request, byte[] audioData)
+    public Task SaveAudioCacheAsync(VoiceRequest request, byte[] audioData, CancellationToken cancellationToken = default)
     {
         var cacheKey = CacheKeyGenerator.Compute(request);
-        return WithCacheErrorHandling<object?>("キャッシュの保存", cacheKey, async () =>
+        return WithCacheErrorHandling<object?>(CacheOperationKind.Write, "キャッシュの保存", cacheKey, async () =>
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var mp3Data = AudioConversionUtility.ConvertWavToMp3(audioData);
-            await _disk.SaveAsync(request, mp3Data, cacheKey);
+            await _disk.SaveAsync(request, mp3Data, cacheKey, cancellationToken);
             _memory.Set(cacheKey, mp3Data);
 
             _logger.LogDebug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes", cacheKey, mp3Data.Length);
@@ -147,70 +159,68 @@ public class AudioCacheManager : IDisposable
     }
 
     /// <summary>
-    /// 並行処理を使用した複数セグメントの処理。各セグメントはキャッシュからの取得を試み、ヒット時に AudioData を埋める。
+    /// 複数セグメントを順次処理する。各セグメントはキャッシュからの取得を試み、ヒット時に AudioData を埋める。
     /// </summary>
+    /// <remarks>
+    /// 並列化は I/O 集中時にディスクシークを増やすだけでメモリヒットでは無意味。
+    /// 順次にすることで進捗ログも読みやすくなる。
+    /// </remarks>
     public async Task<List<TextSegment>> ProcessTextSegmentsAsync(List<TextSegment> segments, VoiceRequest request, CancellationToken cancellationToken = default)
     {
-        var tasks = segments.Select(segment => ProcessSegmentAsync(segment, request, cancellationToken));
-        var results = await Task.WhenAll(tasks);
-        return results.ToList();
+        var results = new List<TextSegment>(segments.Count);
+        foreach (var segment in segments)
+        {
+            results.Add(await ProcessSegmentAsync(segment, request, cancellationToken));
+        }
+        return results;
     }
 
     private async Task<TextSegment> ProcessSegmentAsync(TextSegment segment, VoiceRequest request, CancellationToken cancellationToken)
     {
-        try
+        cancellationToken.ThrowIfCancellationRequested();
+
+        segment.SpeakerId = request.SpeakerId;
+
+        var segmentRequest = new VoiceRequest
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            Text = segment.Text,
+            SpeakerId = request.SpeakerId,
+            Speed = request.Speed,
+            Pitch = request.Pitch,
+            Volume = request.Volume
+        };
 
-            segment.SpeakerId = request.SpeakerId;
-
-            var segmentRequest = new VoiceRequest
-            {
-                Text = segment.Text,
-                SpeakerId = request.SpeakerId,
-                Speed = request.Speed,
-                Pitch = request.Pitch,
-                Volume = request.Volume
-            };
-
-            var cachedAudio = await GetCachedAudioAsync(segmentRequest);
-            if (cachedAudio != null)
-            {
-                segment.AudioData = cachedAudio;
-                segment.IsCached = true;
-                _logger.LogDebug("セグメントがキャッシュから読み込まれました - テキスト: {Text}", segment.Text);
-            }
-            else
-            {
-                segment.AudioData = null;
-                segment.IsCached = false;
-                _logger.LogDebug("セグメントはキャッシュにありません - テキスト: {Text}", segment.Text);
-            }
-
-            return segment;
-        }
-        catch (OperationCanceledException)
+        var cachedAudio = await GetCachedAudioAsync(segmentRequest, cancellationToken);
+        if (cachedAudio != null)
         {
-            _logger.LogDebug("セグメント処理がキャンセルされました - テキスト: {Text}", segment.Text);
-            throw;
+            segment.AudioData = cachedAudio;
+            segment.IsCached = true;
+            _logger.LogDebug("セグメントがキャッシュから読み込まれました - テキスト: {Text}", segment.Text);
         }
-        catch (Exception ex)
+        else
         {
-            _logger.LogError(ex, "セグメント処理中にエラーが発生しました - テキスト: {Text}", segment.Text);
-            return segment;
+            segment.AudioData = null;
+            segment.IsCached = false;
+            _logger.LogDebug("セグメントはキャッシュにありません - テキスト: {Text}", segment.Text);
         }
+
+        return segment;
     }
 
     /// <summary>
     /// 同一形のキャッシュ I/O 例外ハンドリング (UnauthorizedAccessException / IOException / その他)。
     /// </summary>
-    private async Task<T> WithCacheErrorHandling<T>(string operation, string cacheKey, Func<Task<T>> action)
+    private async Task<T> WithCacheErrorHandling<T>(CacheOperationKind kind, string operation, string cacheKey, Func<Task<T>> action)
     {
         try
         {
             return await action();
         }
         catch (CacheException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
         {
             throw;
         }
@@ -230,8 +240,9 @@ public class AudioCacheManager : IDisposable
         }
         catch (IOException ex)
         {
-            var isWrite = operation.Contains("保存");
-            var code = isWrite ? ErrorCodes.Cache.CacheWriteError : ErrorCodes.Cache.CacheReadError;
+            var code = kind == CacheOperationKind.Write
+                ? ErrorCodes.Cache.CacheWriteError
+                : ErrorCodes.Cache.CacheReadError;
             throw CreateCacheException(code,
                 $"I/O error during {operation}: {ex.Message}",
                 $"{operation}のファイル操作に失敗しました。",

@@ -57,25 +57,49 @@ _fix-all.ps1          # 上記 + tests + SonarQube + ReSharper
 src_dotnet/
 ├── VoicevoxRunCached/
 │   ├── Program.cs                     # Entry point
+│   ├── GlobalUsings.cs                # Services.{Audio,Cache,Commands,Infrastructure,Synthesis} を global using
 │   ├── Configuration/                 # AppSettings + FluentValidation Validators
 │   ├── Constants/                     # AudioConstants 等のマジックナンバー集約
 │   ├── Models/                        # VoiceRequest, TextSegment, AudioFormat
 │   ├── Services/                      # コア実装
-│   │   ├── Audio/                     # WavePlayerManager
-│   │   ├── Cache/                     # AudioCacheManager の構成要素
+│   │   ├── CommandRouter.cs                # コマンドルーティング
+│   │   ├── ArgumentParser.cs               # CLI 引数解析
+│   │   ├── ServiceRegistration.cs          # DryIoc コンテナ構築
+│   │   ├── AudioCacheManager.cs            # キャッシュ統合ファサード
+│   │   ├── Audio/                          # 音声再生・デバイス・フォーマット
+│   │   │   ├── AudioPlayer.cs              # ストリーミング再生
+│   │   │   ├── AudioDeviceManager.cs       # デバイス事前準備 (warm-up)
+│   │   │   ├── AudioFormatDetector.cs      # WAV/MP3 検出
+│   │   │   ├── AudioConversionUtility.cs   # WAV→MP3 変換
+│   │   │   ├── MediaFoundationManager.cs   # MediaFoundation 初期化
+│   │   │   └── WavePlayerManager.cs        # 共有 IWavePlayer ライフサイクル
+│   │   ├── Cache/                          # AudioCacheManager の構成要素
 │   │   │   ├── CacheKeyGenerator.cs        # SHA256 キー生成 (変更禁止)
 │   │   │   ├── MemoryCacheStore.cs         # IMemoryCache ラッパ
 │   │   │   ├── DiskCacheStore.cs           # mp3 + meta の永続化
-│   │   │   ├── CacheEvictionPolicy.cs      # 期限切れ・サイズ超過の eviction
-│   │   │   └── CacheStatisticsCollector.cs # 統計情報収集
-│   │   └── Commands/                  # コマンドハンドラ群 + 補助クラス
-│   │       ├── SpeakerCommandHandler.cs        # speakers
-│   │       ├── DeviceCommandHandler.cs         # devices
-│   │       ├── InitCommandHandler.cs           # --init
-│   │       ├── CacheCommandHandler.cs          # --clear
-│   │       ├── BenchmarkCommandHandler.cs      # --benchmark
-│   │       ├── TextToSpeechProcessor.cs        # 合成・再生パイプライン本体 (CommandRouter から直接呼ばれる)
-│   │       └── AudioExportService.cs           # --out 用の保存処理
+│   │   │   └── CacheEvictionPolicy.cs      # 期限切れ・サイズ超過の eviction
+│   │   ├── Synthesis/                      # 合成・再生パイプライン
+│   │   │   ├── TextToSpeechProcessor.cs    # メインパイプライン (CommandRouter から呼ばれる)
+│   │   │   ├── AudioExportService.cs       # --out 用の保存処理
+│   │   │   ├── VoiceVoxApiClient.cs        # REST API クライアント
+│   │   │   ├── VoiceVoxEngineManager.cs    # エンジン起動・死活
+│   │   │   ├── TextSegmentProcessor.cs     # 文単位分割
+│   │   │   └── FillerManager.cs            # フィラー音声生成・取得
+│   │   ├── Commands/                       # コマンドハンドラ
+│   │   │   ├── SpeakerCommandHandler.cs        # speakers
+│   │   │   ├── DeviceCommandHandler.cs         # devices
+│   │   │   ├── InitCommandHandler.cs           # --init
+│   │   │   ├── CacheCommandHandler.cs          # --clear
+│   │   │   └── BenchmarkCommandHandler.cs      # --benchmark
+│   │   └── Infrastructure/                 # 横断的ユーティリティ
+│   │       ├── ApplicationBootstrap.cs     # 設定 + Serilog + MF 初期化
+│   │       ├── ConfigurationManager.cs / ConfigurationValidationService.cs
+│   │       ├── LoggingManager.cs           # Serilog 構成
+│   │       ├── RetryPolicyService.cs       # Polly リトライ
+│   │       ├── CancellationManager.cs      # Ctrl+C 協調キャンセル
+│   │       ├── ConsoleHelper.cs            # 色付き出力
+│   │       ├── ErrorHandlingUtility.cs     # 例外 → ErrorCode → ExitCode
+│   │       └── ProgressSpinner.cs          # 進捗表示
 │   ├── Benchmarks/                    # AudioProcessingBenchmarks (BenchmarkDotNet)
 │   ├── Exceptions/                    # VoicevoxRunCachedException, ErrorCodes
 │   └── appsettings.json
@@ -83,6 +107,7 @@ src_dotnet/
 ```
 
 DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する。新しいクラスを singleton 登録する箇所はここに集約されている。
+`GlobalUsings.cs` で `Services.{Audio,Cache,Commands,Infrastructure,Synthesis}` を global using しているため、各ファイルでの個別 using は不要。
 
 ## Common Development Patterns
 
@@ -96,13 +121,13 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 
 ### Reusable Utilities (新規実装の前にこれらを探すこと)
 
-`Services/` 直下に共通ユーティリティが揃っている。新しい関数を作る前に再利用を検討する:
+`Services/Infrastructure/` 配下に共通ユーティリティが揃っている。新しい関数を作る前に再利用を検討する:
 
 - **`ConsoleHelper`**: 色付き出力、エラー表示。`Console.WriteLine` を直接使わず原則これ経由
 - **`ErrorHandlingUtility`**: 例外 → ErrorCode → ExitCode 変換。`HandleExceptionAndGetExitCode` がコマンド末尾の定型処理
 - **`RetryPolicyService`**: HTTP/ファイル操作のリトライ Polly ポリシー
 - **`CancellationManager`**: Ctrl+C の協調キャンセル
-- **`MediaFoundationManager`**: NAudio の MediaFoundation 初期化を一元管理
+- **`MediaFoundationManager`** (`Services/Audio/`): NAudio の MediaFoundation 初期化を一元管理
 - **`ConfigurationManager` / `ConfigurationValidationService`**: AppSettings 読込と FluentValidation による検証
 
 ### Modifying Cache Behavior
@@ -126,10 +151,10 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 
 `VoiceVoxApiClient` は VOICEVOX エンジンの制約上、呼び出し元側で直列実行されることを前提としている。
 
-- 現状 `TextToSpeechProcessor.SynthesizeMissingSegmentsAsync` の `foreach` で 1 件ずつ処理されているため OK
+- 現状 `TextToSpeechProcessor.ProduceSegmentsAsync` の `foreach` で 1 件ずつ処理されているため OK
 - 並列化を試みる場合は VOICEVOX エンジン側の制約を実機で確認してから、クライアント内に lock を入れること
 - speaker 初期化 (`/initialize_speaker`) は `TextToSpeechProcessor` 側からセッション内 1 回だけ呼ぶ
-- リトライ・エラー変換は `VoiceVoxApiClient.ExecuteApiAsync` でまとめて適用 (各メソッドは生の HTTP 呼び出しだけ書く)
+- リトライ・エラー変換は `VoiceVoxApiClient.ExecuteApiAsync` の単一 catch ブロック (`MapToApiException` ヘルパ) でまとめて適用 (各メソッドは生の HTTP 呼び出しだけ書く)
 
 ### Logging Conventions
 

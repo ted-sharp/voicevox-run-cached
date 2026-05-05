@@ -2,7 +2,7 @@
 using NAudio.MediaFoundation;
 using VoicevoxRunCached.Exceptions;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Audio;
 
 /// <summary>
 /// MediaFoundation の Startup/Shutdown を参照カウンタ付きで管理する static サービス。

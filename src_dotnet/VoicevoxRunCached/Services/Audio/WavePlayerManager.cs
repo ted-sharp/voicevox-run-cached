@@ -5,7 +5,7 @@ using VoicevoxRunCached.Configuration;
 namespace VoicevoxRunCached.Services.Audio;
 
 /// <summary>
-/// WavePlayer の作成・管理を行うクラス
+/// セッション内で使い回す共有 <see cref="IWavePlayer"/> のライフサイクルを管理する。
 /// </summary>
 public class WavePlayerManager : IDisposable
 {
@@ -41,11 +41,38 @@ public class WavePlayerManager : IDisposable
         _disposed = true;
     }
 
-    public IWavePlayer CreateWavePlayer()
+    public IWavePlayer GetOrCreateSharedWavePlayer()
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(WavePlayerManager));
 
+        if (_wavePlayer == null)
+        {
+            _wavePlayer = CreateWavePlayer();
+            _logger.LogDebug("共有WavePlayerインスタンスを作成しました");
+        }
+
+        return _wavePlayer;
+    }
+
+    public void StopSharedWavePlayer()
+    {
+        try
+        {
+            if (_wavePlayer != null)
+            {
+                _wavePlayer.Stop();
+                _logger.LogDebug("共有WavePlayerインスタンスを停止しました");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "共有WavePlayerインスタンスの停止中にエラーが発生しました");
+        }
+    }
+
+    private IWavePlayer CreateWavePlayer()
+    {
         var waveOut = new WaveOutEvent
         {
             DesiredLatency = _settings.DesiredLatency,
@@ -65,51 +92,7 @@ public class WavePlayerManager : IDisposable
         return waveOut;
     }
 
-    public IWavePlayer GetOrCreateSharedWavePlayer()
-    {
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(WavePlayerManager));
-
-        if (_wavePlayer == null)
-        {
-            _wavePlayer = CreateWavePlayer();
-            _logger.LogDebug("共有WavePlayerインスタンスを作成しました");
-        }
-
-        return _wavePlayer;
-    }
-
-    public void SetSharedWavePlayer(IWavePlayer wavePlayer)
-    {
-        if (_disposed)
-            throw new ObjectDisposedException(nameof(WavePlayerManager));
-
-        _wavePlayer?.Dispose();
-        _wavePlayer = wavePlayer ?? throw new ArgumentNullException(nameof(wavePlayer));
-        _logger.LogDebug("共有WavePlayerインスタンスが設定されました");
-    }
-
-    public IWavePlayer? GetCurrentSharedWavePlayer() => _wavePlayer;
-
-    public bool HasSharedWavePlayer() => _wavePlayer != null;
-
-    public void StopSharedWavePlayer()
-    {
-        try
-        {
-            if (_wavePlayer != null)
-            {
-                _wavePlayer.Stop();
-                _logger.LogDebug("共有WavePlayerインスタンスを停止しました");
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "共有WavePlayerインスタンスの停止中にエラーが発生しました");
-        }
-    }
-
-    public void DisposeSharedWavePlayer()
+    private void DisposeSharedWavePlayer()
     {
         try
         {
@@ -125,40 +108,4 @@ public class WavePlayerManager : IDisposable
             _logger.LogWarning(ex, "共有WavePlayerインスタンスの破棄中にエラーが発生しました");
         }
     }
-
-    public AudioDeviceInfo GetAudioDeviceInfo() => new()
-    {
-        TotalDevices = 0,
-        CurrentDevice = _settings.OutputDevice,
-        CurrentDeviceName = "Default",
-        Volume = _settings.Volume,
-        DesiredLatency = _settings.DesiredLatency,
-        NumberOfBuffers = _settings.NumberOfBuffers
-    };
-
-    public List<AudioDeviceInfo> GetAvailableAudioDevices() => new()
-    {
-        new AudioDeviceInfo
-        {
-            TotalDevices = 1,
-            CurrentDevice = 0,
-            CurrentDeviceName = "Default Audio Device",
-            Volume = _settings.Volume,
-            DesiredLatency = _settings.DesiredLatency,
-            NumberOfBuffers = _settings.NumberOfBuffers
-        }
-    };
-}
-
-/// <summary>
-/// 音声デバイス情報
-/// </summary>
-public class AudioDeviceInfo
-{
-    public int TotalDevices { get; set; }
-    public int CurrentDevice { get; set; }
-    public string CurrentDeviceName { get; set; } = String.Empty;
-    public double Volume { get; set; }
-    public int DesiredLatency { get; set; }
-    public int NumberOfBuffers { get; set; }
 }

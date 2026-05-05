@@ -2,8 +2,9 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
+using VoicevoxRunCached.Services.Cache;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Synthesis;
 
 public class FillerManager
 {
@@ -14,10 +15,9 @@ public class FillerManager
 
     public FillerManager(FillerSettings settings, int defaultSpeakerId, ILogger? logger = null)
     {
-        _settings = settings;
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _defaultSpeaker = defaultSpeakerId;
         _logger = logger ?? NullLogger.Instance;
-        ResolveFillerBaseDirectory();
 
         _logger.LogInformation("FillerManager を初期化しました - 有効: {Enabled}, ディレクトリ: {Directory}",
             _settings.Enabled, _settings.Directory);
@@ -51,7 +51,7 @@ public class FillerManager
 
             var fillerRequest = BuildFillerRequest(fillerText);
 
-            var cacheKey = AudioCacheManager.ComputeCacheKey(fillerRequest);
+            var cacheKey = CacheKeyGenerator.Compute(fillerRequest);
             var fillerCacheMp3 = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
             var fillerCacheWav = Path.Combine(_settings.Directory, $"{cacheKey}.wav");
 
@@ -91,7 +91,7 @@ public class FillerManager
         _logger.LogDebug("ランダムフィラー音声を選択: \"{Text}\"", selectedFiller);
 
         var fillerRequest = BuildFillerRequest(selectedFiller);
-        var cacheKey = AudioCacheManager.ComputeCacheKey(fillerRequest);
+        var cacheKey = CacheKeyGenerator.Compute(fillerRequest);
         var fillerCacheMp3 = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
         var fillerCacheWav = Path.Combine(_settings.Directory, $"{cacheKey}.wav");
 
@@ -154,29 +154,18 @@ public class FillerManager
 
     private async Task SaveFillerAudioAsync(string filePath, byte[] audioData)
     {
-        var converted = await ConvertWavToMp3Async(audioData);
-        bool isMp3 = converted.Length >= 2 && converted[0] == 0xFF && (converted[1] & 0xE0) == 0xE0;
-        bool isWav = converted.Length >= 12 &&
-                     converted[0] == 'R' && converted[1] == 'I' && converted[2] == 'F' && converted[3] == 'F' &&
-                     converted[8] == 'W' && converted[9] == 'A' && converted[10] == 'V' && converted[11] == 'E';
-
-        var targetPath = filePath;
-        if (!isMp3 && isWav)
-        {
-            targetPath = Path.ChangeExtension(filePath, ".wav");
-        }
-        await File.WriteAllBytesAsync(targetPath, converted);
-    }
-
-    private static async Task<byte[]> ConvertWavToMp3Async(byte[] wavData)
-    {
         try
         {
-            return await Task.Run(() => AudioConversionUtility.ConvertWavToMp3(wavData));
+            var mp3 = await Task.Run(() => AudioConversionUtility.ConvertWavToMp3(audioData));
+            await File.WriteAllBytesAsync(filePath, mp3);
         }
-        catch
+        catch (Exception ex)
         {
-            return wavData;
+            // 変換失敗時は WAV のまま .wav 拡張子で保存する。
+            // 旧実装は silent fallback だったが観測性のため Warning で必ず残す。
+            _logger.LogWarning(ex, "フィラー音声の MP3 変換に失敗。WAV 形式で保存します");
+            var wavPath = Path.ChangeExtension(filePath, ".wav");
+            await File.WriteAllBytesAsync(wavPath, audioData);
         }
     }
 
@@ -203,23 +192,5 @@ public class FillerManager
             _logger.LogDebug(ex, "Failed to clear filler cache directory");
         }
         return Task.CompletedTask;
-    }
-
-    private void ResolveFillerBaseDirectory()
-    {
-        try
-        {
-            if (_settings.UseExecutableBaseDirectory && !Path.IsPathRooted(_settings.Directory))
-            {
-                var executablePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
-                var executableDirectory = Path.GetDirectoryName(executablePath) ?? Directory.GetCurrentDirectory();
-                var combined = Path.Combine(executableDirectory, _settings.Directory);
-                _settings.Directory = Path.GetFullPath(combined);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to resolve filler base directory");
-        }
     }
 }

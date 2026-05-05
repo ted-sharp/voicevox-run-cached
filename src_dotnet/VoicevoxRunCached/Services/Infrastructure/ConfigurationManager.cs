@@ -1,6 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Infrastructure;
 
 public static class ConfigurationManager
 {

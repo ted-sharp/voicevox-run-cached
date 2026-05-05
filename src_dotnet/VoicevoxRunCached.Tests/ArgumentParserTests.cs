@@ -151,4 +151,34 @@ public class ArgumentParserTests
         await Assert.That(result).IsNotNull();
         await Assert.That(result!.Text).IsEqualTo("text");
     }
+
+    [Test]
+    public async Task BuildRequestFromOptions_AppliesOptionsWithoutTextArg()
+    {
+        // --test 由来のフローでは args の先頭がテキストではなくオプション扱い
+        var settings = DefaultSettings();
+        settings.VoiceVox.DefaultSpeaker = 1;
+
+        var request = ArgumentParser.BuildRequestFromOptions(
+            "テストメッセージ",
+            new[] { "--speaker", "3", "--speed", "1.25" },
+            settings);
+
+        await Assert.That(request.Text).IsEqualTo("テストメッセージ");
+        await Assert.That(request.SpeakerId).IsEqualTo(3);
+        await Assert.That(request.Speed).IsEqualTo(1.25);
+    }
+
+    [Test]
+    public async Task BuildRequestFromOptions_EmptyOptions_UsesDefaults()
+    {
+        var settings = DefaultSettings();
+        settings.VoiceVox.DefaultSpeaker = 5;
+
+        var request = ArgumentParser.BuildRequestFromOptions("hello", Array.Empty<string>(), settings);
+
+        await Assert.That(request.Text).IsEqualTo("hello");
+        await Assert.That(request.SpeakerId).IsEqualTo(5);
+        await Assert.That(request.Speed).IsEqualTo(1.0);
+    }
 }

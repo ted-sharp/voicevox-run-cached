@@ -1,7 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Exceptions;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Infrastructure;
 
 public static class ConsoleHelper
 {

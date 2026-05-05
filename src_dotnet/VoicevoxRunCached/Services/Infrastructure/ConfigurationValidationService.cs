@@ -1,6 +1,6 @@
 ﻿using VoicevoxRunCached.Configuration;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Infrastructure;
 
 public class ConfigurationValidationService
 {

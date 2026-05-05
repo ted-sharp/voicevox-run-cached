@@ -4,7 +4,7 @@ using Serilog.Events;
 using Serilog.Sinks.SystemConsole.Themes;
 using VoicevoxRunCached.Configuration;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Infrastructure;
 
 /// <summary>
 /// 構造化ログとパフォーマンスメトリクスを活用したログ管理サービス

@@ -129,4 +129,19 @@ public static class AudioConstants
     /// Polly サーキットブレーカーが開く前に許容する例外回数
     /// </summary>
     public const int CircuitBreakerExceptionThreshold = 3;
+
+    /// <summary>
+    /// API リトライの最大試行回数
+    /// </summary>
+    public const int RetryMaxAttempts = 3;
+
+    /// <summary>
+    /// API リトライの初回バックオフ遅延（ミリ秒）
+    /// </summary>
+    public const int RetryBaseDelayMs = 1000;
+
+    /// <summary>
+    /// API リトライのバックオフ上限（ミリ秒）
+    /// </summary>
+    public const int RetryMaxDelayMs = 30000;
 }

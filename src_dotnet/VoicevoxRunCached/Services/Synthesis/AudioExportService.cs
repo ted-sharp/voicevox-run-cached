@@ -2,7 +2,7 @@
 using NAudio.Wave;
 using VoicevoxRunCached.Models;
 
-namespace VoicevoxRunCached.Services.Commands;
+namespace VoicevoxRunCached.Services.Synthesis;
 
 /// <summary>
 /// 音声ファイルの出力処理を行うクラス

@@ -4,7 +4,7 @@ using Microsoft.Extensions.Logging;
 using Serilog;
 using VoicevoxRunCached.Configuration;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Infrastructure;
 
 /// <summary>
 /// アプリケーションの初期化と設定を行うクラス

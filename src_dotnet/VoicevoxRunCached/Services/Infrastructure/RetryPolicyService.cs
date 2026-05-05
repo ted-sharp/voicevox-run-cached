@@ -6,13 +6,13 @@ using Polly.CircuitBreaker;
 using Polly.Retry;
 using VoicevoxRunCached.Constants;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Infrastructure;
 
 public class RetryPolicyService
 {
-    private const int BaseDelayMs = 1000;
-    private const int MaxDelayMs = 30000;
-    private const int MaxRetryAttempts = 3;
+    private const int BaseDelayMs = AudioConstants.RetryBaseDelayMs;
+    private const int MaxDelayMs = AudioConstants.RetryMaxDelayMs;
+    private const int MaxRetryAttempts = AudioConstants.RetryMaxAttempts;
 
     private readonly AsyncCircuitBreakerPolicy _circuitBreakerPolicy;
     private readonly AsyncPolicy _combinedPolicy;

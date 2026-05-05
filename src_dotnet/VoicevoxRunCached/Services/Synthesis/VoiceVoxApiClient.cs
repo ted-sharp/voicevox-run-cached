@@ -6,7 +6,7 @@ using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Synthesis;
 
 public class VoiceVoxApiClient : IDisposable
 {
@@ -132,11 +132,6 @@ public class VoiceVoxApiClient : IDisposable
         {
             throw;
         }
-        catch (HttpRequestException ex) when (ex.StatusCode.HasValue)
-        {
-            _logger.LogError(ex, "{OperationName} に失敗 - StatusCode: {StatusCode}", operationName, ex.StatusCode);
-            throw CreateApiExceptionFromStatus(ex.StatusCode.Value, operationName, ex);
-        }
         catch (TaskCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
             _logger.LogInformation("{OperationName} がキャンセルされました", operationName);
@@ -148,55 +143,66 @@ public class VoiceVoxApiClient : IDisposable
                 "操作を再実行してください。"
             );
         }
-        catch (TaskCanceledException ex)
-        {
-            _logger.LogError(ex, "{OperationName} がタイムアウトしました", operationName);
-            throw new VoiceVoxApiException(
-                ErrorCodes.Api.ApiTimeout,
-                $"{operationName} timed out: {ex.Message}",
-                $"{operationName} がタイムアウトしました。",
-                ex,
-                null,
-                null,
-                "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。"
-            );
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogError(ex, "{OperationName} レスポンスのJSON解析に失敗しました", operationName);
-            throw new VoiceVoxApiException(
-                ErrorCodes.Api.ApiResponseInvalid,
-                $"Failed to parse {operationName} response: {ex.Message}",
-                $"{operationName} の解析に失敗しました。",
-                ex,
-                null,
-                null,
-                "VOICEVOXエンジンのバージョンを確認し、必要に応じて更新してください。"
-            );
-        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "{OperationName} 中に予期しないエラーが発生しました", operationName);
-            throw new VoiceVoxApiException(
-                ErrorCodes.General.UnknownError,
-                $"Unexpected error during {operationName}: {ex.Message}",
-                $"{operationName} 中に予期しないエラーが発生しました。",
-                ex,
-                null,
-                null,
-                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
-            );
+            throw MapToApiException(operationName, ex);
         }
     }
 
-    private VoiceVoxApiException CreateApiExceptionFromStatus(HttpStatusCode statusCode, string operation, Exception inner)
+    /// <summary>
+    /// 既知の例外を <see cref="VoiceVoxApiException"/> に変換する。
+    /// </summary>
+    private VoiceVoxApiException MapToApiException(string operationName, Exception ex)
     {
-        var errorCode = ErrorHandlingUtility.GetErrorCodeFromHttpStatus(statusCode);
-        var userMessage = ErrorHandlingUtility.GetUserFriendlyMessageFromHttpStatus(statusCode);
-        var solution = ErrorHandlingUtility.GetSuggestedSolutionFromHttpStatus(statusCode);
+        switch (ex)
+        {
+            case HttpRequestException httpEx when httpEx.StatusCode.HasValue:
+                {
+                    var statusCode = httpEx.StatusCode.Value;
+                    _logger.LogError(httpEx, "{OperationName} に失敗 - StatusCode: {StatusCode}", operationName, statusCode);
+                    return new VoiceVoxApiException(
+                        ErrorHandlingUtility.GetErrorCodeFromHttpStatus(statusCode),
+                        $"{operationName} failed",
+                        ErrorHandlingUtility.GetUserFriendlyMessageFromHttpStatus(statusCode),
+                        httpEx,
+                        statusCode,
+                        null,
+                        ErrorHandlingUtility.GetSuggestedSolutionFromHttpStatus(statusCode));
+                }
 
-        return new VoiceVoxApiException(errorCode, $"{operation} failed", userMessage,
-            inner, statusCode, null, solution);
+            case TaskCanceledException tcEx:
+                _logger.LogError(tcEx, "{OperationName} がタイムアウトしました", operationName);
+                return new VoiceVoxApiException(
+                    ErrorCodes.Api.ApiTimeout,
+                    $"{operationName} timed out: {tcEx.Message}",
+                    $"{operationName} がタイムアウトしました。",
+                    tcEx,
+                    null,
+                    null,
+                    "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。");
+
+            case JsonException jsonEx:
+                _logger.LogError(jsonEx, "{OperationName} レスポンスのJSON解析に失敗しました", operationName);
+                return new VoiceVoxApiException(
+                    ErrorCodes.Api.ApiResponseInvalid,
+                    $"Failed to parse {operationName} response: {jsonEx.Message}",
+                    $"{operationName} の解析に失敗しました。",
+                    jsonEx,
+                    null,
+                    null,
+                    "VOICEVOXエンジンのバージョンを確認し、必要に応じて更新してください。");
+
+            default:
+                _logger.LogError(ex, "{OperationName} 中に予期しないエラーが発生しました", operationName);
+                return new VoiceVoxApiException(
+                    ErrorCodes.General.UnknownError,
+                    $"Unexpected error during {operationName}: {ex.Message}",
+                    $"{operationName} 中に予期しないエラーが発生しました。",
+                    ex,
+                    null,
+                    null,
+                    "アプリケーションを再起動し、問題が続く場合はログを確認してください。");
+        }
     }
 
     private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

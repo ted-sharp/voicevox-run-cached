@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Models;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Synthesis;
 
 /// <summary>
 /// テキストを文単位のセグメントに分割するクラス。

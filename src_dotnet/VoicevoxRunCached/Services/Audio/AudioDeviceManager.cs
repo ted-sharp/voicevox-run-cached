@@ -1,13 +1,13 @@
 ﻿using Microsoft.Extensions.Logging;
-using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Audio;
 
 /// <summary>
-/// 音声デバイスの作成・管理・事前準備を行うクラス
+/// 起動時のデバイス事前準備 (warm-up) を担当するクラス。
+/// 最初のセグメントの取りこぼしを防ぐため、無音再生でドライバを起こしておく。
 /// </summary>
 public class AudioDeviceManager : IDisposable
 {
@@ -15,7 +15,6 @@ public class AudioDeviceManager : IDisposable
     private readonly AudioSettings _settings;
     private readonly ILogger _logger;
     private bool _disposed;
-    private MMDevice? _wasapiDevice;
 
     public AudioDeviceManager(AudioSettings settings, ILogger logger)
     {
@@ -45,37 +44,14 @@ public class AudioDeviceManager : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    /// <summary>
-    /// 設定に基づいて適切な WavePlayer を作成します
-    /// </summary>
-    public IWavePlayer CreateWavePlayer()
+    public async Task EnsureDeviceReadyAsync()
     {
-        if (!String.IsNullOrWhiteSpace(_settings.OutputDeviceId))
+        if (_settings.PrepareDevice && _devicePreparationTask != null)
         {
             try
-            {
-                using var enumerator = new MMDeviceEnumerator();
-                _wasapiDevice = enumerator.GetDevice(_settings.OutputDeviceId);
-                return new WasapiOut(_wasapiDevice, AudioClientShareMode.Shared, false, 100);
-            }
-            catch
-            {
-                _logger.LogDebug("WASAPIデバイスの作成に失敗しました。WaveOutEventにフォールバックします");
-            }
+            { await _devicePreparationTask; }
+            catch { _logger.LogDebug("デバイス準備が失敗しましたが、再生を継続します"); }
         }
-
-        var waveOut = new WaveOutEvent
-        {
-            DesiredLatency = 100,
-            NumberOfBuffers = 3
-        };
-
-        if (_settings.OutputDevice >= 0)
-        {
-            waveOut.DeviceNumber = _settings.OutputDevice;
-        }
-
-        return waveOut;
     }
 
     private async Task PrewarmAudioDeviceAsync(int durationMs = 100)
@@ -95,8 +71,8 @@ public class AudioDeviceManager : IDisposable
                 wavePlayer.DeviceNumber = _settings.OutputDevice;
             }
 
-            wavePlayer.DesiredLatency = 100;
-            wavePlayer.NumberOfBuffers = 3;
+            wavePlayer.DesiredLatency = _settings.DesiredLatency;
+            wavePlayer.NumberOfBuffers = _settings.NumberOfBuffers;
 
             wavePlayer.Volume = _settings.PreparationVolume <= 0
                 ? 0.0f
@@ -120,16 +96,6 @@ public class AudioDeviceManager : IDisposable
         }
     }
 
-    public async Task EnsureDeviceReadyAsync()
-    {
-        if (_settings.PrepareDevice && _devicePreparationTask != null)
-        {
-            try
-            { await _devicePreparationTask; }
-            catch { _logger.LogDebug("デバイス準備が失敗しましたが、再生を継続します"); }
-        }
-    }
-
     ~AudioDeviceManager()
     {
         Dispose(false);
@@ -147,7 +113,6 @@ public class AudioDeviceManager : IDisposable
             try
             {
                 CleanupDevicePreparationTask();
-                CleanupWasapiDevice();
             }
             catch (Exception ex)
             {
@@ -178,25 +143,6 @@ public class AudioDeviceManager : IDisposable
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "デバイス準備タスクのクリーンアップ中にエラーが発生しました");
-        }
-    }
-
-    private void CleanupWasapiDevice()
-    {
-        if (_wasapiDevice == null)
-            return;
-
-        try
-        {
-            _wasapiDevice.Dispose();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "WASAPIデバイスの破棄中にエラーが発生しました");
-        }
-        finally
-        {
-            _wasapiDevice = null;
         }
     }
 }

@@ -3,7 +3,7 @@ using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
-namespace VoicevoxRunCached.Services.Commands;
+namespace VoicevoxRunCached.Services.Synthesis;
 
 /// <summary>
 /// テキスト読み上げのメイン処理フロー制御。
@@ -49,91 +49,62 @@ public class TextToSpeechProcessor
     {
         var totalStartTime = DateTime.UtcNow;
 
-        try
+        if (!await _engineManager.EnsureEngineRunningAsync())
         {
-            if (!await _engineManager.EnsureEngineRunningAsync())
-            {
-                ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
-                return 1;
-            }
-
-            var segments = await LoadSegmentsAsync(request, noCache, cancellationToken);
-            if (segments.Count == 0)
-            {
-                ConsoleHelper.WriteError("Error: No segments to process", _logger);
-                return 1;
-            }
-
-            if (cacheOnly)
-            {
-                var uncachedCount = segments.Count(s => !s.IsCached);
-                if (uncachedCount > 0)
-                {
-                    ConsoleHelper.WriteWarning($"Warning: {uncachedCount} segments are not cached", _logger);
-                    return 1;
-                }
-            }
-
-            var synthesisResult = await SynthesizeAndPlayAsync(segments, request, noCache, noPlay, verbose, cancellationToken);
-
-            if (synthesisResult.AttemptedCount > 0 && synthesisResult.SuccessCount == 0)
-            {
-                throw new VoicevoxRunCachedException(
-                    ErrorCodes.Audio.AudioGenerationFailed,
-                    $"All {synthesisResult.AttemptedCount} segments failed to synthesize",
-                    "全てのセグメントの音声合成に失敗しました。",
-                    null,
-                    "VOICEVOXエンジンの状態とログを確認してください。"
-                );
-            }
-
-            bool hasPartialFailure = synthesisResult.FailureCount > 0;
-            if (hasPartialFailure)
-            {
-                ConsoleHelper.WriteWarning(
-                    $"Warning: {synthesisResult.FailureCount}/{synthesisResult.AttemptedCount} segments failed to synthesize",
-                    _logger);
-            }
-
-            if (!String.IsNullOrWhiteSpace(outPath))
-            {
-                await _audioExportService.ExportSegmentsAsync(segments, outPath, cancellationToken);
-            }
-
-            if (noPlay)
-            {
-                ConsoleHelper.WriteSuccess("Done (no-play mode)!", _logger);
-            }
-
-            LogElapsedIfVerbose(verbose, totalStartTime);
-            return hasPartialFailure ? 2 : 0;
+            ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
+            return 1;
         }
-        catch (OperationCanceledException)
+
+        var segments = await LoadSegmentsAsync(request, noCache, cancellationToken);
+        if (segments.Count == 0)
         {
-            _logger.LogInformation("テキスト読み上げ処理がキャンセルされました");
+            ConsoleHelper.WriteError("Error: No segments to process", _logger);
+            return 1;
+        }
+
+        if (cacheOnly)
+        {
+            var uncachedCount = segments.Count(s => !s.IsCached);
+            if (uncachedCount > 0)
+            {
+                ConsoleHelper.WriteWarning($"Warning: {uncachedCount} segments are not cached", _logger);
+                return 1;
+            }
+        }
+
+        var synthesisResult = await SynthesizeAndPlayAsync(segments, request, noCache, noPlay, verbose, cancellationToken);
+
+        if (synthesisResult.AttemptedCount > 0 && synthesisResult.SuccessCount == 0)
+        {
             throw new VoicevoxRunCachedException(
-                ErrorCodes.General.OperationCancelled,
-                "Text-to-speech processing was cancelled",
-                "テキスト読み上げ処理がキャンセルされました。",
+                ErrorCodes.Audio.AudioGenerationFailed,
+                $"All {synthesisResult.AttemptedCount} segments failed to synthesize",
+                "全てのセグメントの音声合成に失敗しました。",
                 null,
-                "操作を再実行してください。"
+                "VOICEVOXエンジンの状態とログを確認してください。"
             );
         }
-        catch (VoicevoxRunCachedException)
+
+        bool hasPartialFailure = synthesisResult.FailureCount > 0;
+        if (hasPartialFailure)
         {
-            throw;
+            ConsoleHelper.WriteWarning(
+                $"Warning: {synthesisResult.FailureCount}/{synthesisResult.AttemptedCount} segments failed to synthesize",
+                _logger);
         }
-        catch (Exception ex)
+
+        if (!String.IsNullOrWhiteSpace(outPath))
         {
-            _logger.LogError(ex, "テキスト読み上げ処理中に予期しないエラーが発生しました");
-            throw new VoicevoxRunCachedException(
-                ErrorCodes.General.UnknownError,
-                $"Unexpected error during text-to-speech processing: {ex.Message}",
-                "テキスト読み上げ処理中に予期しないエラーが発生しました。",
-                ex,
-                "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
-            );
+            await _audioExportService.ExportSegmentsAsync(segments, outPath, cancellationToken);
         }
+
+        if (noPlay)
+        {
+            ConsoleHelper.WriteSuccess("Done (no-play mode)!", _logger);
+        }
+
+        LogElapsedIfVerbose(verbose, totalStartTime);
+        return hasPartialFailure ? 2 : 0;
     }
 
     private async Task<List<TextSegment>> LoadSegmentsAsync(VoiceRequest request, bool noCache, CancellationToken cancellationToken)
@@ -227,6 +198,11 @@ public class TextToSpeechProcessor
     /// セグメントを順次合成して channel に流す。キャッシュ済みは即座に流すだけ。
     /// 各 API 呼び出しは直列。channel への書き込み後にキャッシュ保存を fire-and-forget して、次の API 呼び出しを遅らせない。
     /// </summary>
+    /// <remarks>
+    /// 全セグメントを書き終えたら writer.TryComplete() を即座に呼んで再生側を解放する。
+    /// その後にキャッシュ保存の WhenAll を待つことで、再生終了直後に発生するフィラー誤発火を避けつつ、
+    /// 戻り値で保存完了まで上位に伝える。
+    /// </remarks>
     private async Task<SynthesisResult> ProduceSegmentsAsync(
         List<TextSegment> segments,
         ChannelWriter<TextSegment> writer,
@@ -284,15 +260,18 @@ public class TextToSpeechProcessor
                     pendingCacheSaves.Add(SaveCacheBestEffortAsync(segmentRequest, wavData));
                 }
             }
-
-            if (pendingCacheSaves.Count > 0)
-            {
-                await Task.WhenAll(pendingCacheSaves);
-            }
         }
         finally
         {
+            // ディスク I/O より前に再生側を解放する。
+            // ここを WhenAll 後に置くと、最終セグメント再生後の WaitToReadAsync が
+            // FillerStartDelayMs を超えてフィラーを誤発火させる。
             writer.TryComplete();
+        }
+
+        if (pendingCacheSaves.Count > 0)
+        {
+            await Task.WhenAll(pendingCacheSaves);
         }
 
         return new SynthesisResult(attempted, successCount, failureCount);
