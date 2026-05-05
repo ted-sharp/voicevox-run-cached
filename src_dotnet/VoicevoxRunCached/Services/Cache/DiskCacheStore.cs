@@ -141,14 +141,7 @@ public class DiskCacheStore
     /// </summary>
     public string[] GetMetadataFiles()
     {
-        try
-        {
-            return System.IO.Directory.GetFiles(_settings.Directory, "*.meta.json");
-        }
-        catch
-        {
-            return Array.Empty<string>();
-        }
+        return System.IO.Directory.GetFiles(_settings.Directory, "*.meta.json");
     }
 
     /// <summary>
@@ -197,33 +190,25 @@ public class DiskCacheStore
     /// </summary>
     public (int TotalFiles, long TotalSize) GetStatistics()
     {
-        try
-        {
-            var files = GetAudioFiles();
-            long totalSize = 0;
-            int validFiles = 0;
+        var files = GetAudioFiles();
+        long totalSize = 0;
+        int validFiles = 0;
 
-            foreach (var path in files)
+        foreach (var path in files)
+        {
+            try
             {
-                try
-                {
-                    var info = new FileInfo(path);
-                    totalSize += info.Length;
-                    validFiles++;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "キャッシュファイル情報の取得に失敗 (統計集計時): {FilePath}", path);
-                }
+                var info = new FileInfo(path);
+                totalSize += info.Length;
+                validFiles++;
             }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "キャッシュファイル情報の取得に失敗 (統計集計時): {FilePath}", path);
+            }
+        }
 
-            return (validFiles, totalSize);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "キャッシュ統計情報の取得に失敗しました");
-            return (0, 0);
-        }
+        return (validFiles, totalSize);
     }
 
     /// <summary>

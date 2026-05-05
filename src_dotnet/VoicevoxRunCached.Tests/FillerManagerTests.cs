@@ -64,14 +64,13 @@ public class FillerManagerTests
     }
 
     [Test]
-    public async Task ClearFillerCache_DeletesMp3AndWavFiles()
+    public async Task ClearFillerCache_DeletesMp3Files()
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
         try
         {
             await File.WriteAllBytesAsync(Path.Combine(dir, "x.mp3"), new byte[] { 0xFF });
-            await File.WriteAllBytesAsync(Path.Combine(dir, "y.wav"), new byte[] { 0x00 });
             await File.WriteAllTextAsync(Path.Combine(dir, "keep.txt"), "preserved"); // 別拡張子は残す
 
             var settings = new FillerSettings
@@ -85,7 +84,6 @@ public class FillerManagerTests
             await mgr.ClearFillerCacheAsync();
 
             await Assert.That(File.Exists(Path.Combine(dir, "x.mp3"))).IsFalse();
-            await Assert.That(File.Exists(Path.Combine(dir, "y.wav"))).IsFalse();
             await Assert.That(File.Exists(Path.Combine(dir, "keep.txt"))).IsTrue();
         }
         finally

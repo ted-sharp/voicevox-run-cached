@@ -38,73 +38,61 @@ public class AudioCacheManager : IDisposable
     }
 
     /// <summary>
-    /// キャッシュから音声データを取得する。メモリ→ディスクの順で fallback。
+    /// キャッシュから音声データを取得する。メモリ→ディスクの順で参照。
     /// </summary>
     /// <remarks>
-    /// 読み込み I/O エラー (破損ファイル、権限不足等) は warning ログを残して null を返す。
-    /// 呼び出し側は「ヒットしなかった」と同じ扱いになり API へ fallback する。
-    /// (キャッシュ層の障害でユーザー操作が破綻しないことを優先する)
+    /// 破損ファイル等の現実的な I/O エラーは <see cref="DiskCacheStore.LoadAsync"/> 内で
+    /// 削除 + null 返却まで完結する。それ以外で例外が漏れた場合はバグなので surface させる。
     /// </remarks>
     public async Task<byte[]?> GetCachedAudioAsync(VoiceRequest request, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var cacheKey = CacheKeyGenerator.Compute(request);
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
 
-            if (_memory.TryGet(cacheKey, out byte[]? memoryCached) && memoryCached != null)
-            {
-                _logger.LogDebug("メモリキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, memoryCached.Length);
-                return memoryCached;
-            }
-
-            var audioData = await _disk.LoadAsync(cacheKey, cancellationToken);
-            if (audioData != null)
-            {
-                _memory.Set(cacheKey, audioData);
-                return audioData;
-            }
-
-            return null;
-        }
-        catch (OperationCanceledException)
+        if (_memory.TryGet(cacheKey, out byte[]? memoryCached) && memoryCached != null)
         {
-            throw;
+            _logger.LogDebug("メモリキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, memoryCached.Length);
+            return memoryCached;
         }
-        catch (Exception ex)
+
+        var audioData = await _disk.LoadAsync(cacheKey, cancellationToken);
+        if (audioData != null)
         {
-            _logger.LogWarning(ex, "キャッシュ読み込みに失敗 (API fallback します): {CacheKey}", cacheKey);
-            return null;
+            _memory.Set(cacheKey, audioData);
+            return audioData;
         }
+
+        return null;
     }
 
     /// <summary>
     /// 音声データをキャッシュに保存する。WAV はディスク保存前に MP3 に変換される。
     /// 容量超過時は同じ呼び出し内で eviction を走らせるため、戻り Task の完了は永続状態の確定を意味する。
     /// </summary>
-    public Task SaveAudioCacheAsync(VoiceRequest request, byte[] audioData, CancellationToken cancellationToken = default)
+    /// <remarks>
+    /// 例外は wrapping せずそのまま伝播させる。呼び出し元 (SegmentProducer.SaveCacheBestEffortAsync) が
+    /// best-effort で握って Warning ログを出すため、ここで CacheException に変換する意味は無い。
+    /// </remarks>
+    public async Task SaveAudioCacheAsync(VoiceRequest request, byte[] audioData, CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var cacheKey = CacheKeyGenerator.Compute(request);
-        return WithCacheErrorHandling<object?>(CacheErrorMapper.OperationKind.Write, "キャッシュの保存", cacheKey, async () =>
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+        var mp3Data = AudioConversionUtility.ConvertWavToMp3(audioData);
+        await _disk.SaveAsync(request, mp3Data, cacheKey, cancellationToken);
+        _memory.Set(cacheKey, mp3Data);
 
-            var mp3Data = AudioConversionUtility.ConvertWavToMp3(audioData);
-            await _disk.SaveAsync(request, mp3Data, cacheKey, cancellationToken);
-            _memory.Set(cacheKey, mp3Data);
+        _logger.LogDebug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes", cacheKey, mp3Data.Length);
 
-            _logger.LogDebug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes", cacheKey, mp3Data.Length);
-
-            // size 超過時のみ古いファイルを削除 (通常はノーオペで安価)。
-            // 旧実装は fire-and-forget で Dispose 時に追跡していたが、producer 側で WhenAll する設計と冗長だったため同期化。
-            await _eviction.CleanupByMaxSizeAsync(cancellationToken);
-            return null;
-        });
+        // size 超過時のみ古いファイルを削除 (通常はノーオペで安価)。
+        // 旧実装は fire-and-forget で Dispose 時に追跡していたが、producer 側で WhenAll する設計と冗長だったため同期化。
+        await _eviction.CleanupByMaxSizeAsync(cancellationToken);
     }
 
     public Task ClearAllCacheAsync(CancellationToken cancellationToken = default)
     {
-        return WithCacheErrorHandling<object?>(CacheErrorMapper.OperationKind.Clear, "キャッシュのクリア", null, () =>
+        return CacheErrorMapper.WithMappingAsync<object?>("キャッシュのクリア", null, _disk.Directory, _logger, () =>
         {
             cancellationToken.ThrowIfCancellationRequested();
             _memory.Clear();
@@ -149,12 +137,7 @@ public class AudioCacheManager : IDisposable
         }
         else
         {
-            segment.AudioData = null;
-            segment.IsCached = false;
             _logger.LogDebug("セグメントはキャッシュにありません - テキスト: {Text}", segment.Text);
         }
     }
-
-    private Task<T> WithCacheErrorHandling<T>(CacheErrorMapper.OperationKind kind, string operation, string? cacheKey, Func<Task<T>> action)
-        => CacheErrorMapper.WithMappingAsync(kind, operation, cacheKey, _disk.Directory, _logger, action);
 }

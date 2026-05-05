@@ -173,59 +173,44 @@ public class VoiceVoxApiClient : IDisposable
     /// <summary>
     /// 既知の例外を <see cref="VoiceVoxApiException"/> に変換する。
     /// </summary>
+    /// <remarks>
+    /// userMessage は元例外の Message をそのまま使う。HTTP status / 例外型から推測した
+    /// 「親切メッセージ」は誤誘導になるため作らない (例: IOException = ファイル操作失敗とは限らない)。
+    /// </remarks>
     private VoiceVoxApiException MapToApiException(string operationName, Exception ex)
     {
-        switch (ex)
+        var (code, statusCode) = ex switch
         {
-            case HttpRequestException httpEx when httpEx.StatusCode.HasValue:
-                {
-                    var statusCode = httpEx.StatusCode.Value;
-                    var ctx = ErrorHandlingUtility.FromHttpStatus(statusCode);
-                    _logger.LogError(httpEx, "{OperationName} に失敗 - StatusCode: {StatusCode}", operationName, statusCode);
-                    return new VoiceVoxApiException(
-                        ctx.Code,
-                        $"{operationName} failed",
-                        ctx.UserMessage,
-                        httpEx,
-                        statusCode,
-                        null,
-                        ctx.Solution);
-                }
+            HttpRequestException httpEx when httpEx.StatusCode.HasValue
+                => (MapHttpStatusToErrorCode(httpEx.StatusCode.Value), (HttpStatusCode?)httpEx.StatusCode.Value),
+            TaskCanceledException => (ErrorCodes.Api.ApiTimeout, (HttpStatusCode?)null),
+            JsonException => (ErrorCodes.Api.ApiResponseInvalid, (HttpStatusCode?)null),
+            _ => (ErrorCodes.General.UnknownError, (HttpStatusCode?)null),
+        };
 
-            case TaskCanceledException tcEx:
-                _logger.LogError(tcEx, "{OperationName} がタイムアウトしました", operationName);
-                return new VoiceVoxApiException(
-                    ErrorCodes.Api.ApiTimeout,
-                    $"{operationName} timed out: {tcEx.Message}",
-                    $"{operationName} がタイムアウトしました。",
-                    tcEx,
-                    null,
-                    null,
-                    "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。");
+        _logger.LogError(ex, "{OperationName} に失敗しました (StatusCode: {StatusCode})", operationName, statusCode);
 
-            case JsonException jsonEx:
-                _logger.LogError(jsonEx, "{OperationName} レスポンスのJSON解析に失敗しました", operationName);
-                return new VoiceVoxApiException(
-                    ErrorCodes.Api.ApiResponseInvalid,
-                    $"Failed to parse {operationName} response: {jsonEx.Message}",
-                    $"{operationName} の解析に失敗しました。",
-                    jsonEx,
-                    null,
-                    null,
-                    "VOICEVOXエンジンのバージョンを確認し、必要に応じて更新してください。");
-
-            default:
-                _logger.LogError(ex, "{OperationName} 中に予期しないエラーが発生しました", operationName);
-                return new VoiceVoxApiException(
-                    ErrorCodes.General.UnknownError,
-                    $"Unexpected error during {operationName}: {ex.Message}",
-                    $"{operationName} 中に予期しないエラーが発生しました。",
-                    ex,
-                    null,
-                    null,
-                    "アプリケーションを再起動し、問題が続く場合はログを確認してください。");
-        }
+        return new VoiceVoxApiException(
+            code,
+            $"{operationName} failed: {ex.Message}",
+            $"{operationName} に失敗しました: {ex.Message}",
+            ex,
+            statusCode);
     }
+
+    private static string MapHttpStatusToErrorCode(HttpStatusCode statusCode) => statusCode switch
+    {
+        HttpStatusCode.BadRequest => ErrorCodes.Api.ApiRequestFailed,
+        HttpStatusCode.Unauthorized => ErrorCodes.Api.ApiAuthenticationError,
+        HttpStatusCode.Forbidden => ErrorCodes.General.PermissionDenied,
+        HttpStatusCode.NotFound => ErrorCodes.General.ResourceNotFound,
+        HttpStatusCode.RequestTimeout => ErrorCodes.Api.ApiTimeout,
+        HttpStatusCode.TooManyRequests => ErrorCodes.Api.ApiRateLimitExceeded,
+        HttpStatusCode.InternalServerError => ErrorCodes.Engine.EngineProcessError,
+        HttpStatusCode.ServiceUnavailable => ErrorCodes.Engine.EngineNotAvailable,
+        HttpStatusCode.GatewayTimeout => ErrorCodes.Api.ApiTimeout,
+        _ => ErrorCodes.Api.ApiRequestFailed,
+    };
 
     private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {

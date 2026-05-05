@@ -31,7 +31,6 @@ public class CacheEvictionPolicy
     public Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
         return CacheErrorMapper.WithMappingAsync<object?>(
-            CacheErrorMapper.OperationKind.Cleanup,
             "キャッシュクリーンアップ",
             null,
             _settings.Directory,
@@ -75,7 +74,6 @@ public class CacheEvictionPolicy
     public Task CleanupByMaxSizeAsync(CancellationToken cancellationToken = default)
     {
         return CacheErrorMapper.WithMappingAsync<object?>(
-            CacheErrorMapper.OperationKind.Cleanup,
             "サイズ制限によるキャッシュクリーンアップ",
             null,
             _settings.Directory,

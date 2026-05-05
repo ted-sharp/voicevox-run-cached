@@ -2,7 +2,6 @@
 using Microsoft.Extensions.Logging;
 using NAudio.Wave;
 using VoicevoxRunCached.Constants;
-using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Audio;
@@ -39,15 +38,8 @@ public class AudioPlayer : IDisposable
         if (_disposed)
             return;
 
-        try
-        {
-            StopAudio();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "AudioPlayer の停止中にエラーが発生しました");
-        }
-
+        // StopAudio 自身が try/catch を持つため二重防御は不要
+        StopAudio();
         _disposed = true;
     }
 
@@ -116,24 +108,6 @@ public class AudioPlayer : IDisposable
             }
 
             _logger.LogDebug("ストリーミング再生が完了しました - 再生数: {Count}", playedCount);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (VoicevoxRunCachedException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "PlayStreamingAsync でエラーが発生しました");
-            throw new AudioProcessingException(
-                ErrorCodes.Audio.AudioPlaybackFailed,
-                $"Streaming playback failed: {ex.Message}",
-                "ストリーミング再生中にエラーが発生しました。",
-                ex,
-                "音声デバイスの状態とログを確認してください。");
         }
         finally
         {
@@ -272,32 +246,12 @@ public class AudioPlayer : IDisposable
 
             _logger.LogDebug("音声再生が完了しました (trailing: {Delay}ms)", trailingDelayMs);
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (VoicevoxRunCachedException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "音声再生中にエラーが発生しました");
-            throw new AudioProcessingException(
-                ErrorCodes.Audio.AudioPlaybackFailed,
-                $"Failed to play audio: {ex.Message}",
-                "音声再生中にエラーが発生しました。",
-                ex,
-                "音声デバイスの状態を確認してください。");
-        }
         finally
         {
             // Init/Play/Delay のいずれの段階で失敗しても確実に handler を外す
             // (共有 WavePlayer の次回再生時に古いハンドラが発火するのを防ぐ)
             wavePlayer.PlaybackStopped -= OnPlaybackStopped;
-            try
-            { reader?.Dispose(); }
-            catch (Exception ex) { _logger.LogDebug(ex, "Failed to dispose audio reader"); }
+            reader?.Dispose();
         }
     }
 }

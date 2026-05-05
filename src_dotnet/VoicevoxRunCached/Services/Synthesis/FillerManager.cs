@@ -53,9 +53,9 @@ public class FillerManager
             _logger.LogDebug("フィラー音声を生成中 {Processed}/{Total}: \"{Text}\"", processed, total, fillerText);
 
             var fillerRequest = BuildFillerRequest(fillerText);
-            var (fillerCacheMp3, fillerCacheWav) = ResolveFillerCachePaths(fillerRequest);
+            var fillerCacheMp3 = ResolveFillerCachePath(fillerRequest);
 
-            if (File.Exists(fillerCacheMp3) || File.Exists(fillerCacheWav))
+            if (File.Exists(fillerCacheMp3))
             {
                 _logger.LogDebug("フィラー音声は既にキャッシュ済み: \"{Text}\"", fillerText);
                 continue;
@@ -66,7 +66,8 @@ public class FillerManager
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(fillerRequest, cancellationToken);
                 var audioData = await apiClient.SynthesizeAudioAsync(audioQuery, fillerRequest.SpeakerId, cancellationToken);
 
-                await SaveFillerAudioAsync(fillerCacheMp3, audioData, cancellationToken);
+                var mp3 = AudioConversionUtility.ConvertWavToMp3(audioData);
+                await File.WriteAllBytesAsync(fillerCacheMp3, mp3, cancellationToken);
                 _logger.LogDebug("フィラー音声を生成・保存しました: \"{Text}\"", fillerText);
             }
             catch (OperationCanceledException)
@@ -95,40 +96,18 @@ public class FillerManager
         _logger.LogDebug("ランダムフィラー音声を選択: \"{Text}\"", selectedFiller);
 
         var fillerRequest = BuildFillerRequest(selectedFiller);
-        var (fillerCacheMp3, fillerCacheWav) = ResolveFillerCachePaths(fillerRequest);
+        var fillerCacheMp3 = ResolveFillerCachePath(fillerRequest);
 
-        var data = await TryReadAsync(fillerCacheMp3, cancellationToken)
-            ?? await TryReadAsync(fillerCacheWav, cancellationToken);
-        if (data == null)
+        if (!File.Exists(fillerCacheMp3))
         {
             _logger.LogWarning("フィラーキャッシュファイルが見つかりませんでした - text=\"{Text}\"", selectedFiller);
+            return null;
         }
+
+        var data = await File.ReadAllBytesAsync(fillerCacheMp3, cancellationToken);
+        _logger.LogDebug("フィラーキャッシュファイルを読み込みました: {Path} (サイズ: {Size} bytes)",
+            Path.GetFileName(fillerCacheMp3), data.Length);
         return data;
-    }
-
-    private async Task<byte[]?> TryReadAsync(string path, CancellationToken cancellationToken)
-    {
-        if (!File.Exists(path))
-        {
-            return null;
-        }
-
-        try
-        {
-            var data = await File.ReadAllBytesAsync(path, cancellationToken);
-            _logger.LogDebug("フィラーキャッシュファイルを読み込みました: {Path} (サイズ: {Size} bytes)",
-                Path.GetFileName(path), data.Length);
-            return data;
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "フィラー音声の読み込みに失敗しました: {Path}", path);
-            return null;
-        }
     }
 
     private string SelectFillerText()
@@ -160,60 +139,22 @@ public class FillerManager
         Volume = 1.0
     };
 
-    /// <summary>
-    /// フィラーキャッシュ用の MP3/WAV パスを返す。MP3 が標準で、変換失敗時のみ WAV が存在する。
-    /// </summary>
-    private (string Mp3Path, string WavPath) ResolveFillerCachePaths(VoiceRequest fillerRequest)
+    private string ResolveFillerCachePath(VoiceRequest fillerRequest)
     {
         var cacheKey = CacheKeyGenerator.Compute(fillerRequest);
-        var mp3 = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
-        var wav = Path.Combine(_settings.Directory, $"{cacheKey}.wav");
-        return (mp3, wav);
-    }
-
-    private async Task SaveFillerAudioAsync(string filePath, byte[] audioData, CancellationToken cancellationToken)
-    {
-        try
-        {
-            // CLI は単一スレッドで進むため Task.Run のスレッド分離は無意味。同期呼び出しで十分
-            var mp3 = AudioConversionUtility.ConvertWavToMp3(audioData);
-            await File.WriteAllBytesAsync(filePath, mp3, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            // 変換失敗時は WAV のまま .wav 拡張子で保存する。
-            // 旧実装は silent fallback だったが観測性のため Warning で必ず残す。
-            _logger.LogWarning(ex, "フィラー音声の MP3 変換に失敗。WAV 形式で保存します");
-            var wavPath = Path.ChangeExtension(filePath, ".wav");
-            await File.WriteAllBytesAsync(wavPath, audioData, cancellationToken);
-        }
+        return Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
     }
 
     public Task ClearFillerCacheAsync()
     {
-        try
-        {
-            if (!Directory.Exists(_settings.Directory))
-                return Task.CompletedTask;
+        if (!Directory.Exists(_settings.Directory))
+            return Task.CompletedTask;
 
-            foreach (var pattern in new[] { "*.mp3", "*.wav" })
-            {
-                var files = Directory.GetFiles(_settings.Directory, pattern);
-                foreach (var file in files)
-                {
-                    try
-                    { File.Delete(file); }
-                    catch (Exception ex) { _logger.LogDebug(ex, "Failed to delete file: {File}", file); }
-                }
-            }
-        }
-        catch (Exception ex)
+        foreach (var file in Directory.GetFiles(_settings.Directory, "*.mp3"))
         {
-            _logger.LogDebug(ex, "Failed to clear filler cache directory");
+            try
+            { File.Delete(file); }
+            catch (Exception ex) { _logger.LogDebug(ex, "Failed to delete file: {File}", file); }
         }
         return Task.CompletedTask;
     }

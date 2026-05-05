@@ -30,12 +30,10 @@ static class Program
             }
             finally
             {
-                // ApplicationBootstrap で確保した MediaFoundation を解放 (参照カウンタを減らす)
-                try
-                { MediaFoundationManager.Release(logger); }
-                catch (Exception cleanupEx) { logger.LogDebug(cleanupEx, "MediaFoundation shutdown中の警告"); }
-
-                CleanupSerilog();
+                // MediaFoundationManager.Release は内部で SafeShutdown が try/catch + finally を持つため
+                // ここで二重に守る必要は無い
+                MediaFoundationManager.Release(logger);
+                Serilog.Log.CloseAndFlush();
             }
         }
         catch (VoicevoxRunCachedException ex)
@@ -66,15 +64,4 @@ static class Program
         }
     }
 
-    private static void CleanupSerilog()
-    {
-        try
-        {
-            Serilog.Log.CloseAndFlush();
-        }
-        catch (Exception ex)
-        {
-            ConsoleHelper.WriteWarning($"Warning: Failed to cleanup Serilog: {ex.Message}");
-        }
-    }
 }
