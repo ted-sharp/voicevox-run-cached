@@ -26,6 +26,21 @@ public static class AudioConstants
     public const int BufferFlushDelayMs = 150;
 
     /// <summary>
+    /// セグメント間の挿入待機時間（ミリ秒）
+    /// </summary>
+    public const int InterSegmentGapMs = 50;
+
+    /// <summary>
+    /// 最初のセグメント再生完了後の遅延時間（ミリ秒）
+    /// </summary>
+    public const int FirstSegmentTrailingDelayMs = 150;
+
+    /// <summary>
+    /// 後続セグメント再生完了後の遅延時間（ミリ秒）
+    /// </summary>
+    public const int SubsequentSegmentTrailingDelayMs = 100;
+
+    /// <summary>
     /// FFmpeg変換のタイムアウト時間（ミリ秒）
     /// </summary>
     public const int FfmpegTimeoutMs = 30000;

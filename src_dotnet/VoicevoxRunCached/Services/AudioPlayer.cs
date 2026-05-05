@@ -1,5 +1,5 @@
-﻿using NAudio.Wave;
-using Serilog;
+﻿using Microsoft.Extensions.Logging;
+using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Models;
@@ -17,53 +17,42 @@ public class AudioPlayer : IDisposable
     private readonly AudioFormatDetector _formatDetector;
     private readonly AudioSettings _settings;
     private readonly WavePlayerManager _wavePlayerManager;
+    private readonly ILogger _logger;
     private bool _disposed;
     private IWavePlayer? _currentWavePlayer;
 
-    public AudioPlayer(AudioSettings settings)
+    public AudioPlayer(
+        AudioSettings settings,
+        AudioDeviceManager deviceManager,
+        AudioFormatDetector formatDetector,
+        WavePlayerManager wavePlayerManager,
+        ILogger logger)
     {
-        ArgumentNullException.ThrowIfNull(settings);
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _deviceManager = deviceManager ?? throw new ArgumentNullException(nameof(deviceManager));
+        _formatDetector = formatDetector ?? throw new ArgumentNullException(nameof(formatDetector));
+        _wavePlayerManager = wavePlayerManager ?? throw new ArgumentNullException(nameof(wavePlayerManager));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        _settings = settings;
-        _formatDetector = new AudioFormatDetector();
-        _deviceManager = new AudioDeviceManager(settings);
-        _wavePlayerManager = new WavePlayerManager(settings);
-
-        Log.Information("AudioPlayer を初期化しました - 音量: {Volume}, デバイス: {Device}",
+        _logger.LogDebug("AudioPlayer を初期化しました - 音量: {Volume}, デバイス: {Device}",
             settings.Volume, settings.OutputDevice);
     }
 
     public void Dispose()
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
+        if (_disposed)
+            return;
 
-    ~AudioPlayer()
-    {
-        Dispose(false);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (!_disposed)
+        try
         {
-            if (disposing)
-            {
-                try
-                {
-                    StopAudio();
-                    _deviceManager.Dispose();
-                    _wavePlayerManager.Dispose();
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "AudioPlayerの破棄中にエラーが発生しました");
-                }
-            }
-
-            _disposed = true;
+            StopAudio();
         }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "AudioPlayer の停止中にエラーが発生しました");
+        }
+
+        _disposed = true;
     }
 
     /// <summary>
@@ -130,7 +119,7 @@ public class AudioPlayer : IDisposable
         if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
-        Log.Information("PlaySegmentsAsync 開始 - セグメント数: {SegmentCount}, フィラーマネージャー: {HasFillerManager}",
+        _logger.LogDebug("PlaySegmentsAsync 開始 - セグメント数: {SegmentCount}, フィラーマネージャー: {HasFillerManager}",
             segments.Count, fillerManager != null);
 
         await _deviceManager.EnsureDeviceReadyAsync();
@@ -145,12 +134,12 @@ public class AudioPlayer : IDisposable
             for (int i = 0; i < segments.Count; i++)
             {
                 var segment = segments[i];
-                Log.Information("セグメント {SegmentNumber}/{Total} を処理中: \"{Text}\" (キャッシュ済み: {IsCached})",
+                _logger.LogDebug("セグメント {SegmentNumber}/{Total} を処理中: \"{Text}\" (キャッシュ済み: {IsCached})",
                     i + 1, segments.Count, segment.Text, segment.IsCached);
 
                 if (segment.AudioData == null || segment.AudioData.Length == 0)
                 {
-                    Log.Warning("セグメント {SegmentIndex} に音声データがありません。スキップします: {Text}",
+                    _logger.LogWarning("セグメント {SegmentIndex} に音声データがありません。スキップします: {Text}",
                         i + 1, segment.Text);
                     continue;
                 }
@@ -161,21 +150,21 @@ public class AudioPlayer : IDisposable
                 var fillerAudio = await CheckAndGetFillerAsync(i, segments, fillerManager, cancellationToken);
                 if (fillerAudio != null)
                 {
-                    Log.Information("フィラー音声を再生します (サイズ: {Size} bytes)", fillerAudio.Length);
+                    _logger.LogDebug("フィラー音声を再生します (サイズ: {Size} bytes)", fillerAudio.Length);
                     await PlaySegmentAsync(fillerAudio, false, cancellationToken);
                 }
 
                 if (i < segments.Count - 1)
                 {
-                    await Task.Delay(50, cancellationToken);
+                    await Task.Delay(AudioConstants.InterSegmentGapMs, cancellationToken);
                 }
             }
 
-            Log.Information("全セグメントの再生が完了しました");
+            _logger.LogDebug("全セグメントの再生が完了しました");
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "PlaySegmentsAsync でエラーが発生しました");
+            _logger.LogError(ex, "PlaySegmentsAsync でエラーが発生しました");
             throw new InvalidOperationException("音声シーケンシャル再生中にエラーが発生しました", ex);
         }
         finally
@@ -192,13 +181,12 @@ public class AudioPlayer : IDisposable
         try
         {
             _currentWavePlayer?.Stop();
-            _currentWavePlayer?.Dispose();
             _currentWavePlayer = null;
             _wavePlayerManager.StopSharedWavePlayer();
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "音声停止中にエラーが発生しました");
+            _logger.LogWarning(ex, "音声停止中にエラーが発生しました");
         }
     }
 
@@ -236,7 +224,7 @@ public class AudioPlayer : IDisposable
                     }
                     catch (Exception ex)
                     {
-                        Log.Warning(ex, "音声のキャッシュ保存に失敗しました");
+                        _logger.LogWarning(ex, "音声のキャッシュ保存に失敗しました");
                     }
                 });
             }
@@ -285,7 +273,7 @@ public class AudioPlayer : IDisposable
         {
             try
             { reader?.Dispose(); }
-            catch (Exception ex) { Log.Debug(ex, "Failed to dispose audio reader"); }
+            catch (Exception ex) { _logger.LogDebug(ex, "Failed to dispose audio reader"); }
 
             StopAudio();
         }
@@ -296,7 +284,7 @@ public class AudioPlayer : IDisposable
         WaveStream? reader = null;
         try
         {
-            Log.Debug("PlaySegmentAsync 開始 - サイズ: {Size} bytes, 最初のセグメント: {IsFirst}",
+            _logger.LogDebug("PlaySegmentAsync 開始 - サイズ: {Size} bytes, 最初のセグメント: {IsFirst}",
                 audioData.Length, isFirstSegment);
 
             reader = await _formatDetector.CreateWaveStreamAsync(audioData);
@@ -308,7 +296,7 @@ public class AudioPlayer : IDisposable
                 EventHandler<StoppedEventArgs>? handler = null;
                 handler = (_, e) =>
                 {
-                    Log.Debug("PlaybackStopped イベントが発生しました - 例外: {Exception}",
+                    _logger.LogDebug("PlaybackStopped イベントが発生しました - 例外: {Exception}",
                         e.Exception?.Message ?? "なし");
                     if (e.Exception != null)
                     {
@@ -348,7 +336,7 @@ public class AudioPlayer : IDisposable
 
                 if (completedTask == timeoutTask)
                 {
-                    Log.Warning("セグメント再生がタイムアウトしました。強制停止します。");
+                    _logger.LogWarning("セグメント再生がタイムアウトしました。強制停止します。");
                     _currentWavePlayer?.Stop();
                     throw new TimeoutException("セグメント再生がタイムアウトしました");
                 }
@@ -357,27 +345,29 @@ public class AudioPlayer : IDisposable
             }
 
             // 再生完了後の遅延
-            var playbackDelay = isFirstSegment ? 150 : 100;
+            var playbackDelay = isFirstSegment
+                ? AudioConstants.FirstSegmentTrailingDelayMs
+                : AudioConstants.SubsequentSegmentTrailingDelayMs;
             await Task.Delay(playbackDelay, cancellationToken);
 
             _currentWavePlayer?.Stop();
 
-            Log.Information("セグメント再生が完了しました (遅延: {Delay}ms)", playbackDelay);
+            _logger.LogDebug("セグメント再生が完了しました (遅延: {Delay}ms)", playbackDelay);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "セグメント再生中にエラーが発生しました");
+            _logger.LogError(ex, "セグメント再生中にエラーが発生しました");
             throw new InvalidOperationException($"Failed to play audio segment: {ex.Message}", ex);
         }
         finally
         {
             try
             { reader?.Dispose(); }
-            catch (Exception ex) { Log.Debug(ex, "Failed to dispose audio reader"); }
+            catch (Exception ex) { _logger.LogDebug(ex, "Failed to dispose audio reader"); }
         }
     }
 
-    private static async Task<byte[]?> CheckAndGetFillerAsync(
+    private async Task<byte[]?> CheckAndGetFillerAsync(
         int currentIndex,
         List<TextSegment> segments,
         FillerManager? fillerManager,
@@ -385,13 +375,13 @@ public class AudioPlayer : IDisposable
     {
         if (fillerManager == null)
         {
-            Log.Debug("フィラーマネージャーが設定されていないため、フィラーは挿入されません");
+            _logger.LogDebug("フィラーマネージャーが設定されていないため、フィラーは挿入されません");
             return null;
         }
 
         if (currentIndex >= segments.Count - 1)
         {
-            Log.Debug("最後のセグメントのため、フィラーは挿入されません");
+            _logger.LogDebug("最後のセグメントのため、フィラーは挿入されません");
             return null;
         }
 
@@ -402,26 +392,26 @@ public class AudioPlayer : IDisposable
         {
             try
             {
-                Log.Debug("次のセグメントの準備が間に合わないため、フィラー音声を取得します");
+                _logger.LogDebug("次のセグメントの準備が間に合わないため、フィラー音声を取得します");
                 var fillerAudio = await fillerManager.GetRandomFillerAudioAsync();
                 if (fillerAudio != null)
                 {
-                    Log.Information("フィラー音声を取得しました (サイズ: {Size} bytes)", fillerAudio.Length);
+                    _logger.LogDebug("フィラー音声を取得しました (サイズ: {Size} bytes)", fillerAudio.Length);
                     return fillerAudio;
                 }
                 else
                 {
-                    Log.Debug("フィラー音声の取得に失敗しました");
+                    _logger.LogDebug("フィラー音声の取得に失敗しました");
                 }
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "フィラー音声の取得中にエラーが発生しました");
+                _logger.LogError(ex, "フィラー音声の取得中にエラーが発生しました");
             }
         }
         else
         {
-            Log.Debug("次のセグメントは既に準備完了のため、フィラーは挿入されません (サイズ: {Size} bytes)",
+            _logger.LogDebug("次のセグメントは既に準備完了のため、フィラーは挿入されません (サイズ: {Size} bytes)",
                 nextSegment.AudioData?.Length ?? 0);
         }
 

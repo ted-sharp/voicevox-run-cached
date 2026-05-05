@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Services.Audio;
 using VoicevoxRunCached.Services.Commands;
 
 namespace VoicevoxRunCached.Services;
@@ -43,6 +44,11 @@ public static class ServiceRegistration
         container.Register<AudioCacheManager>(Reuse.Singleton);
         container.Register<VoiceVoxEngineManager>(Reuse.Singleton);
         container.Register<TextSegmentProcessor>(Reuse.Singleton);
+
+        // 音声再生サブシステム (singleton, IDisposable は DryIoc が破棄)
+        container.Register<AudioDeviceManager>(Reuse.Singleton);
+        container.Register<AudioFormatDetector>(Reuse.Singleton);
+        container.Register<WavePlayerManager>(Reuse.Singleton);
         container.Register<AudioPlayer>(Reuse.Singleton);
 
         // FillerManager は (FillerSettings, int defaultSpeakerId) を取るので明示的にファクトリ登録
