@@ -49,6 +49,9 @@
 
     <!-- Phase 4: Aloe.Utils.CommandLine for improved command-line argument processing -->
     <PackageReference Include="Aloe.Utils.CommandLine" Version="2.0.0" />
+
+    <!-- Phase 5: DryIoc for dependency injection -->
+    <PackageReference Include="DryIoc.dll" Version="5.4.3" />
   </ItemGroup>
 
   <ItemGroup>

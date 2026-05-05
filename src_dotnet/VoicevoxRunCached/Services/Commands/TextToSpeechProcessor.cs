@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
@@ -8,62 +8,37 @@ namespace VoicevoxRunCached.Services.Commands;
 /// <summary>
 /// テキスト読み上げのメイン処理フロー制御を行うクラス
 /// </summary>
-public class TextToSpeechProcessor : IDisposable
+public class TextToSpeechProcessor
 {
+    private readonly AudioCacheManager _cacheManager;
     private readonly AudioExportService _audioExportService;
     private readonly AudioPlayer _audioPlayer;
     private readonly EngineCoordinator _engineCoordinator;
+    private readonly FillerManager _fillerManager;
     private readonly ILogger _logger;
     private readonly SegmentProcessor _segmentProcessor;
-    private readonly AppSettings _settings;
-    private bool _disposed;
+    private readonly VoiceVoxApiClient _apiClient;
 
-    public TextToSpeechProcessor(AppSettings settings, ILogger logger)
+    public TextToSpeechProcessor(
+        EngineCoordinator engineCoordinator,
+        SegmentProcessor segmentProcessor,
+        AudioExportService audioExportService,
+        AudioPlayer audioPlayer,
+        AudioCacheManager cacheManager,
+        VoiceVoxApiClient apiClient,
+        FillerManager fillerManager,
+        ILogger logger)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _engineCoordinator = engineCoordinator ?? throw new ArgumentNullException(nameof(engineCoordinator));
+        _segmentProcessor = segmentProcessor ?? throw new ArgumentNullException(nameof(segmentProcessor));
+        _audioExportService = audioExportService ?? throw new ArgumentNullException(nameof(audioExportService));
+        _audioPlayer = audioPlayer ?? throw new ArgumentNullException(nameof(audioPlayer));
+        _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
+        _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
+        _fillerManager = fillerManager ?? throw new ArgumentNullException(nameof(fillerManager));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _engineCoordinator = new EngineCoordinator(settings.VoiceVox, logger);
-        _audioExportService = new AudioExportService(settings, logger);
-        _segmentProcessor = new SegmentProcessor(settings, logger);
-        _audioPlayer = new AudioPlayer(settings.Audio);
     }
 
-    public void Dispose()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (!_disposed)
-        {
-            if (disposing)
-            {
-                try
-                {
-                    _audioPlayer?.Dispose();
-                }
-                catch (Exception ex)
-                {
-                    _logger?.LogError(ex, "TextToSpeechProcessorの破棄中にエラーが発生しました");
-                }
-            }
-            _disposed = true;
-        }
-    }
-
-    /// <summary>
-    /// テキスト読み上げ処理を実行します
-    /// </summary>
-    /// <param name="request">音声リクエスト</param>
-    /// <param name="noCache">キャッシュを使用しないフラグ</param>
-    /// <param name="cacheOnly">キャッシュのみを使用するフラグ</param>
-    /// <param name="verbose">詳細出力フラグ</param>
-    /// <param name="outPath">出力ファイルパス</param>
-    /// <param name="noPlay">再生しないフラグ</param>
-    /// <param name="cancellationToken">キャンセレーショントークン</param>
-    /// <returns>処理結果の終了コード</returns>
     public async Task<int> ProcessTextToSpeechAsync(VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false, string? outPath = null, bool noPlay = false, CancellationToken cancellationToken = default)
     {
         var totalStartTime = DateTime.UtcNow;
@@ -100,7 +75,6 @@ public class TextToSpeechProcessor : IDisposable
             // --no-playが指定されている場合、再生をスキップ
             if (noPlay)
             {
-                // ファイル出力（--out指定時）
                 if (!String.IsNullOrWhiteSpace(outPath))
                 {
                     await _audioExportService.ExportSegmentsAsync(segments, outPath, cancellationToken);
@@ -179,27 +153,16 @@ public class TextToSpeechProcessor : IDisposable
         return true;
     }
 
-
-    /// <summary>
-    /// 音声再生処理を実行します（フィラー機能付き）
-    /// </summary>
-    /// <param name="segments">セグメントのリスト</param>
-    /// <param name="verbose">詳細出力フラグ</param>
-    /// <param name="cancellationToken">キャンセレーショントークン</param>
-    /// <returns>処理結果の終了コード</returns>
     private async Task<int> ProcessAudioPlaybackAsync(List<TextSegment> segments, bool verbose, CancellationToken cancellationToken)
     {
         try
         {
             var playbackStartTime = DateTime.UtcNow;
 
-            // 音声再生処理
-            var cacheManager = new AudioCacheManager(_settings.Cache);
-            using var processingChannel = new AudioProcessingChannel(cacheManager, new VoiceVoxApiClient(_settings.VoiceVox));
-            var fillerManager = new FillerManager(_settings.Filler, _settings.VoiceVox.DefaultSpeaker);
+            using var processingChannel = new AudioProcessingChannel(_cacheManager, _apiClient);
 
             await _audioPlayer.PlayAudioSequentiallyWithGenerationAsync(
-                segments, processingChannel, fillerManager, cancellationToken);
+                segments, processingChannel, _fillerManager, cancellationToken);
 
             var playbackElapsed = (DateTime.UtcNow - playbackStartTime).TotalMilliseconds;
             if (verbose)
@@ -227,10 +190,7 @@ public class TextToSpeechProcessor : IDisposable
 
         _logger.LogInformation("Synthesizing {Count} missing segments...", missingSegments.Count);
 
-        using var client = new VoiceVoxApiClient(_settings.VoiceVox);
-        using var cacheManager = new AudioCacheManager(_settings.Cache);
-
-        await client.InitializeSpeakerAsync(originalRequest.SpeakerId, cancellationToken);
+        await _apiClient.InitializeSpeakerAsync(originalRequest.SpeakerId, cancellationToken);
 
         foreach (var segment in missingSegments)
         {
@@ -247,16 +207,14 @@ public class TextToSpeechProcessor : IDisposable
                     Volume = originalRequest.Volume
                 };
 
-                // 音声合成
-                var audioQuery = await client.GenerateAudioQueryAsync(segmentRequest, cancellationToken);
-                var wavData = await client.SynthesizeAudioAsync(audioQuery, originalRequest.SpeakerId, cancellationToken);
+                var audioQuery = await _apiClient.GenerateAudioQueryAsync(segmentRequest, cancellationToken);
+                var wavData = await _apiClient.SynthesizeAudioAsync(audioQuery, originalRequest.SpeakerId, cancellationToken);
 
                 segment.AudioData = wavData;
 
-                // キャッシュに保存（noCacheフラグがfalseの場合のみ）
                 if (!noCache)
                 {
-                    await cacheManager.SaveAudioCacheAsync(segmentRequest, wavData);
+                    await _cacheManager.SaveAudioCacheAsync(segmentRequest, wavData);
                 }
             }
             catch (Exception ex)

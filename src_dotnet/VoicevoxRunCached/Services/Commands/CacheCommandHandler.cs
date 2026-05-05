@@ -1,5 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
-using VoicevoxRunCached.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -8,12 +7,14 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class CacheCommandHandler
 {
+    private readonly AudioCacheManager _cacheManager;
+    private readonly FillerManager _fillerManager;
     private readonly ILogger _logger;
-    private readonly AppSettings _settings;
 
-    public CacheCommandHandler(AppSettings settings, ILogger logger)
+    public CacheCommandHandler(AudioCacheManager cacheManager, FillerManager fillerManager, ILogger logger)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
+        _fillerManager = fillerManager ?? throw new ArgumentNullException(nameof(fillerManager));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -26,13 +27,9 @@ public class CacheCommandHandler
         try
         {
             using var spinner = new ProgressSpinner("Clearing audio cache...");
-            var cacheManager = new AudioCacheManager(_settings.Cache);
+            _cacheManager.ClearAllCache();
 
-            cacheManager.ClearAllCache();
-
-            // フィラーキャッシュも設定されたフィラーディレクトリを使用してクリア
-            var fillerManager = new FillerManager(_settings.Filler, _settings.VoiceVox.DefaultSpeaker);
-            await fillerManager.ClearFillerCacheAsync();
+            await _fillerManager.ClearFillerCacheAsync();
 
             ConsoleHelper.WriteSuccess("Cache cleared successfully!", _logger);
             return 0;

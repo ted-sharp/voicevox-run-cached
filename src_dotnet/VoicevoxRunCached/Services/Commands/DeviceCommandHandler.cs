@@ -1,7 +1,6 @@
 ﻿using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
-using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Utilities;
 
 namespace VoicevoxRunCached.Services.Commands;
@@ -13,9 +12,8 @@ public class DeviceCommandHandler
 {
     private readonly ILogger _logger;
 
-    public DeviceCommandHandler(AppSettings settings, ILogger logger)
+    public DeviceCommandHandler(ILogger logger)
     {
-        ArgumentNullException.ThrowIfNull(settings);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 

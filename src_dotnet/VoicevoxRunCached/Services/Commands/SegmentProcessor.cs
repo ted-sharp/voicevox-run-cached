@@ -1,5 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
-using VoicevoxRunCached.Configuration;
+using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Commands;
@@ -9,22 +8,17 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class SegmentProcessor
 {
+    private readonly AudioCacheManager _cacheManager;
     private readonly ILogger _logger;
-    private readonly AppSettings _settings;
+    private readonly TextSegmentProcessor _textProcessor;
 
-    public SegmentProcessor(AppSettings settings, ILogger logger)
+    public SegmentProcessor(AudioCacheManager cacheManager, TextSegmentProcessor textProcessor, ILogger logger)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
+        _textProcessor = textProcessor ?? throw new ArgumentNullException(nameof(textProcessor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// テキストをセグメントに分割して処理します
-    /// </summary>
-    /// <param name="request">音声リクエスト</param>
-    /// <param name="noCache">キャッシュを使用しないフラグ</param>
-    /// <param name="cancellationToken">キャンセレーショントークン</param>
-    /// <returns>処理されたセグメントのリスト</returns>
     public async Task<List<TextSegment>> ProcessSegmentsAsync(VoiceRequest request, bool noCache, CancellationToken cancellationToken = default)
     {
         var segmentStartTime = DateTime.UtcNow;
@@ -33,8 +27,7 @@ public class SegmentProcessor
         {
             ConsoleHelper.WriteLine("Processing segments...", _logger);
 
-            var textProcessor = new TextSegmentProcessor();
-            var segments = await textProcessor.ProcessTextAsync(request.Text, request.SpeakerId, cancellationToken);
+            var segments = await _textProcessor.ProcessTextAsync(request.Text, request.SpeakerId, cancellationToken);
 
             if (segments.Count == 0)
             {
@@ -44,7 +37,6 @@ public class SegmentProcessor
 
             _logger.LogInformation("テキストを {SegmentCount} 個のセグメントに分割しました", segments.Count);
 
-            // キャッシュを使用する場合、キャッシュから音声データを取得
             if (!noCache)
             {
                 await LoadCachedAudioDataAsync(segments, cancellationToken);
@@ -62,17 +54,10 @@ public class SegmentProcessor
         }
     }
 
-    /// <summary>
-    /// キャッシュから音声データを読み込みます
-    /// </summary>
-    /// <param name="segments">セグメントのリスト</param>
-    /// <param name="cancellationToken">キャンセレーショントークン</param>
-    /// <returns>キャッシュ読み込み完了を表すTask</returns>
     private async Task LoadCachedAudioDataAsync(List<TextSegment> segments, CancellationToken cancellationToken)
     {
         try
         {
-            var cacheManager = new AudioCacheManager(_settings.Cache);
             var cacheHitCount = 0;
 
             foreach (var segment in segments)
@@ -91,7 +76,7 @@ public class SegmentProcessor
                     Pitch = 0.0,
                     Volume = 1.0
                 };
-                var cachedAudio = await cacheManager.GetCachedAudioAsync(segmentRequest);
+                var cachedAudio = await _cacheManager.GetCachedAudioAsync(segmentRequest);
                 if (cachedAudio != null)
                 {
                     segment.AudioData = cachedAudio;
@@ -108,11 +93,6 @@ public class SegmentProcessor
         }
     }
 
-    /// <summary>
-    /// セグメントの統計情報を取得します
-    /// </summary>
-    /// <param name="segments">セグメントのリスト</param>
-    /// <returns>セグメントの統計情報</returns>
     public SegmentStatistics GetSegmentStatistics(List<TextSegment> segments)
     {
         var totalSegments = segments.Count;
@@ -131,9 +111,6 @@ public class SegmentProcessor
     }
 }
 
-/// <summary>
-/// セグメントの統計情報
-/// </summary>
 public class SegmentStatistics
 {
     public int TotalSegments { get; set; }

@@ -1,7 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
-using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Commands;
 
 namespace VoicevoxRunCached.Services;
@@ -20,26 +19,26 @@ public class CommandRouter
     private readonly ILogger _logger;
     private readonly AppSettings _settings;
 
-    public CommandRouter(AppSettings settings, ILogger logger)
+    public CommandRouter(
+        SpeakerCommandHandler speakerHandler,
+        DeviceCommandHandler deviceHandler,
+        InitCommandHandler initHandler,
+        CacheCommandHandler cacheHandler,
+        BenchmarkCommandHandler benchmarkHandler,
+        TextToSpeechCommandHandler ttsHandler,
+        AppSettings settings,
+        ILogger logger)
     {
+        _speakerHandler = speakerHandler ?? throw new ArgumentNullException(nameof(speakerHandler));
+        _deviceHandler = deviceHandler ?? throw new ArgumentNullException(nameof(deviceHandler));
+        _initHandler = initHandler ?? throw new ArgumentNullException(nameof(initHandler));
+        _cacheHandler = cacheHandler ?? throw new ArgumentNullException(nameof(cacheHandler));
+        _benchmarkHandler = benchmarkHandler ?? throw new ArgumentNullException(nameof(benchmarkHandler));
+        _ttsHandler = ttsHandler ?? throw new ArgumentNullException(nameof(ttsHandler));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
-        // 各専門ハンドラーのインスタンスを作成
-        _speakerHandler = new SpeakerCommandHandler(settings, logger);
-        _deviceHandler = new DeviceCommandHandler(settings, logger);
-        _initHandler = new InitCommandHandler(settings, logger);
-        _cacheHandler = new CacheCommandHandler(settings, logger);
-        _benchmarkHandler = new BenchmarkCommandHandler(settings, logger);
-        _ttsHandler = new TextToSpeechCommandHandler(settings, logger);
     }
 
-    /// <summary>
-    /// コマンドを実行します
-    /// </summary>
-    /// <param name="args">コマンドライン引数</param>
-    /// <param name="cancellationToken">キャンセレーショントークン</param>
-    /// <returns>実行結果の終了コード</returns>
     public async Task<int> ExecuteCommandAsync(string[] args, CancellationToken cancellationToken = default)
     {
         if (args.Length == 0 || args[0] == "--help" || args[0] == "-h")
@@ -66,7 +65,6 @@ public class CommandRouter
         }
         catch (VoicevoxRunCachedException ex)
         {
-            // カスタム例外は適切に処理
             _logger.LogError(ex, "コマンド実行中にエラーが発生しました: {Command}, ErrorCode: {ErrorCode}", command, ex.ErrorCode);
             ConsoleHelper.WriteError($"Error: {ex.UserMessage}", _logger);
 
@@ -115,9 +113,6 @@ public class CommandRouter
         }
     }
 
-    /// <summary>
-    /// テストコマンドを処理します
-    /// </summary>
     private async Task<int> HandleTestCommandAsync(string[] args, CancellationToken cancellationToken)
     {
         var testMessage = _settings.Test.Message;
@@ -130,7 +125,6 @@ public class CommandRouter
         _logger.LogInformation("Test command executed with message: {TestMessage}", testMessage);
         ConsoleHelper.WriteLine($"テストメッセージ: {testMessage}", _logger);
 
-        // 設定されたメッセージで最初の引数を置き換え
         var testArgs = new[] { testMessage }.Concat(args).ToArray();
 
         _logger.LogInformation("Test args constructed: {TestArgs}", String.Join(" ", testArgs));
@@ -139,9 +133,6 @@ public class CommandRouter
         return await ExecuteTextToSpeechCommandAsync(testArgs, cancellationToken);
     }
 
-    /// <summary>
-    /// テキスト読み上げコマンドを実行します
-    /// </summary>
     private async Task<int> ExecuteTextToSpeechCommandAsync(string[] args, CancellationToken cancellationToken)
     {
         var request = ArgumentParser.ParseArguments(args, _settings, _logger);

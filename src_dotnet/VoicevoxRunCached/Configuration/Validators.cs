@@ -42,7 +42,7 @@ public class CacheSettingsValidator : AbstractValidator<CacheSettings>
     {
         RuleFor(x => x.Directory)
             .NotEmpty().WithMessage("Cache Directoryは必須です")
-            .Must(BeWritableDirectory).WithMessage("Cache Directoryは書き込み可能である必要があります");
+            .Must(DirectoryValidation.BeWritableDirectory).WithMessage("Cache Directoryは書き込み可能である必要があります");
 
         RuleFor(x => x.ExpirationDays)
             .InclusiveBetween(1, 3650).WithMessage("ExpirationDaysは1-3650日（10年）の範囲である必要があります");
@@ -54,13 +54,22 @@ public class CacheSettingsValidator : AbstractValidator<CacheSettings>
         RuleFor(x => x.MemoryCacheSizeMb)
             .InclusiveBetween(1, 10000).WithMessage("MemoryCacheSizeMbは1-10000MBの範囲である必要があります");
     }
+}
 
-    private static bool BeWritableDirectory(string path)
+internal static class DirectoryValidation
+{
+    public static bool BeWritableDirectory(string path)
     {
         try
         {
             if (String.IsNullOrWhiteSpace(path))
                 return false;
+
+            // 必要であれば作成する (初回起動時はキャッシュディレクトリが存在しない)
+            if (!Directory.Exists(path))
+            {
+                Directory.CreateDirectory(path);
+            }
 
             var testPath = Path.Combine(path, ".test");
             File.WriteAllText(testPath, "test");
@@ -107,7 +116,7 @@ public class FillerSettingsValidator : AbstractValidator<FillerSettings>
     {
         RuleFor(x => x.Directory)
             .NotEmpty().When(x => x.Enabled).WithMessage("Filler Directoryは必須です（フィラーが有効な場合）")
-            .Must(BeWritableDirectory).When(x => x.Enabled).WithMessage("Filler Directoryは書き込み可能である必要があります");
+            .Must(DirectoryValidation.BeWritableDirectory).When(x => x.Enabled).WithMessage("Filler Directoryは書き込み可能である必要があります");
 
         RuleFor(x => x.FillerTexts)
             .NotEmpty().When(x => x.Enabled).WithMessage("FillerTextsは空であってはいけません（フィラーが有効な場合）")
@@ -117,24 +126,6 @@ public class FillerSettingsValidator : AbstractValidator<FillerSettings>
         // 新しい検証ルール
         RuleFor(x => x.MaxCacheSizeMb)
             .InclusiveBetween(1, 10000).When(x => x.Enabled).WithMessage("MaxCacheSizeMbは1-10000MBの範囲である必要があります");
-    }
-
-    private static bool BeWritableDirectory(string path)
-    {
-        try
-        {
-            if (String.IsNullOrWhiteSpace(path))
-                return false;
-
-            var testPath = Path.Combine(path, ".test");
-            File.WriteAllText(testPath, "test");
-            File.Delete(testPath);
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
     }
 }
 

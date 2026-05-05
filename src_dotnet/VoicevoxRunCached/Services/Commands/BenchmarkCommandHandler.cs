@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 
@@ -9,11 +9,19 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class BenchmarkCommandHandler
 {
+    private readonly VoiceVoxApiClient _apiClient;
+    private readonly VoiceVoxEngineManager _engineManager;
     private readonly ILogger _logger;
-    private readonly AppSettings _settings;
+    private readonly VoiceVoxSettings _settings;
 
-    public BenchmarkCommandHandler(AppSettings settings, ILogger logger)
+    public BenchmarkCommandHandler(
+        VoiceVoxEngineManager engineManager,
+        VoiceVoxApiClient apiClient,
+        VoiceVoxSettings settings,
+        ILogger logger)
     {
+        _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
+        _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -26,23 +34,17 @@ public class BenchmarkCommandHandler
     {
         try
         {
-            // VOICEVOXエンジンが動作していることを確認
-            using var engineManager = new VoiceVoxEngineManager(_settings.VoiceVox);
-            if (!await engineManager.EnsureEngineRunningAsync())
+            if (!await _engineManager.EnsureEngineRunningAsync())
             {
                 ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
                 return 1;
             }
 
             ConsoleHelper.WriteLine("Starting performance benchmark...", _logger);
-
-            // ウォームアップ
             ConsoleHelper.WriteLine("Warming up...", _logger);
 
-            using var apiClient = new VoiceVoxApiClient(_settings.VoiceVox);
-            await apiClient.InitializeSpeakerAsync(_settings.VoiceVox.DefaultSpeaker);
+            await _apiClient.InitializeSpeakerAsync(_settings.DefaultSpeaker);
 
-            // ベンチマーク
             ConsoleHelper.WriteLine("Benchmarking...", _logger);
             var segments = new List<TextSegment>
             {
@@ -54,20 +56,20 @@ public class BenchmarkCommandHandler
             using var spinner = new ProgressSpinner("Benchmarking...");
             var totalStartTime = DateTime.UtcNow;
 
-            for (int i = 0; i < 10; i++) // ベンチマークを10回実行
+            for (int i = 0; i < 10; i++)
             {
                 spinner.UpdateMessage($"Benchmark iteration {i + 1}/10");
                 var request = new VoiceRequest
                 {
-                    Text = segments[i % segments.Count].Text, // セグメントを循環
-                    SpeakerId = _settings.VoiceVox.DefaultSpeaker,
+                    Text = segments[i % segments.Count].Text,
+                    SpeakerId = _settings.DefaultSpeaker,
                     Speed = 1.0,
                     Pitch = 0.0,
                     Volume = 1.0
                 };
 
-                var audioQuery = await apiClient.GenerateAudioQueryAsync(request, CancellationToken.None);
-                _ = await apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId, CancellationToken.None);
+                var audioQuery = await _apiClient.GenerateAudioQueryAsync(request, CancellationToken.None);
+                _ = await _apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId, CancellationToken.None);
             }
 
             var elapsedTime = (DateTime.UtcNow - totalStartTime).TotalMilliseconds;

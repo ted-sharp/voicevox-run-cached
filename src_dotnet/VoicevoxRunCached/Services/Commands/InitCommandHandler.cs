@@ -1,5 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
-using VoicevoxRunCached.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -8,12 +7,20 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class InitCommandHandler
 {
+    private readonly VoiceVoxApiClient _apiClient;
+    private readonly VoiceVoxEngineManager _engineManager;
+    private readonly FillerManager _fillerManager;
     private readonly ILogger _logger;
-    private readonly AppSettings _settings;
 
-    public InitCommandHandler(AppSettings settings, ILogger logger)
+    public InitCommandHandler(
+        VoiceVoxEngineManager engineManager,
+        VoiceVoxApiClient apiClient,
+        FillerManager fillerManager,
+        ILogger logger)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
+        _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
+        _fillerManager = fillerManager ?? throw new ArgumentNullException(nameof(fillerManager));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -25,18 +32,14 @@ public class InitCommandHandler
     {
         try
         {
-            // VOICEVOXエンジンが動作していることを確認
-            using var engineManager = new VoiceVoxEngineManager(_settings.VoiceVox);
-            if (!await engineManager.EnsureEngineRunningAsync())
+            if (!await _engineManager.EnsureEngineRunningAsync())
             {
                 ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
                 return 1;
             }
 
-            var fillerManager = new FillerManager(_settings.Filler, _settings.VoiceVox.DefaultSpeaker);
-
             ConsoleHelper.WriteLine("Initializing filler cache...", _logger);
-            await fillerManager.InitializeFillerCacheAsync(_settings);
+            await _fillerManager.InitializeFillerCacheAsync(_apiClient);
             ConsoleHelper.WriteSuccess("Filler cache initialized", _logger);
             return 0;
         }

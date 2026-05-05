@@ -1,5 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
-using VoicevoxRunCached.Configuration;
+using Microsoft.Extensions.Logging;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -8,12 +7,14 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class SpeakerCommandHandler
 {
+    private readonly VoiceVoxApiClient _apiClient;
+    private readonly VoiceVoxEngineManager _engineManager;
     private readonly ILogger _logger;
-    private readonly AppSettings _settings;
 
-    public SpeakerCommandHandler(AppSettings settings, ILogger logger)
+    public SpeakerCommandHandler(VoiceVoxEngineManager engineManager, VoiceVoxApiClient apiClient, ILogger logger)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
+        _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -25,16 +26,13 @@ public class SpeakerCommandHandler
     {
         try
         {
-            // VOICEVOXエンジンが動作していることを確認
-            using var engineManager = new VoiceVoxEngineManager(_settings.VoiceVox);
-            if (!await engineManager.EnsureEngineRunningAsync())
+            if (!await _engineManager.EnsureEngineRunningAsync())
             {
                 ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
                 return 1;
             }
 
-            using var apiClient = new VoiceVoxApiClient(_settings.VoiceVox);
-            var speakers = await apiClient.GetSpeakersAsync();
+            var speakers = await _apiClient.GetSpeakersAsync();
 
             ConsoleHelper.WriteLine("Available speakers:", _logger);
             foreach (var speaker in speakers)

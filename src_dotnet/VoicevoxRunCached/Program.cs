@@ -1,4 +1,5 @@
-﻿using VoicevoxRunCached.Exceptions;
+using DryIoc;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Services;
 
 namespace VoicevoxRunCached;
@@ -12,23 +13,23 @@ static class Program
     {
         try
         {
-            // アプリケーションの初期化
+            // アプリケーションの初期化 (設定ロード + Serilog 設定 + MediaFoundation 初期化)
             var (settings, logger) = await ApplicationBootstrap.InitializeAsync(args);
 
-            // コマンドルーターを作成してコマンドを実行
+            // DI コンテナ構築
+            using var container = ServiceRegistration.Build(settings, logger);
+
             using var cancellationManager = new CancellationManager(logger);
-            var commandRouter = new CommandRouter(settings, logger);
+            var commandRouter = container.Resolve<CommandRouter>();
 
             var result = await commandRouter.ExecuteCommandAsync(args, cancellationManager.Token);
 
-            // Serilogのクリーンアップ
             ProgramExtensions.CleanupSerilog();
 
             return result;
         }
         catch (VoicevoxRunCachedException ex)
         {
-            // カスタム例外は適切に処理
             Console.WriteLine($"\e[31mFatal Error: {ex.UserMessage}\e[0m");
 
             if (!String.IsNullOrEmpty(ex.SuggestedSolution))
@@ -56,20 +57,16 @@ static class Program
     }
 }
 
-// Serilogの適切なクローズ処理のための拡張メソッド
 public static class ProgramExtensions
 {
     public static void CleanupSerilog()
     {
         try
         {
-            // Serilogの CloseAndFlush を直接呼び出す
-            // 通常は瞬時に完了し、内部でタイムアウト処理も実装されている
             Serilog.Log.CloseAndFlush();
         }
         catch (Exception ex)
         {
-            // クリーンアップが失敗しても致命的ではない
             Console.WriteLine($"Warning: Failed to cleanup Serilog: {ex.Message}");
         }
     }

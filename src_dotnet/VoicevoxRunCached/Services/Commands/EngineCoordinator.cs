@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 
 namespace VoicevoxRunCached.Services.Commands;
@@ -8,35 +8,30 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class EngineCoordinator
 {
+    private readonly VoiceVoxEngineManager _engineManager;
     private readonly ILogger _logger;
     private readonly VoiceVoxSettings _settings;
 
-    public EngineCoordinator(VoiceVoxSettings settings, ILogger logger)
+    public EngineCoordinator(VoiceVoxEngineManager engineManager, VoiceVoxSettings settings, ILogger logger)
     {
+        _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// VOICEVOXエンジンが動作していることを確認します
-    /// </summary>
-    /// <param name="cancellationToken">キャンセレーショントークン</param>
-    /// <returns>エンジンが利用可能な場合はtrue</returns>
     public async Task<bool> EnsureEngineRunningAsync(CancellationToken cancellationToken = default)
     {
         var engineStartTime = DateTime.UtcNow;
 
         try
         {
-            using var engineManager = new VoiceVoxEngineManager(_settings);
-
             if (cancellationToken.IsCancellationRequested)
             {
                 _logger.LogWarning("エンジン確認がキャンセルされました");
                 return false;
             }
 
-            var isRunning = await engineManager.EnsureEngineRunningAsync();
+            var isRunning = await _engineManager.EnsureEngineRunningAsync();
 
             if (isRunning)
             {
@@ -57,16 +52,11 @@ public class EngineCoordinator
         }
     }
 
-    /// <summary>
-    /// エンジンの状態を取得します
-    /// </summary>
-    /// <returns>エンジンの状態情報</returns>
     public async Task<EngineStatus> GetEngineStatusAsync()
     {
         try
         {
-            using var engineManager = new VoiceVoxEngineManager(_settings);
-            var isRunning = await engineManager.EnsureEngineRunningAsync();
+            var isRunning = await _engineManager.EnsureEngineRunningAsync();
 
             return new EngineStatus
             {
@@ -88,9 +78,6 @@ public class EngineCoordinator
     }
 }
 
-/// <summary>
-/// エンジンの状態情報
-/// </summary>
 public class EngineStatus
 {
     public bool IsRunning { get; set; }

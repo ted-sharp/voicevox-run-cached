@@ -20,8 +20,9 @@ public class FillerManager
         Log.Information("FillerManager を初期化しました - 有効: {Enabled}, ディレクトリ: {Directory}", _settings.Enabled, _settings.Directory);
     }
 
-    public async Task InitializeFillerCacheAsync(AppSettings appSettings)
+    public async Task InitializeFillerCacheAsync(VoiceVoxApiClient apiClient)
     {
+        ArgumentNullException.ThrowIfNull(apiClient);
         Log.Information("InitializeFillerCacheAsync メソッドが開始されました");
 
         if (!_settings.Enabled)
@@ -36,8 +37,6 @@ public class FillerManager
 
         Log.Information("ProgressSpinnerを作成中...");
         using var spinner = new ProgressSpinner("Initializing filler cache...");
-        Log.Information("VoiceVoxApiClientを作成中...");
-        using var apiClient = new VoiceVoxApiClient(appSettings.VoiceVox);
 
         Log.Information("スピーカー {SpeakerId} を初期化中...", _defaultSpeaker);
         await apiClient.InitializeSpeakerAsync(_defaultSpeaker);

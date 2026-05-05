@@ -65,7 +65,42 @@ public static class ApplicationBootstrap
         configuration.GetSection("Filler").Bind(settings.Filler);
         configuration.GetSection("Logging").Bind(settings.Logging);
         configuration.GetSection("Test").Bind(settings.Test);
+
+        // 相対パス + UseExecutableBaseDirectory=true の場合、検証前に絶対パスへ解決しておく
+        // (検証はパスが書き込み可能か実際に試すため、相対パスのままだと cwd 依存になる)
+        ResolveBaseDirectory(settings.Cache);
+        ResolveBaseDirectory(settings.Filler);
+
         return settings;
+    }
+
+    private static void ResolveBaseDirectory(CacheSettings cache)
+    {
+        cache.Directory = ResolvePath(cache.Directory, cache.UseExecutableBaseDirectory);
+    }
+
+    private static void ResolveBaseDirectory(FillerSettings filler)
+    {
+        filler.Directory = ResolvePath(filler.Directory, filler.UseExecutableBaseDirectory);
+    }
+
+    private static string ResolvePath(string path, bool useExecutableBaseDirectory)
+    {
+        if (String.IsNullOrWhiteSpace(path) || !useExecutableBaseDirectory || Path.IsPathRooted(path))
+        {
+            return path;
+        }
+
+        try
+        {
+            var executablePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
+            var executableDirectory = Path.GetDirectoryName(executablePath) ?? Directory.GetCurrentDirectory();
+            return Path.GetFullPath(Path.Combine(executableDirectory, path));
+        }
+        catch
+        {
+            return path;
+        }
     }
 
     /// <summary>
