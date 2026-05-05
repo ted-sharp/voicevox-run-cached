@@ -4,215 +4,143 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a completed C# Console application that serves as a VOICEVOX REST API wrapper with intelligent audio caching functionality. The application converts text to speech using VOICEVOX engine with MP3 caching and segment-based processing for optimal performance.
+VOICEVOX REST API のラッパー C# Console アプリ。テキストを文単位に分割し、SHA256 キーで MP3 キャッシュしながら逐次合成・再生する。完成済みのプロジェクト。
 
 ## Development Commands
 
-All development work happens in `src_dotnet/`. Navigate to the appropriate directory before running commands:
+`src_dotnet/VoicevoxRunCached/` で作業する。
 
 ```bash
-# From src_dotnet/VoicevoxRunCached/
-dotnet build                          # Build project in Debug mode
-dotnet run "こんにちは、世界！"        # Run with sample text
-dotnet run -- test                    # Run with test message from appsettings.json
-dotnet format                         # Format code (pre-commit hook)
-dotnet build -c Release               # Build Release version
+# 基本
+dotnet build                          # Debug build
+dotnet build -c Release               # Release build (benchmark に必要)
+dotnet format                         # コード整形 (pre-commit でも実行)
+dotnet run "こんにちは、世界！"        # サンプル実行
+dotnet run -- --test                  # appsettings.json の Test.Message で実行
 
-# From src_dotnet/
-_publish.cmd                          # Build and publish standalone executable to ./publish
-_publish_zip.cmd                      # Same, but creates ZIP archive
-_fix-all.ps1                          # Code quality check: build, format, tests, SonarQube, ReSharper
-_fix-all.ps1 -Fast                    # Quick quality check (format + build only)
+# src_dotnet/ から
+_publish.cmd          # standalone EXE を ./publish に出力
+_publish_zip.cmd      # 同上 + ZIP 化
+_fix-all.ps1 -Fast    # format + build (pre-commit 相当のクイック確認)
+_fix-all.ps1          # 上記 + tests + SonarQube + ReSharper
 ```
 
-### Running and Testing
-
-```bash
-# Basic synthesis and playback
-dotnet run "このテキストを読み上げます。" --speaker 2
-
-# Synthesis with parameters
-dotnet run "速く読んでください。" --speed 1.5 --pitch 0.1
-
-# Save to file without playing
-dotnet run "ファイルに保存" --out output.mp3 --no-play
-
-# Utilities
-dotnet run devices [--full] [--json]  # List audio output devices
-dotnet run speakers                    # List available speakers
-dotnet run -- --init                  # Initialize filler audio cache
-dotnet run -- --clear                 # Clear all audio cache files
-dotnet run -c Release -- benchmark    # Run performance benchmarks (Release build only)
-
-# Verbose mode (shows detailed timing)
-dotnet run "メッセージ" --verbose
-```
+完全なコマンド一覧は後述の「Command Interface」を参照。
 
 ## Architecture Overview
 
 ### Core Request Flow
 
-The application processes text-to-speech requests through this pipeline:
-
-1. **CLI Entry** (Program.cs) → Parse arguments and route to CommandRouter
-2. **Command Dispatch** (CommandRouter) → Route to specific command handler
-3. **Segment Processing** (TextSegmentProcessor) → Split text into sentences for efficient caching
-4. **Cache Lookup** (AudioCacheManager) → Check if each segment already cached (SHA256 key)
-5. **API Generation** (VoiceVoxApiClient) → Generate audio for uncached segments via serial API calls
-6. **Audio Playback** (AudioPlayer) → Sequential segment playback with filler audio during waits
-7. **File Output** → Optionally save audio to WAV or MP3
-
-### Key Components
-
-- **Program.cs**: Entry point with initialization, argument parsing, and command orchestration
-- **ApplicationBootstrap**: Dependency injection setup and service initialization
-- **CommandRouter**: Dispatches to command handlers (speakers, devices, init, clear, synthesis)
-- **VoiceVoxApiClient**: REST API communication (/audio_query, /initialize_speaker, /synthesis)
-- **AudioCacheManager**: SHA256-based file caching, expiration, size limits; MP3 storage with metadata
-- **TextSegmentProcessor**: Japanese sentence segmentation for optimal cache hits
-- **AudioPlayer**: NAudio-based sequential playback with seamless segment transitions
-- **VoiceVoxEngineManager**: Engine lifecycle (auto-start, health checks, process management)
-- **FillerManager**: Generates and plays natural filler audio during segment generation waits
-- **Configuration/AppSettings.cs**: Strongly-typed JSON configuration binding with FluentValidation
-
-### Technology Stack
-- **.NET 10**: Primary framework with C# 14 features
-- **NAudio + NAudio.Lame**: Audio playback and MP3 encoding/decoding
-- **HttpClient**: REST API communication
-- **Microsoft.Extensions.Configuration**: JSON configuration management
-- **Microsoft.Extensions.Logging**: Structured logging
-- **Serilog**: Advanced logging with console and file outputs
-- **FluentValidation**: Configuration validation
-- **Polly**: Retry policies and resilience patterns
-- **BenchmarkDotNet**: Performance benchmarking
-- **Microsoft.Extensions.Caching.Memory**: In-memory caching
+1. **CLI Entry** (`Program.cs`) → `ApplicationBootstrap` で初期化し `CommandRouter` へ
+2. **Command Dispatch** (`CommandRouter.ExecuteCommandAsync` の switch 文) → 各 `XxxCommandHandler` へ
+3. **Segment Processing** (`TextSegmentProcessor`) → 日本語の文単位に分割
+4. **Cache Lookup** (`AudioCacheManager`) → SHA256 キーで MP3 ヒット判定
+5. **API Generation** (`VoiceVoxApiClient`) → 未キャッシュ分のみ直列で API 呼び出し
+6. **Audio Playback** (`AudioPlayer`) → 順序通り再生、生成待ちの間は filler 音声で繋ぐ
+7. **File Output** → `--out` 指定時に WAV/MP3 で保存
 
 ### Critical Implementation Details
 
-**Serial API Calls**: VOICEVOX API must be called serially for each segment. The pattern is:
-1. Initialize speaker (one-time per speaker ID per session)
-2. For each segment: `/audio_query` (POST with text) → `/synthesis` (POST with query response)
+**Serial API Calls**: VOICEVOX API は直列必須。`VoiceVoxApiClient` 内で `_synthesisLock` (Lock 型) によりロックされる。並列化を入れる場合は API 制約を再確認すること。各 speaker は session 内で初回のみ `/initialize_speaker` する。
 
-**Cache Keys**: Generated via SHA256(speaker_id + text + parameters), stored as hex filename
+**Cache Keys**: `SHA256(speaker_id + raw_text + speed + pitch + volume)` を 16 進文字列化したものをファイル名として使用。`{CacheDirectory}/{SHA256_HEX}.mp3` と `{SHA256_HEX}.meta.json` (speaker_id, parameters, text hash) のペアで保存。**SHA256 生成ロジックを変えると既存キャッシュが全て無効化されるため変更禁止**。
 
-**Playback Strategy**:
-- Cached segments play immediately while uncached segments generate in background
-- Filler audio plays during generation waits to avoid silence
-- All segments play sequentially in order regardless of generation timing
+**Streaming Playback**: キャッシュ済みセグメントは即座に再生開始しつつ、未キャッシュ分はバックグラウンドで生成。生成待ちの隙間は `FillerManager` が自然な相槌音声を再生して無音を回避する。
 
-**Audio Format Chain**: Text → API (WAV) → NAudio conversion → MP3 with LAME codec → Cached as .mp3 + .meta.json
+**Audio Format Chain**: API (WAV) → NAudio で変換 → NAudio.Lame で MP3 化 → `.mp3` + `.meta.json` でキャッシュ。
 
-### Key Design Patterns
-- **Segment-based Caching**: Text split by sentences for partial cache hits on text changes
-- **Background Generation**: Concurrent segment generation with streaming playback
-- **MP3 Storage**: WAV-to-MP3 conversion with metadata tracking (speaker, params, hash)
-- **Device Pre-warming**: Optional low-volume playback to initialize audio device
-- **Polly Resilience**: Retry policies for API calls and file operations
-- **Serilog Logging**: Structured logging with console and file sinks, configurable levels
+**Engine Lifecycle**: `VoiceVoxEngineManager` が起動済みプロセスを検出してから launch。VOICEVOX / AIVIS Speech 両対応 (設定で切替)。`KeepEngineRunning: true` で常駐、false で終了時に停止。
 
 ## Project Structure
 
 ```
 src_dotnet/VoicevoxRunCached/
-├── Program.cs                      # Entry point with ApplicationBootstrap
-├── Configuration/
-│   ├── AppSettings.cs             # Configuration models
-│   └── Validators.cs              # FluentValidation rules
-├── Models/
-│   ├── VoiceRequest.cs           # Request parameters
-│   ├── TextSegment.cs            # Segment processing model
-│   └── AudioFormat.cs            # Audio format detection
-├── Services/
-│   ├── ApplicationBootstrap.cs   # App initialization
-│   ├── CommandRouter.cs          # Command dispatching
-│   ├── ArgumentParser.cs         # CLI argument parsing
-│   ├── VoiceVoxApiClient.cs      # VOICEVOX API client
-│   ├── AudioCacheManager.cs      # Caching logic
-│   ├── AudioPlayer.cs            # NAudio playback orchestration
-│   ├── TextSegmentProcessor.cs   # Text segmentation
-│   ├── VoiceVoxEngineManager.cs  # Engine lifecycle management
-│   ├── FillerManager.cs          # Filler audio management
-│   ├── ProgressSpinner.cs        # Console progress indication
-│   ├── Audio/                    # Audio-specific services
-│   ├── Cache/                    # Cache management services  
-│   └── Commands/                 # Command handlers
-├── Benchmarks/
-│   └── AudioProcessingBenchmarks.cs # Performance benchmarks
-├── Exceptions/
-│   ├── VoicevoxRunCachedException.cs # Custom exceptions
-│   └── ErrorCodes.cs             # Error code definitions
-└── appsettings.json              # Configuration file
+├── Program.cs                     # Entry point
+├── Configuration/                 # AppSettings + FluentValidation Validators
+├── Models/                        # VoiceRequest, TextSegment, AudioFormat
+├── Services/                      # コア実装
+│   ├── Audio/                     # WavePlayerManager
+│   └── Commands/                  # コマンドハンドラ群 + 補助クラス
+│       ├── TextToSpeechCommandHandler.cs   # 通常の合成・再生
+│       ├── SpeakerCommandHandler.cs        # speakers
+│       ├── DeviceCommandHandler.cs         # devices
+│       ├── InitCommandHandler.cs           # --init
+│       ├── CacheCommandHandler.cs          # --clear
+│       ├── BenchmarkCommandHandler.cs      # --benchmark
+│       ├── EngineCoordinator.cs            # エンジン起動/停止の共通処理
+│       ├── SegmentProcessor.cs             # セグメント単位の生成制御
+│       ├── TextToSpeechProcessor.cs        # 合成パイプライン本体
+│       └── AudioExportService.cs           # --out 用の保存処理
+├── Benchmarks/                    # AudioProcessingBenchmarks (BenchmarkDotNet)
+├── Exceptions/                    # VoicevoxRunCachedException, ErrorCodes
+└── appsettings.json
 ```
 
 ## Common Development Patterns
 
 ### Adding a New Command
 
-1. Create handler class in `Services/Commands/` implementing ICommandHandler pattern
-2. Register in ApplicationBootstrap dependency injection
-3. Add routing logic in CommandRouter.RouteCommand()
-4. Examples: SpeakersCommand, DevicesCommand, InitCommand
+1. `Services/Commands/` にハンドラクラス (例: `XxxCommandHandler`) を作成。共通インターフェースは無く、具象クラスで `HandleXxxAsync()` 等の固有メソッドを公開する
+2. `CommandRouter` のコンストラクタでフィールドとして `new` し、`ExecuteCommandAsync` の switch 文 (CommandRouter.cs:56) に分岐を追加 (`ApplicationBootstrap` への DI 登録は不要)
+
+### Reusable Utilities (新規実装の前にこれらを探すこと)
+
+`Services/` 直下に共通ユーティリティが揃っている。新しい関数を作る前に再利用を検討する:
+
+- **`ConsoleHelper`**: 色付き出力、エラー表示。`Console.WriteLine` を直接使わず原則これ経由
+- **`ErrorHandlingUtility`**: 例外 → ErrorCode → ExitCode 変換。`HandleExceptionAndGetExitCode` がコマンド末尾の定型処理
+- **`RetryPolicyService`**: HTTP/ファイル操作のリトライ Polly ポリシー
+- **`CancellationManager`**: Ctrl+C の協調キャンセル
+- **`MediaFoundationManager`**: NAudio の MediaFoundation 初期化を一元管理
+- **`ConfigurationManager` / `ConfigurationValidationService`**: AppSettings 読込と FluentValidation による検証
 
 ### Modifying Cache Behavior
 
-Cache files are stored at: `{CacheDirectory}/{SHA256_HEX}.mp3` with `{SHA256_HEX}.meta.json`
-- Do NOT change SHA256 generation logic (breaks all existing cache)
-- Metadata JSON stores: speaker_id, parameters, original text hash
-- Cache validation: check metadata matches before playing
+- SHA256 生成ロジックは**変更禁止** (既存キャッシュが全て無効化される)
+- 期限切れは `ExpirationDays`、容量上限は `MaxSizeGB` で eviction
+- キャッシュは executable と同じディレクトリに保存される (`UseExecutableBaseDirectory: true`)
+- 再生前に必ず `.meta.json` の speaker_id とパラメータが一致するか検証する
 
 ### Working with Text Segmentation
 
-TextSegmentProcessor splits on Japanese sentence boundaries. Key methods:
-- `SplitIntoSegments(text)`: Returns list of TextSegment objects
-- TextSegment has: Text, Parameters, CacheKey properties
-- Empty segments are filtered; whitespace-only text returns empty list
-- Cache hit/miss determined per-segment, not whole text
+`TextSegmentProcessor.SplitIntoSegments(text)` が `List<TextSegment>` を返す。
+
+- 分割は日本語の文末記号 (`。 ! ?`) で行われる
+- 空白のみ・空セグメントは filter される
+- キャッシュヒット判定はセグメント単位なので、テキストの一部変更でも未変更部分は再利用される
 
 ### Handling API Calls
 
-VoiceVoxApiClient is serial by design:
-- All calls locked via `_synthesisLock` (Lock type for thread-safety)
-- If modifying to add parallelism, update comments and verify API constraints
-- Check for HttpRequestException and connection timeouts
-- Speaker initialization happens automatically on first encounter
+`VoiceVoxApiClient` は設計上完全に直列。
+
+- 全呼び出しが `_synthesisLock` (Lock 型) 内で実行される
+- 並列化を試みる場合は VOICEVOX エンジン側の制約を実機で確認してから
+- speaker 初期化 (`/initialize_speaker`) は初回 API 呼び出し時に自動実行
 
 ### Logging Conventions
 
-Use Serilog through ILogger:
-- Error level: recoverable failures requiring user action
-- Warning level: unexpected conditions but continued operation
-- Information: major milestones (engine started, cache cleared)
-- Debug: detailed flow (segment processing, cache hits)
-- Avoid DEBUG prefix in log messages (user prefers clean output)
+Serilog を `ILogger` 経由で使う。
+
+- Error: ユーザー対応が必要な復旧可能エラー
+- Warning: 想定外だが処理継続できる状態
+- Information: 主要マイルストーン (engine 起動, cache clear 等)
+- Debug: 詳細フロー (segment 処理, cache hit 等)
+- **`DEBUG`/`if DEBUG` のような prefix・条件付きログは付けない** (出力が見にくくなるため)
 
 ## Configuration
 
-The application uses `appsettings.json` with these sections:
-- **VoiceVox**: EngineType, BaseUrl, EngineArguments, DefaultSpeaker, ConnectionTimeout, EnginePath, AutoStartEngine, StartupTimeoutSeconds, KeepEngineRunning
-- **Cache**: Directory, UseExecutableBaseDirectory, ExpirationDays, MaxSizeGB
-- **Audio**: OutputDevice (-1 for default), Volume, PrepareDevice, PreparationDurationMs, PreparationVolume, OutputDeviceId
-- **Filler**: Enabled, Directory, UseExecutableBaseDirectory, FillerTexts
-- **Logging**: Level, Format (legacy - mostly replaced by Serilog)
-- **Serilog**: MinimumLevel, WriteTo (Console/File), OutputTemplate, Enrichers
-- **Test**: Message (comprehensive test text for development)
+`appsettings.json` で `VoiceVox` / `Cache` / `Audio` / `Filler` / `Serilog` / `Test` セクションを定義。各セクションは `Configuration/AppSettings.cs` の型にバインドされ `Validators.cs` (FluentValidation) で検証される。詳細プロパティは appsettings.json と AppSettings.cs を直接参照。
 
 ## Pre-Commit Hooks and Code Quality
 
-The project uses pre-commit hooks (`.pre-commit-config.yaml`) that automatically run on `git commit`:
+`.pre-commit-config.yaml` で `git commit` 時に以下が自動実行される:
 
-1. **dotnet-build**: Verifies Release build succeeds
-2. **dotnet-format**: Auto-formats C# code (idempotent, safe to run anytime)
-3. **dotnet-test**: Runs test projects if they exist (currently skipped as no tests)
-4. **File checks**: Trailing whitespace, EOF fixes, YAML/JSON validation, merge conflict detection
+1. **dotnet-build** (Release 構成)
+2. **dotnet-format** (idempotent、いつでも安全に実行可)
+3. **dotnet-test** (テストプロジェクトが存在すれば。現状は無し)
+4. ファイル系チェック (trailing whitespace, EOF, YAML/JSON 検証, merge conflict 検出)
 
-**To manually run quality checks**:
-```bash
-# From src_dotnet/ directory
-_fix-all.ps1 -Fast              # Quick: format + build only
-_fix-all.ps1                    # Full: format + build + tests + SonarQube + ReSharper
-```
-
-**Pre-commit hooks environment**: Uses bash and dotnet CLI, works on Windows with MSYS2
+**フック失敗時**: `dotnet-format` 起因なら `dotnet format` を再実行すれば大半は解消する。`--no-verify` で skip しない。`_fix-all.ps1 -Fast` で同等のクイック確認ができる。
 
 ## Command Interface
 
@@ -222,77 +150,36 @@ VoicevoxRunCached speakers
 VoicevoxRunCached devices [--full] [--json]
 VoicevoxRunCached --init
 VoicevoxRunCached --clear
-VoicevoxRunCached benchmark
-VoicevoxRunCached test
+VoicevoxRunCached --benchmark
+VoicevoxRunCached --test
 
 Options:
 --speaker, -s <id>    Speaker ID (default: 1)
 --speed <value>       Speech speed (default: 1.0)
 --pitch <value>       Speech pitch (default: 0.0)
 --volume <value>      Speech volume (default: 1.0)
---no-cache           Skip cache usage
---cache-only         Use cache only, don't call API
---out, -o <path>     Save output audio to file (.wav or .mp3)
---no-play            Do not play audio (useful with --out)
---verbose            Show detailed timing information
---log-level <level>  Log level: trace|debug|info|warn|error|crit|none
---log-format <fmt>   Log format: simple|json
---help, -h           Show help message
-
-Commands:
-speakers             List available speakers
-devices              List audio output devices
---init               Initialize filler audio cache
---clear              Clear all audio cache files
-benchmark            Run performance benchmarks (requires Release build)
-test                 Run test with comprehensive message from appsettings.json
+--no-cache            Skip cache usage
+--cache-only          Use cache only, don't call API
+--out, -o <path>      Save output audio to file (.wav or .mp3)
+--no-play             Do not play audio (useful with --out)
+--verbose             Show detailed timing information
+--log-level <level>   trace|debug|info|warn|error|crit|none
+--log-format <fmt>    simple|json
+--help, -h            Show help message
 ```
 
-## Development Notes
+## Technical Constraints
 
-### Architecture Patterns
-- **Command Pattern**: Commands handled through CommandRouter and specific command handlers
-- **Service Locator**: ApplicationBootstrap centralizes service initialization
-- **Repository Pattern**: AudioCacheManager abstracts caching operations
-- **Chain of Responsibility**: Audio processing pipeline with multiple stages
+**API**: 全呼び出し直列。Connection timeout はデフォルト 30 秒で全 HTTP リクエストに適用。不正な speaker ID は最初の API 呼び出し前に弾く。
 
-### Technical Constraints
+**Text Processing**: `。 ! ?` で文単位に分割。空セグメントは除外。各セグメントが独立にキャッシュされる。
 
-**API Requirements**:
-- All VOICEVOX API calls must be serial (thread-safe queue enforcement)
-- Speaker must be initialized once per speaker ID per session via `/initialize_speaker`
-- Connection timeout: configurable (default 30s), applies to all HTTP requests
-- Invalid speaker IDs should be caught before first API call
+**Engine Management**: 起動時に既存 VOICEVOX プロセスを検査してから launch。`EnginePath` 空なら一般的なインストール場所から自動検出。
 
-**Caching Rules**:
-- Cache keys: SHA256(speaker_id + raw_text + speed + pitch + volume)
-- Audio stored as .mp3 files with accompanying .meta.json (contains parameters and hash)
-- Expiration configurable via ExpirationDays setting
-- Size-based eviction when MaxSizeGB limit exceeded
-- Cache is relative to executable location (UseExecutableBaseDirectory: true)
+**Audio Device**: `OutputDevice = -1` で OS デフォルト、`0+` で specific index。`PrepareDevice: true` で起動時に無音再生してデバイスを温め、最初のセグメントの取りこぼしを防ぐ。`OutputDeviceId` で WASAPI endpoint を直接指定可能。
 
-**Text Processing**:
-- Text is split by sentence boundaries (。! ? for Japanese)
-- Empty segments filtered out
-- Each segment cached independently for partial reuse on text changes
+## Code Standards
 
-**Engine Management**:
-- Auto-start checks for existing VOICEVOX processes before launching
-- Supports both VOICEVOX and AIVIS Speech engines via configuration
-- Engine can be kept running (KeepEngineRunning: true) or stopped on app exit
-- Engine path auto-detected from common installation locations if EnginePath empty
-
-**Audio Device Handling**:
-- OutputDevice: -1 = system default, 0+ = specific device index
-- PrepareDevice option plays silent audio to initialize device and prevent dropouts
-- Optional OutputDeviceId allows targeting specific WASAPI endpoint
-
-### Code Standards
-- **C# Version**: Target .NET 10 with C# 14 features (primary constructors, collection expressions, etc.)
-- **Null Safety**: Nullable reference types enabled; all public APIs should validate inputs
-- **Configuration**: FluentValidation validators for AppSettings sections (Validators.cs)
-- **Logging**: Serilog structured logging; avoid simple Console.WriteLine
-- **Resilience**: Polly retry policies for HTTP calls and file operations
-- **Testing**: No test projects currently; pre-commit hooks verify build and format
-- **Exception Handling**: Custom VoicevoxRunCachedException for domain errors; let framework exceptions surface
-- **Performance**: BenchmarkDotNet for profile-driven optimization; results in Benchmarks/ subdirectory
+- **Target**: .NET 10 / C# 14 (primary constructors, collection expressions 等を活用)
+- **Null Safety**: Nullable reference types 有効
+- **Exceptions**: ドメインエラーは `VoicevoxRunCachedException` で wrap し `ErrorCode` を付与。framework 例外は無理に隠さず surface させる
