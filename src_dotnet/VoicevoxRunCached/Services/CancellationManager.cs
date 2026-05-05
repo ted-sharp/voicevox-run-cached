@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Logging;
-using Serilog;
 
 namespace VoicevoxRunCached.Services;
 
@@ -9,10 +8,10 @@ namespace VoicevoxRunCached.Services;
 public class CancellationManager : IDisposable
 {
     private readonly CancellationTokenSource _cancellationTokenSource;
-    private readonly Microsoft.Extensions.Logging.ILogger _logger;
+    private readonly ILogger _logger;
     private bool _disposed;
 
-    public CancellationManager(Microsoft.Extensions.Logging.ILogger logger)
+    public CancellationManager(ILogger logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _cancellationTokenSource = new CancellationTokenSource();
@@ -65,8 +64,7 @@ public class CancellationManager : IDisposable
         Console.CancelKeyPress += (_, e) =>
         {
             e.Cancel = true;
-            _logger.LogWarning("Cancellation requested (Ctrl+C). Attempting graceful shutdown...");
-            Log.Warning("ユーザーによるキャンセル要求 (Ctrl+C)。正常終了を試行します...");
+            _logger.LogWarning("ユーザーによるキャンセル要求 (Ctrl+C)。正常終了を試行します...");
             _cancellationTokenSource.Cancel();
         };
     }

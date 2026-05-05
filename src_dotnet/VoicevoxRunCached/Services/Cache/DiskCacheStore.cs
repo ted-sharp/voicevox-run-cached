@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
-using Serilog;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Utilities;
@@ -13,11 +14,13 @@ public class DiskCacheStore
 {
     private readonly CacheSettings _settings;
     private readonly TimeSpan _expiration;
+    private readonly ILogger _logger;
 
-    public DiskCacheStore(CacheSettings settings)
+    public DiskCacheStore(CacheSettings settings, ILogger? logger = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _expiration = TimeSpan.FromDays(settings.ExpirationDays);
+        _logger = logger ?? NullLogger.Instance;
         ResolveBaseDirectory();
         EnsureDirectoryExists();
     }
@@ -33,7 +36,7 @@ public class DiskCacheStore
 
         if (!File.Exists(audioPath) || !File.Exists(metaPath))
         {
-            Log.Debug("キャッシュミス: {CacheKey} - ファイルが存在しません", cacheKey);
+            _logger.LogDebug("キャッシュミス: {CacheKey} - ファイルが存在しません", cacheKey);
             return null;
         }
 
@@ -44,25 +47,25 @@ public class DiskCacheStore
 
             if (metadata == null || !IsMetadataValid(metadata))
             {
-                Log.Debug("キャッシュミス: {CacheKey} - メタデータが無効", cacheKey);
+                _logger.LogDebug("キャッシュミス: {CacheKey} - メタデータが無効", cacheKey);
                 Delete(cacheKey);
                 return null;
             }
 
             if (DateTime.UtcNow - metadata.CreatedAt > _expiration)
             {
-                Log.Debug("キャッシュミス: {CacheKey} - メタデータが期限切れ", cacheKey);
+                _logger.LogDebug("キャッシュミス: {CacheKey} - メタデータが期限切れ", cacheKey);
                 Delete(cacheKey);
                 return null;
             }
 
             var audioData = await File.ReadAllBytesAsync(audioPath, cancellationToken);
-            Log.Debug("ディスクキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, audioData.Length);
+            _logger.LogDebug("ディスクキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, audioData.Length);
             return audioData;
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "キャッシュファイルの読み込みに失敗: {CacheKey}", cacheKey);
+            _logger.LogWarning(ex, "キャッシュファイルの読み込みに失敗: {CacheKey}", cacheKey);
             Delete(cacheKey);
             return null;
         }
@@ -90,7 +93,7 @@ public class DiskCacheStore
         var metaJson = JsonSerializer.Serialize(metadata, JsonSerializerOptionsCache.Indented);
         await File.WriteAllTextAsync(metaPath, metaJson);
 
-        Log.Debug("キャッシュファイルを保存しました: {CacheKey}, サイズ: {Size} bytes", cacheKey, mp3Data.Length);
+        _logger.LogDebug("キャッシュファイルを保存しました: {CacheKey}, サイズ: {Size} bytes", cacheKey, mp3Data.Length);
     }
 
     /// <summary>
@@ -107,11 +110,11 @@ public class DiskCacheStore
             if (File.Exists(metaPath))
                 File.Delete(metaPath);
 
-            Log.Debug("キャッシュファイルを削除しました: {CacheKey}", cacheKey);
+            _logger.LogDebug("キャッシュファイルを削除しました: {CacheKey}", cacheKey);
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "キャッシュファイルの削除に失敗: {CacheKey}", cacheKey);
+            _logger.LogWarning(ex, "キャッシュファイルの削除に失敗: {CacheKey}", cacheKey);
         }
     }
 
@@ -126,7 +129,7 @@ public class DiskCacheStore
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "ファイル一覧の取得に失敗: {Directory}", _settings.Directory);
+            _logger.LogWarning(ex, "ファイル一覧の取得に失敗: {Directory}", _settings.Directory);
             return Array.Empty<string>();
         }
     }
@@ -188,7 +191,7 @@ public class DiskCacheStore
         }
         catch (Exception ex)
         {
-            Log.Debug(ex, "Failed to read metadata file: {Path}", metaFilePath);
+            _logger.LogDebug(ex, "Failed to read metadata file: {Path}", metaFilePath);
             return null;
         }
     }
@@ -214,7 +217,7 @@ public class DiskCacheStore
                 }
                 catch (Exception ex)
                 {
-                    Log.Debug(ex, "キャッシュファイル情報の取得に失敗 (統計集計時): {FilePath}", path);
+                    _logger.LogDebug(ex, "キャッシュファイル情報の取得に失敗 (統計集計時): {FilePath}", path);
                 }
             }
 
@@ -222,7 +225,7 @@ public class DiskCacheStore
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "キャッシュ統計情報の取得に失敗しました");
+            _logger.LogWarning(ex, "キャッシュ統計情報の取得に失敗しました");
             return (0, 0);
         }
     }
@@ -249,7 +252,7 @@ public class DiskCacheStore
         if (!System.IO.Directory.Exists(_settings.Directory))
         {
             System.IO.Directory.CreateDirectory(_settings.Directory);
-            Log.Debug("キャッシュディレクトリを作成しました: {Directory}", _settings.Directory);
+            _logger.LogDebug("キャッシュディレクトリを作成しました: {Directory}", _settings.Directory);
         }
     }
 

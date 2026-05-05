@@ -41,7 +41,7 @@ _fix-all.ps1          # 上記 + tests + SonarQube + ReSharper
 
 ### Critical Implementation Details
 
-**Serial API Calls**: VOICEVOX API は直列必須。`VoiceVoxApiClient` 内で `_synthesisLock` (Lock 型) によりロックされる。並列化を入れる場合は API 制約を再確認すること。各 speaker は session 内で初回のみ `/initialize_speaker` する。
+**Serial API Calls**: VOICEVOX API は呼び出し元 (`TextToSpeechProcessor.SynthesizeMissingSegmentsAsync`) が `foreach` で 1 件ずつ処理することで直列性を担保している。`VoiceVoxApiClient` 自身に明示的なロックは無いので、もし複数スレッドから同時に呼び出すコードを足す場合は呼び出し元で直列化すること。各 speaker は session 内で初回のみ `/initialize_speaker` する。
 
 **Cache Keys**: `SHA256(speaker_id + raw_text + speed + pitch + volume)` を 16 進文字列化したものをファイル名として使用。`{CacheDirectory}/{SHA256_HEX}.mp3` と `{SHA256_HEX}.meta.json` (speaker_id, parameters, text hash) のペアで保存。**SHA256 生成ロジックを変えると既存キャッシュが全て無効化されるため変更禁止**。
 
@@ -69,15 +69,12 @@ src_dotnet/
 │   │   │   ├── CacheEvictionPolicy.cs      # 期限切れ・サイズ超過の eviction
 │   │   │   └── CacheStatisticsCollector.cs # 統計情報収集
 │   │   └── Commands/                  # コマンドハンドラ群 + 補助クラス
-│   │       ├── TextToSpeechCommandHandler.cs   # 通常の合成・再生
 │   │       ├── SpeakerCommandHandler.cs        # speakers
 │   │       ├── DeviceCommandHandler.cs         # devices
 │   │       ├── InitCommandHandler.cs           # --init
 │   │       ├── CacheCommandHandler.cs          # --clear
 │   │       ├── BenchmarkCommandHandler.cs      # --benchmark
-│   │       ├── EngineCoordinator.cs            # エンジン起動/停止の共通処理
-│   │       ├── SegmentProcessor.cs             # セグメント単位の生成制御
-│   │       ├── TextToSpeechProcessor.cs        # 合成パイプライン本体
+│   │       ├── TextToSpeechProcessor.cs        # 合成・再生パイプライン本体 (CommandRouter から直接呼ばれる)
 │   │       └── AudioExportService.cs           # --out 用の保存処理
 │   ├── Benchmarks/                    # AudioProcessingBenchmarks (BenchmarkDotNet)
 │   ├── Exceptions/                    # VoicevoxRunCachedException, ErrorCodes
@@ -94,6 +91,8 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 1. `Services/Commands/` にハンドラクラス (例: `XxxCommandHandler`) を作成。共通インターフェースは無く、具象クラスで `HandleXxxAsync()` 等の固有メソッドを公開する
 2. `Services/ServiceRegistration.cs` に `container.Register<XxxCommandHandler>(Reuse.Singleton)` で登録
 3. `CommandRouter` のコンストラクタ引数として受け取り、`ExecuteCommandAsync` の switch 文に分岐を追加
+
+テキスト読み上げ系の追加機能は、独立したハンドラを作らず `TextToSpeechProcessor` に直接機能追加するか、`AudioExportService` のような単機能ヘルパに分けるのが現状の構成。
 
 ### Reusable Utilities (新規実装の前にこれらを探すこと)
 
@@ -115,28 +114,31 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 
 ### Working with Text Segmentation
 
-`TextSegmentProcessor.SplitIntoSegments(text)` が `List<TextSegment>` を返す。
+`TextSegmentProcessor.ProcessTextAsync(text, speakerId)` が `List<TextSegment>` を返す。
 
-- 分割は日本語の文末記号 (`。 ! ?`) で行われる
+- 分割は日本語の文末記号 (`。 ! ?`) と改行で行われる
+- 1 セグメントが `maxSegmentLength` (デフォルト 100 文字) を超えると強制分割
 - 空白のみ・空セグメントは filter される
 - キャッシュヒット判定はセグメント単位なので、テキストの一部変更でも未変更部分は再利用される
+- **キャッシュキーは Speed/Pitch/Volume を含むため、ユーザー指定値は必ず `VoiceRequest` に乗せて `AudioCacheManager.ProcessTextSegmentsAsync(segments, request)` に渡すこと** (デフォルト値で問い合わせると永遠にミスヒットする)
 
 ### Handling API Calls
 
-`VoiceVoxApiClient` は設計上完全に直列。
+`VoiceVoxApiClient` は VOICEVOX エンジンの制約上、呼び出し元側で直列実行されることを前提としている。
 
-- 全呼び出しが `_synthesisLock` (Lock 型) 内で実行される
-- 並列化を試みる場合は VOICEVOX エンジン側の制約を実機で確認してから
-- speaker 初期化 (`/initialize_speaker`) は初回 API 呼び出し時に自動実行
+- 現状 `TextToSpeechProcessor.SynthesizeMissingSegmentsAsync` の `foreach` で 1 件ずつ処理されているため OK
+- 並列化を試みる場合は VOICEVOX エンジン側の制約を実機で確認してから、クライアント内に lock を入れること
+- speaker 初期化 (`/initialize_speaker`) は `TextToSpeechProcessor` 側からセッション内 1 回だけ呼ぶ
+- リトライ・エラー変換は `VoiceVoxApiClient.ExecuteApiAsync` でまとめて適用 (各メソッドは生の HTTP 呼び出しだけ書く)
 
 ### Logging Conventions
 
-Serilog を `ILogger` 経由で使う。
+DI で注入された `Microsoft.Extensions.Logging.ILogger` 経由で書くのが基本。インスタンスクラスはコンストラクタで `ILogger` を受け取り `_logger.LogXxx(...)` で書く。`Serilog.Log` の static 呼び出しは Serilog 設定そのもの (`LoggingManager`)、ブートストラップ (`Program` / `ApplicationBootstrap`)、static utility (`AudioConversionUtility`, `MediaFoundationManager`) など、DI が使えない箇所のみに残す。
 
 - Error: ユーザー対応が必要な復旧可能エラー
 - Warning: 想定外だが処理継続できる状態
-- Information: 主要マイルストーン (engine 起動, cache clear 等)
-- Debug: 詳細フロー (segment 処理, cache hit 等)
+- Information: 主要マイルストーン (engine 起動, cache clear, セグメント分割完了 等)
+- Debug: 詳細フロー (HTTP リクエスト URL, segment 処理, cache hit 等)
 - **`DEBUG`/`if DEBUG` のような prefix・条件付きログは付けない** (出力が見にくくなるため)
 
 ## Configuration

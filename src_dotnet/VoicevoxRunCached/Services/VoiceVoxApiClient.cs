@@ -1,7 +1,7 @@
 ﻿using System.Net;
 using System.Text;
 using System.Text.Json;
-using Serilog;
+using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
@@ -10,14 +10,21 @@ namespace VoicevoxRunCached.Services;
 
 public class VoiceVoxApiClient : IDisposable
 {
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
+
     private readonly HttpClient _httpClient;
     private readonly RetryPolicyService _retryPolicyService;
     private readonly VoiceVoxSettings _settings;
+    private readonly ILogger _logger;
 
-    public VoiceVoxApiClient(VoiceVoxSettings settings, RetryPolicyService retryPolicyService)
+    public VoiceVoxApiClient(VoiceVoxSettings settings, RetryPolicyService retryPolicyService, ILogger logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _retryPolicyService = retryPolicyService ?? throw new ArgumentNullException(nameof(retryPolicyService));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _httpClient = new HttpClient
         {
@@ -25,17 +32,12 @@ public class VoiceVoxApiClient : IDisposable
             Timeout = TimeSpan.FromSeconds(_settings.ConnectionTimeout)
         };
 
-        Log.Information("VoiceVoxApiClient を初期化しました - BaseUrl: {BaseUrl}, Timeout: {Timeout}s", _settings.BaseUrl, _settings.ConnectionTimeout);
+        _logger.LogDebug("VoiceVoxApiClient を初期化しました - BaseUrl: {BaseUrl}, Timeout: {Timeout}s",
+            _settings.BaseUrl, _settings.ConnectionTimeout);
     }
 
     public string BaseUrl => _settings.BaseUrl;
     public int ConnectionTimeout => _settings.ConnectionTimeout;
-
-    // C# 13 Enhanced auto-property with JsonSerializerOptions
-    private static JsonSerializerOptions JsonOptions { get; } = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
-    };
 
     public void Dispose()
     {
@@ -51,47 +53,40 @@ public class VoiceVoxApiClient : IDisposable
         }
     }
 
-    public async Task<List<Speaker>> GetSpeakersAsync(CancellationToken cancellationToken = default)
+    public Task<List<Speaker>> GetSpeakersAsync(CancellationToken cancellationToken = default)
     {
-        return await ExecuteApiCallWithErrorHandlingAsync(async () =>
+        return ExecuteApiAsync("get speakers", async ct =>
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_settings.BaseUrl}/speakers");
-            var response = await SendRequestAsync(request, cancellationToken);
-            var content = await response.Content.ReadAsStringAsync(cancellationToken);
-
-            var speakers = JsonSerializer.Deserialize<List<Speaker>>(content, JsonOptions);
-            return speakers ?? [];
-        }, "get speakers", cancellationToken);
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{_settings.BaseUrl}/speakers");
+            using var response = await SendAsync(request, ct);
+            var content = await response.Content.ReadAsStringAsync(ct);
+            return JsonSerializer.Deserialize<List<Speaker>>(content, JsonOptions) ?? new();
+        }, cancellationToken);
     }
 
-    public async Task InitializeSpeakerAsync(int speakerId, CancellationToken cancellationToken = default)
+    public Task InitializeSpeakerAsync(int speakerId, CancellationToken cancellationToken = default)
     {
-        Log.Debug("スピーカー {SpeakerId} を初期化中...", speakerId);
-        await _retryPolicyService.ExecuteWithRetryAsync(async () =>
+        _logger.LogDebug("スピーカー {SpeakerId} を初期化中...", speakerId);
+        return ExecuteApiAsync($"initialize speaker {speakerId}", async ct =>
         {
-            return await ExecuteApiCallAsync(async () =>
-            {
-                var response = await _httpClient.PostAsync($"/initialize_speaker?speaker={speakerId}", null, cancellationToken);
-                response.EnsureSuccessStatusCode();
-                Log.Information("スピーカー {SpeakerId} の初期化が完了しました", speakerId);
-                return true; // Return value for generic method
-            }, $"Failed to initialize speaker {speakerId}");
-        }, $"スピーカー {speakerId} 初期化");
+            using var response = await _httpClient.PostAsync($"/initialize_speaker?speaker={speakerId}", null, ct);
+            response.EnsureSuccessStatusCode();
+            _logger.LogInformation("スピーカー {SpeakerId} の初期化が完了しました", speakerId);
+            return true;
+        }, cancellationToken);
     }
 
-    public async Task<string> GenerateAudioQueryAsync(VoiceRequest request, CancellationToken cancellationToken = default)
+    public Task<string> GenerateAudioQueryAsync(VoiceRequest request, CancellationToken cancellationToken = default)
     {
-        return await ExecuteApiCallWithErrorHandlingAsync(async () =>
+        return ExecuteApiAsync("generate audio query", async ct =>
         {
-            // デバッグ用のログ出力
-            Log.Information("Generating audio query for request: Text='{Text}', SpeakerId={SpeakerId}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
+            _logger.LogDebug("Audio query を生成 - Text='{Text}', SpeakerId={SpeakerId}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
                 request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
 
-            // VoiceVox APIは/audio_queryエンドポイントでクエリパラメータとしてtextとspeakerを受け取る
             var encodedText = Uri.EscapeDataString(request.Text);
             var queryString = $"text={encodedText}&speaker={request.SpeakerId}";
 
-            // 追加パラメータがある場合は含める（浮動小数点の誤差を考慮）
+            // 浮動小数点の誤差を考慮し、デフォルトに近い値はクエリに含めない
             if (Math.Abs(request.Speed - 1.0) > 0.0001)
                 queryString += $"&speed_scale={request.Speed}";
             if (Math.Abs(request.Pitch - 0.0) > 0.0001)
@@ -100,93 +95,67 @@ public class VoiceVoxApiClient : IDisposable
                 queryString += $"&volume_scale={request.Volume}";
 
             var url = $"{_settings.BaseUrl}/audio_query?{queryString}";
-            Log.Information("Request URL: {Url}", url);
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
+            using var response = await SendAsync(httpRequest, ct);
+            var content = await response.Content.ReadAsStringAsync(ct);
 
-            var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
-            var response = await SendRequestAsync(httpRequest, cancellationToken);
-            var content = await response.Content.ReadAsStringAsync(cancellationToken);
-
-            Log.Debug("Audio query generated successfully - Length: {Length} characters", content.Length);
+            _logger.LogDebug("Audio query を取得しました - Length: {Length} chars", content.Length);
             return content;
-        }, "generate audio query", cancellationToken);
+        }, cancellationToken);
     }
 
-    public async Task<byte[]> SynthesizeAudioAsync(string audioQuery, int speakerId, CancellationToken cancellationToken = default)
+    public Task<byte[]> SynthesizeAudioAsync(string audioQuery, int speakerId, CancellationToken cancellationToken = default)
     {
-        return await ExecuteApiCallWithErrorHandlingAsync(async () =>
+        return ExecuteApiAsync("synthesize audio", async ct =>
         {
-            // デバッグ用のログ出力
-            Log.Information("Synthesizing audio for speaker {SpeakerId} with audioQuery length: {Length}", speakerId, audioQuery.Length);
+            _logger.LogDebug("音声合成リクエストを送信 - speaker={SpeakerId}, audioQueryLength={Length}",
+                speakerId, audioQuery.Length);
 
-            // VoiceVox APIの/synthesisエンドポイントはクエリパラメータでspeakerを受け取り、ボディでaudio_queryを受け取る
             var url = $"{_settings.BaseUrl}/synthesis?speaker={speakerId}";
-            Log.Information("Synthesis URL: {Url}", url);
-
-            var content = new StringContent(audioQuery, Encoding.UTF8, "application/json");
-            var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = content
-            };
-
-            Log.Information("Sending synthesis request to VoiceVox API...");
-            var response = await SendRequestAsync(httpRequest, cancellationToken);
-            Log.Information("Synthesis response received, status: {StatusCode}", response.StatusCode);
-            return await response.Content.ReadAsByteArrayAsync(cancellationToken);
-        }, "synthesize audio", cancellationToken);
-    }
-
-    // C# 13 Enhanced helper method with generic return type
-    private async Task<T> ExecuteApiCallAsync<T>(Func<Task<T>> apiCall, string errorMessage)
-    {
-        try
-        {
-            return await apiCall();
-        }
-        catch (HttpRequestException ex)
-        {
-            throw new InvalidOperationException($"{errorMessage}: {ex.Message}", ex);
-        }
-        catch (TaskCanceledException ex)
-        {
-            throw new InvalidOperationException($"{errorMessage}: Request timed out", ex);
-        }
+            using var content = new StringContent(audioQuery, Encoding.UTF8, "application/json");
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url) { Content = content };
+            using var response = await SendAsync(httpRequest, ct);
+            return await response.Content.ReadAsByteArrayAsync(ct);
+        }, cancellationToken);
     }
 
     /// <summary>
-    /// API呼び出しを実行し、共通のエラーハンドリングを適用します
+    /// API 呼び出しの共通ラッパ: リトライ + エラーハンドリング + 例外変換。
     /// </summary>
-    private async Task<T> ExecuteApiCallWithErrorHandlingAsync<T>(
-        Func<Task<T>> apiCall,
-        string operationName,
-        CancellationToken cancellationToken)
+    private async Task<T> ExecuteApiAsync<T>(string operationName, Func<CancellationToken, Task<T>> apiCall, CancellationToken cancellationToken)
     {
         try
         {
-            return await apiCall();
+            return await _retryPolicyService.ExecuteWithRetryAsync(() => apiCall(cancellationToken), operationName, cancellationToken);
+        }
+        catch (VoicevoxRunCachedException)
+        {
+            throw;
         }
         catch (HttpRequestException ex) when (ex.StatusCode.HasValue)
         {
-            Log.Error(ex, "Failed to {OperationName} - StatusCode: {StatusCode}", operationName, ex.StatusCode);
-            throw CreateVoiceVoxApiExceptionFromHttpStatus(ex.StatusCode.Value, $"Failed to {operationName}", ex);
+            _logger.LogError(ex, "{OperationName} に失敗 - StatusCode: {StatusCode}", operationName, ex.StatusCode);
+            throw CreateApiExceptionFromStatus(ex.StatusCode.Value, operationName, ex);
         }
         catch (TaskCanceledException ex) when (cancellationToken.IsCancellationRequested)
         {
-            Log.Information("{OperationName}がキャンセルされました", operationName);
+            _logger.LogInformation("{OperationName} がキャンセルされました", operationName);
             throw new VoicevoxRunCachedException(
                 ErrorCodes.General.OperationCancelled,
                 $"{operationName} was cancelled",
-                $"{operationName}がキャンセルされました。",
+                $"{operationName} がキャンセルされました。",
                 ex,
                 "操作を再実行してください。"
             );
         }
         catch (TaskCanceledException ex)
         {
-            Log.Error(ex, "{OperationName}がタイムアウトしました", operationName);
+            _logger.LogError(ex, "{OperationName} がタイムアウトしました", operationName);
             throw new VoiceVoxApiException(
                 ErrorCodes.Api.ApiTimeout,
                 $"{operationName} timed out: {ex.Message}",
-                $"{operationName}がタイムアウトしました。",
+                $"{operationName} がタイムアウトしました。",
+                ex,
                 null,
                 null,
                 "ネットワーク接続とVOICEVOXエンジンの応答時間を確認してください。"
@@ -194,11 +163,12 @@ public class VoiceVoxApiClient : IDisposable
         }
         catch (JsonException ex)
         {
-            Log.Error(ex, "{OperationName}レスポンスのJSON解析に失敗しました", operationName);
+            _logger.LogError(ex, "{OperationName} レスポンスのJSON解析に失敗しました", operationName);
             throw new VoiceVoxApiException(
                 ErrorCodes.Api.ApiResponseInvalid,
                 $"Failed to parse {operationName} response: {ex.Message}",
-                $"{operationName}の解析に失敗しました。",
+                $"{operationName} の解析に失敗しました。",
+                ex,
                 null,
                 null,
                 "VOICEVOXエンジンのバージョンを確認し、必要に応じて更新してください。"
@@ -206,78 +176,41 @@ public class VoiceVoxApiClient : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "{OperationName}中に予期しないエラーが発生しました", operationName);
+            _logger.LogError(ex, "{OperationName} 中に予期しないエラーが発生しました", operationName);
             throw new VoiceVoxApiException(
                 ErrorCodes.General.UnknownError,
                 $"Unexpected error during {operationName}: {ex.Message}",
-                $"{operationName}中に予期しないエラーが発生しました。",
+                $"{operationName} 中に予期しないエラーが発生しました。",
                 ex,
+                null,
                 null,
                 "アプリケーションを再起動し、問題が続く場合はログを確認してください。"
             );
         }
     }
 
-    /// <summary>
-    /// HTTPステータスコードからVoiceVoxApiExceptionを生成します
-    /// </summary>
-    private static VoiceVoxApiException CreateVoiceVoxApiExceptionFromHttpStatus(
-        HttpStatusCode statusCode, string operation, Exception? innerException = null)
+    private VoiceVoxApiException CreateApiExceptionFromStatus(HttpStatusCode statusCode, string operation, Exception inner)
     {
         var errorCode = ErrorHandlingUtility.GetErrorCodeFromHttpStatus(statusCode);
         var userMessage = ErrorHandlingUtility.GetUserFriendlyMessageFromHttpStatus(statusCode);
         var solution = ErrorHandlingUtility.GetSuggestedSolutionFromHttpStatus(statusCode);
 
-        if (innerException != null)
-        {
-            return new VoiceVoxApiException(errorCode, $"{operation} failed", userMessage,
-                innerException, statusCode, null, solution);
-        }
-        else
-        {
-            return new VoiceVoxApiException(errorCode, $"{operation} failed", userMessage,
-                statusCode, null, solution);
-        }
+        return new VoiceVoxApiException(errorCode, $"{operation} failed", userMessage,
+            inner, statusCode, null, solution);
     }
 
-    private async Task<HttpResponseMessage> SendRequestAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
+    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
-        try
-        {
-            Log.Information("Sending HTTP request to: {Method} {RequestUri}", request.Method, request.RequestUri);
-            var response = await _httpClient.SendAsync(request, cancellationToken);
-            Log.Information("HTTP response received: {StatusCode}", response.StatusCode);
+        _logger.LogDebug("HTTP {Method} {RequestUri}", request.Method, request.RequestUri);
+        var response = await _httpClient.SendAsync(request, cancellationToken);
+        _logger.LogDebug("HTTP response: {StatusCode}", response.StatusCode);
 
-            // 詳細なエラーハンドリング
-            if (!response.IsSuccessStatusCode)
-            {
-                throw new HttpRequestException($"HTTP {response.StatusCode}", null, response.StatusCode);
-            }
+        if (!response.IsSuccessStatusCode)
+        {
+            response.Dispose();
+            throw new HttpRequestException($"HTTP {(int)response.StatusCode} {response.StatusCode}", null, response.StatusCode);
+        }
 
-            return response;
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode.HasValue)
-        {
-            // HTTPエラーは再スロー
-            throw;
-        }
-        catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            throw new OperationCanceledException("VoiceVox API request was cancelled", null, cancellationToken);
-        }
-        catch (TaskCanceledException)
-        {
-            throw new HttpRequestException("VoiceVox API request timed out", null, HttpStatusCode.RequestTimeout);
-        }
-        catch (HttpRequestException)
-        {
-            // 既に詳細化されているHTTPエラーは再スロー
-            throw;
-        }
-        catch (Exception ex)
-        {
-            throw new HttpRequestException($"Unexpected error during VoiceVox API request: {ex.Message}", ex);
-        }
+        return response;
     }
-
 }

@@ -1,4 +1,5 @@
-﻿using Serilog;
+﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 
@@ -7,40 +8,37 @@ namespace VoicevoxRunCached.Services;
 public class FillerManager
 {
     private readonly int _defaultSpeaker;
-    private readonly Random _random = new Random(); // スレッドセーフなRandomインスタンス
     private readonly FillerSettings _settings;
-    private string? _lastUsedFiller; // 最後に使用したフィラーを記録
+    private readonly ILogger _logger;
+    private string? _lastUsedFiller;
 
-    public FillerManager(FillerSettings settings, int defaultSpeakerId)
+    public FillerManager(FillerSettings settings, int defaultSpeakerId, ILogger? logger = null)
     {
         _settings = settings;
         _defaultSpeaker = defaultSpeakerId;
+        _logger = logger ?? NullLogger.Instance;
         ResolveFillerBaseDirectory();
 
-        Log.Information("FillerManager を初期化しました - 有効: {Enabled}, ディレクトリ: {Directory}", _settings.Enabled, _settings.Directory);
+        _logger.LogInformation("FillerManager を初期化しました - 有効: {Enabled}, ディレクトリ: {Directory}",
+            _settings.Enabled, _settings.Directory);
     }
 
     public async Task InitializeFillerCacheAsync(VoiceVoxApiClient apiClient)
     {
         ArgumentNullException.ThrowIfNull(apiClient);
-        Log.Information("InitializeFillerCacheAsync メソッドが開始されました");
 
         if (!_settings.Enabled)
         {
-            Log.Information("フィラー機能が無効化されているため、初期化をスキップします");
+            _logger.LogInformation("フィラー機能が無効化されているため、初期化をスキップします");
             return;
         }
 
-        Log.Information("フィラーディレクトリを作成中: {Directory}", _settings.Directory);
         Directory.CreateDirectory(_settings.Directory);
-        Log.Information("フィラーキャッシュの初期化を開始します - テキスト数: {Count}", _settings.FillerTexts.Length);
+        _logger.LogInformation("フィラーキャッシュの初期化を開始します - テキスト数: {Count}", _settings.FillerTexts.Length);
 
-        Log.Information("ProgressSpinnerを作成中...");
         using var spinner = new ProgressSpinner("Initializing filler cache...");
 
-        Log.Information("スピーカー {SpeakerId} を初期化中...", _defaultSpeaker);
         await apiClient.InitializeSpeakerAsync(_defaultSpeaker);
-        Log.Information("スピーカー初期化が完了しました");
 
         int processed = 0;
         int total = _settings.FillerTexts.Length;
@@ -49,140 +47,114 @@ public class FillerManager
         {
             processed++;
             spinner.UpdateMessage($"Generating filler {processed}/{total}: \"{fillerText}\"");
-            Log.Debug("フィラー音声を生成中 {Processed}/{Total}: \"{Text}\"", processed, total, fillerText);
+            _logger.LogDebug("フィラー音声を生成中 {Processed}/{Total}: \"{Text}\"", processed, total, fillerText);
 
-            var fillerRequest = new VoiceRequest
-            {
-                Text = fillerText,
-                SpeakerId = _defaultSpeaker,
-                Speed = 1.0,
-                Pitch = 0.0,
-                Volume = 1.0
-            };
+            var fillerRequest = BuildFillerRequest(fillerText);
 
-            // Check if already cached (mp3 or wav)
             var cacheKey = AudioCacheManager.ComputeCacheKey(fillerRequest);
             var fillerCacheMp3 = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
             var fillerCacheWav = Path.Combine(_settings.Directory, $"{cacheKey}.wav");
 
-            if (!File.Exists(fillerCacheMp3) && !File.Exists(fillerCacheWav))
+            if (File.Exists(fillerCacheMp3) || File.Exists(fillerCacheWav))
             {
-                try
-                {
-                    var audioQuery = await apiClient.GenerateAudioQueryAsync(fillerRequest);
-                    var audioData = await apiClient.SynthesizeAudioAsync(audioQuery, fillerRequest.SpeakerId);
-
-                    // Save directly to filler directory
-                    await SaveFillerAudioAsync(fillerCacheMp3, audioData);
-                    Log.Debug("フィラー音声を生成・保存しました: \"{Text}\"", fillerText);
-                }
-                catch (Exception ex)
-                {
-                    Log.Warning(ex, "フィラー音声の生成に失敗: \"{Text}\"", fillerText);
-                }
+                _logger.LogDebug("フィラー音声は既にキャッシュ済み: \"{Text}\"", fillerText);
+                continue;
             }
-            else
+
+            try
             {
-                Log.Debug("フィラー音声は既にキャッシュ済み: \"{Text}\"", fillerText);
+                var audioQuery = await apiClient.GenerateAudioQueryAsync(fillerRequest);
+                var audioData = await apiClient.SynthesizeAudioAsync(audioQuery, fillerRequest.SpeakerId);
+
+                await SaveFillerAudioAsync(fillerCacheMp3, audioData);
+                _logger.LogDebug("フィラー音声を生成・保存しました: \"{Text}\"", fillerText);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "フィラー音声の生成に失敗: \"{Text}\"", fillerText);
             }
         }
 
-        Log.Information("フィラーキャッシュの初期化が完了しました - 項目数: {Count}", _settings.FillerTexts.Length);
+        _logger.LogInformation("フィラーキャッシュの初期化が完了しました - 項目数: {Count}", _settings.FillerTexts.Length);
     }
 
     public async Task<byte[]?> GetRandomFillerAudioAsync()
     {
         if (!_settings.Enabled || _settings.FillerTexts.Length == 0)
         {
-            Log.Debug("フィラー機能が無効またはテキストが設定されていません");
+            _logger.LogDebug("フィラー機能が無効またはテキストが設定されていません");
             return null;
         }
 
-        // 連続で同じフィラーが選択されないようにする
-        string selectedFiller;
-        if (_settings.FillerTexts.Length == 1)
-        {
-            selectedFiller = _settings.FillerTexts[0];
-            Log.Debug("フィラーが1つしかないため、同じものを選択: \"{Text}\"", selectedFiller);
-        }
-        else
-        {
-            // 最後に使用したフィラー以外から選択
-            var availableFillers = _settings.FillerTexts
-                .Where(f => f != _lastUsedFiller)
-                .ToArray();
-
-            if (availableFillers.Length == 0)
-            {
-                // 全て使用済みの場合は全フィラーから選択
-                availableFillers = _settings.FillerTexts;
-                Log.Debug("全てのフィラーが使用済みのため、全フィラーから選択");
-            }
-
-            selectedFiller = availableFillers[_random.Next(availableFillers.Length)];
-            Log.Debug("利用可能なフィラー数: {AvailableCount}, 選択されたフィラー: \"{Text}\"", availableFillers.Length, selectedFiller);
-        }
-
+        string selectedFiller = SelectFillerText();
         _lastUsedFiller = selectedFiller;
-        Log.Information("ランダムフィラー音声を選択: \"{Text}\" (前回: \"{LastUsed}\")", selectedFiller, _lastUsedFiller);
+        _logger.LogDebug("ランダムフィラー音声を選択: \"{Text}\"", selectedFiller);
 
-        var fillerRequest = new VoiceRequest
-        {
-            Text = selectedFiller,
-            SpeakerId = _defaultSpeaker,
-            Speed = 1.0,
-            Pitch = 0.0,
-            Volume = 1.0
-        };
-
+        var fillerRequest = BuildFillerRequest(selectedFiller);
         var cacheKey = AudioCacheManager.ComputeCacheKey(fillerRequest);
         var fillerCacheMp3 = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
         var fillerCacheWav = Path.Combine(_settings.Directory, $"{cacheKey}.wav");
 
-        Log.Debug("フィラーキャッシュファイルを検索中 - MP3: {Mp3Path}, WAV: {WavPath}",
-            Path.GetFileName(fillerCacheMp3), Path.GetFileName(fillerCacheWav));
-
-        if (File.Exists(fillerCacheMp3))
+        var data = await TryReadAsync(fillerCacheMp3) ?? await TryReadAsync(fillerCacheWav);
+        if (data == null)
         {
-            try
-            {
-                Log.Debug("MP3 フィラーキャッシュファイルを読み込み中: {Path}", fillerCacheMp3);
-                var audioData = await File.ReadAllBytesAsync(fillerCacheMp3);
-                Log.Information("MP3 フィラーキャッシュファイルの読み込みが完了しました: {Path} (サイズ: {Size} bytes)",
-                    Path.GetFileName(fillerCacheMp3), audioData.Length);
-                return audioData;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "MP3 フィラー音声の読み込みに失敗しました: {Path}", fillerCacheMp3);
-            }
+            _logger.LogWarning("フィラーキャッシュファイルが見つかりませんでした - text=\"{Text}\"", selectedFiller);
         }
-
-        if (File.Exists(fillerCacheWav))
-        {
-            try
-            {
-                Log.Debug("WAV フィラーキャッシュファイルを読み込み中: {Path}", fillerCacheWav);
-                var audioData = await File.ReadAllBytesAsync(fillerCacheWav);
-                Log.Information("WAV フィラーキャッシュファイルの読み込みが完了しました: {Path} (サイズ: {Size} bytes)",
-                    Path.GetFileName(fillerCacheWav), audioData.Length);
-                return audioData;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "WAV フィラー音声の読み込みに失敗しました: {Path}", fillerCacheWav);
-            }
-        }
-
-        Log.Warning("フィラーキャッシュファイルが見つかりませんでした - MP3: {Mp3Exists}, WAV: {WavExists}",
-            File.Exists(fillerCacheMp3), File.Exists(fillerCacheWav));
-        return null;
+        return data;
     }
 
-    private static async Task SaveFillerAudioAsync(string filePath, byte[] audioData)
+    private async Task<byte[]?> TryReadAsync(string path)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        try
+        {
+            var data = await File.ReadAllBytesAsync(path);
+            _logger.LogDebug("フィラーキャッシュファイルを読み込みました: {Path} (サイズ: {Size} bytes)",
+                Path.GetFileName(path), data.Length);
+            return data;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "フィラー音声の読み込みに失敗しました: {Path}", path);
+            return null;
+        }
+    }
+
+    private string SelectFillerText()
+    {
+        if (_settings.FillerTexts.Length == 1)
+        {
+            return _settings.FillerTexts[0];
+        }
+
+        var availableFillers = _settings.FillerTexts
+            .Where(f => f != _lastUsedFiller)
+            .ToArray();
+
+        if (availableFillers.Length == 0)
+        {
+            availableFillers = _settings.FillerTexts;
+        }
+
+        return availableFillers[Random.Shared.Next(availableFillers.Length)];
+    }
+
+    private VoiceRequest BuildFillerRequest(string text) => new()
+    {
+        Text = text,
+        SpeakerId = _defaultSpeaker,
+        Speed = 1.0,
+        Pitch = 0.0,
+        Volume = 1.0
+    };
+
+    private async Task SaveFillerAudioAsync(string filePath, byte[] audioData)
     {
         var converted = await ConvertWavToMp3Async(audioData);
-        // Detect whether converted data is actually MP3 or WAV, then choose extension accordingly
         bool isMp3 = converted.Length >= 2 && converted[0] == 0xFF && (converted[1] & 0xE0) == 0xE0;
         bool isWav = converted.Length >= 12 &&
                      converted[0] == 'R' && converted[1] == 'I' && converted[2] == 'F' && converted[3] == 'F' &&
@@ -200,12 +172,10 @@ public class FillerManager
     {
         try
         {
-            // Run CPU-intensive conversion on background thread
             return await Task.Run(() => AudioConversionUtility.ConvertWavToMp3(wavData));
         }
         catch
         {
-            // フォーマット判定に失敗した場合はWAVを返す（呼び出し側で適切な拡張子に保存）
             return wavData;
         }
     }
@@ -224,14 +194,13 @@ public class FillerManager
                 {
                     try
                     { File.Delete(file); }
-                    catch (Exception ex)
-                    { Log.Debug(ex, "Failed to delete file: {File}", file); }
+                    catch (Exception ex) { _logger.LogDebug(ex, "Failed to delete file: {File}", file); }
                 }
             }
         }
         catch (Exception ex)
         {
-            Log.Debug(ex, "Failed to clear filler cache directory");
+            _logger.LogDebug(ex, "Failed to clear filler cache directory");
         }
         return Task.CompletedTask;
     }
@@ -250,7 +219,7 @@ public class FillerManager
         }
         catch (Exception ex)
         {
-            Log.Debug(ex, "Failed to resolve filler base directory");
+            _logger.LogDebug(ex, "Failed to resolve filler base directory");
         }
     }
 }

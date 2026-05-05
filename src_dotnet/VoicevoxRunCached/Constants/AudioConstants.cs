@@ -91,6 +91,16 @@ public static class AudioConstants
     public const int EngineStopWaitTimeoutMs = 5000;
 
     /// <summary>
+    /// VOICEVOX エンジン死活監視 (HTTP /version) のタイムアウト時間（秒）
+    /// </summary>
+    public const int EngineHealthCheckTimeoutSeconds = 5;
+
+    /// <summary>
+    /// VOICEVOX エンジン起動待機時のポーリング間隔（ミリ秒）
+    /// </summary>
+    public const int EngineStartupPollIntervalMs = 1000;
+
+    /// <summary>
     /// AudioCacheManager のバックグラウンドサイズ eviction の最大実行時間（分）
     /// </summary>
     public const int CacheBackgroundEvictionTimeoutMinutes = 5;

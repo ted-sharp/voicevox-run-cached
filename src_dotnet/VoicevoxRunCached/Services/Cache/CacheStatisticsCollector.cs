@@ -1,4 +1,5 @@
-﻿using Serilog;
+﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 
@@ -12,12 +13,14 @@ public class CacheStatisticsCollector
     private readonly MemoryCacheStore _memory;
     private readonly DiskCacheStore _disk;
     private readonly CacheSettings _settings;
+    private readonly ILogger _logger;
 
-    public CacheStatisticsCollector(MemoryCacheStore memory, DiskCacheStore disk, CacheSettings settings)
+    public CacheStatisticsCollector(MemoryCacheStore memory, DiskCacheStore disk, CacheSettings settings, ILogger? logger = null)
     {
         _memory = memory ?? throw new ArgumentNullException(nameof(memory));
         _disk = disk ?? throw new ArgumentNullException(nameof(disk));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _logger = logger ?? NullLogger.Instance;
     }
 
     public AudioCacheStatistics GetSummary()
@@ -37,7 +40,7 @@ public class CacheStatisticsCollector
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "キャッシュ統計情報の取得に失敗しました");
+            _logger.LogWarning(ex, "キャッシュ統計情報の取得に失敗しました");
             return new AudioCacheStatistics();
         }
     }
@@ -70,7 +73,7 @@ public class CacheStatisticsCollector
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "詳細統計情報の取得に失敗しました");
+            _logger.LogWarning(ex, "詳細統計情報の取得に失敗しました");
             return new DetailedCacheStatistics();
         }
     }
@@ -100,7 +103,7 @@ public class CacheStatisticsCollector
         }
         catch (Exception ex)
         {
-            Log.Warning(ex, "キャッシュ効率分析に失敗しました");
+            _logger.LogWarning(ex, "キャッシュ効率分析に失敗しました");
             return new CacheEfficiencyAnalysis
             {
                 EfficiencyRating = "Unknown",

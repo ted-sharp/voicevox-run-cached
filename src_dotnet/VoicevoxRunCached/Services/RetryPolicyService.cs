@@ -1,42 +1,43 @@
 ﻿using System.Net;
 using System.Net.Sockets;
+using Microsoft.Extensions.Logging;
 using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
-using Serilog;
 using VoicevoxRunCached.Constants;
 
 namespace VoicevoxRunCached.Services;
 
 public class RetryPolicyService
 {
-    private readonly int _baseDelayMs = 1000; // 1秒
+    private const int BaseDelayMs = 1000;
+    private const int MaxDelayMs = 30000;
+    private const int MaxRetryAttempts = 3;
+
     private readonly AsyncCircuitBreakerPolicy _circuitBreakerPolicy;
     private readonly AsyncPolicy _combinedPolicy;
-    private readonly int _maxDelayMs = 30000; // 30秒
-
-    // 新しいプロパティ
-    private readonly int _maxRetryAttempts = 3;
     private readonly AsyncRetryPolicy _retryPolicy;
+    private readonly ILogger _logger;
 
-    public RetryPolicyService()
+    public RetryPolicyService(ILogger logger)
     {
-        // 指数バックオフ付きリトライポリシー
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+
         _retryPolicy = Policy
             .Handle<HttpRequestException>()
             .Or<TimeoutException>()
             .Or<OperationCanceledException>()
             .WaitAndRetryAsync(
-                retryCount: _maxRetryAttempts,
+                retryCount: MaxRetryAttempts,
                 sleepDurationProvider: retryAttempt =>
-                    TimeSpan.FromSeconds(Math.Pow(2, retryAttempt - 1)), // 指数バックオフ: 1s, 2s, 4s
+                    TimeSpan.FromSeconds(Math.Pow(2, retryAttempt - 1)),
                 onRetry: (exception, timeSpan, retryCount, _) =>
                 {
-                    Log.Warning(exception, "リトライ {RetryCount}/{MaxRetries} - {TimeSpan}後に再試行します", retryCount, _maxRetryAttempts, timeSpan);
+                    _logger.LogWarning(exception, "リトライ {RetryCount}/{MaxRetries} - {TimeSpan}後に再試行します",
+                        retryCount, MaxRetryAttempts, timeSpan);
                 }
             );
 
-        // サーキットブレーカーポリシー
         _circuitBreakerPolicy = Policy
             .Handle<HttpRequestException>()
             .Or<TimeoutException>()
@@ -44,23 +45,12 @@ public class RetryPolicyService
                 exceptionsAllowedBeforeBreaking: AudioConstants.CircuitBreakerExceptionThreshold,
                 durationOfBreak: TimeSpan.FromSeconds(AudioConstants.CircuitBreakerDurationSeconds),
                 onBreak: (exception, duration) =>
-                {
-                    Log.Error(exception, "サーキットブレーカーが開きました - {Duration}間隔でブロック", duration);
-                },
-                onReset: () =>
-                {
-                    Log.Information("サーキットブレーカーがリセットされました");
-                },
-                onHalfOpen: () =>
-                {
-                    Log.Information("サーキットブレーカーが半開状態になりました");
-                }
+                    _logger.LogError(exception, "サーキットブレーカーが開きました - {Duration}間隔でブロック", duration),
+                onReset: () => _logger.LogInformation("サーキットブレーカーがリセットされました"),
+                onHalfOpen: () => _logger.LogInformation("サーキットブレーカーが半開状態になりました")
             );
 
-        // タイムアウトポリシー
         var timeoutPolicy = Policy.TimeoutAsync(TimeSpan.FromSeconds(AudioConstants.OperationTimeoutSeconds));
-
-        // ポリシーを組み合わせ
         _combinedPolicy = Policy.WrapAsync(_retryPolicy, _circuitBreakerPolicy, timeoutPolicy);
     }
 
@@ -73,7 +63,7 @@ public class RetryPolicyService
         var retryCount = 0;
         Exception? lastException = null;
 
-        while (retryCount < _maxRetryAttempts)
+        while (retryCount < MaxRetryAttempts)
         {
             try
             {
@@ -103,12 +93,12 @@ public class RetryPolicyService
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Non-retryable error during {OperationName}", operationName);
+                _logger.LogError(ex, "Non-retryable error during {OperationName}", operationName);
                 throw;
             }
         }
 
-        return ThrowMaxRetriesExceeded<T>(operationName, lastException);
+        throw new InvalidOperationException($"Operation '{operationName}' failed after maximum retry attempts", lastException);
     }
 
     private async Task HandleRetryableErrorAsync(
@@ -118,7 +108,7 @@ public class RetryPolicyService
         HttpStatusCode? statusCode,
         CancellationToken cancellationToken)
     {
-        if (retryCount >= _maxRetryAttempts)
+        if (retryCount >= MaxRetryAttempts)
         {
             return;
         }
@@ -126,34 +116,24 @@ public class RetryPolicyService
         var delay = CalculateDelay(retryCount, statusCode);
         var errorType = GetErrorType(exception);
 
-        Log.Warning(exception, "{ErrorType} during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
-            errorType, operationName, delay, retryCount, _maxRetryAttempts);
+        _logger.LogWarning(exception, "{ErrorType} during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
+            errorType, operationName, delay, retryCount, MaxRetryAttempts);
 
         await Task.Delay(delay, cancellationToken);
     }
 
-    private static string GetErrorType(Exception exception)
+    private static string GetErrorType(Exception exception) => exception switch
     {
-        return exception switch
-        {
-            HttpRequestException => "HTTP error",
-            TaskCanceledException => "Timeout",
-            _ => "Retryable error"
-        };
-    }
+        HttpRequestException => "HTTP error",
+        TaskCanceledException => "Timeout",
+        _ => "Retryable error"
+    };
 
-    private static T ThrowMaxRetriesExceeded<T>(string operationName, Exception? lastException)
-    {
-        var errorMessage = $"Operation '{operationName}' failed after maximum retry attempts";
-        throw new InvalidOperationException(errorMessage, lastException);
-    }
-
-    private bool ShouldRetryHttpError(HttpRequestException ex)
+    private static bool ShouldRetryHttpError(HttpRequestException ex)
     {
         if (!ex.StatusCode.HasValue)
             return false;
 
-        // Retry on server errors and rate limiting
         return ex.StatusCode.Value switch
         {
             HttpStatusCode.InternalServerError => true,
@@ -165,33 +145,26 @@ public class RetryPolicyService
         };
     }
 
-    private bool ShouldRetryException(Exception ex)
+    private static bool ShouldRetryException(Exception ex)
     {
-        // Retry on network-related exceptions
-        return ex is IOException ||
-               ex is SocketException ||
-               ex is WebException ||
-               ex.Message.Contains("connection", StringComparison.OrdinalIgnoreCase) ||
-               ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase);
+        return ex is IOException
+            || ex is SocketException
+            || ex is WebException
+            || ex.Message.Contains("connection", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase);
     }
 
-    private int CalculateDelay(int retryCount, HttpStatusCode? statusCode)
+    private static int CalculateDelay(int retryCount, HttpStatusCode? statusCode)
     {
-        var baseDelay = _baseDelayMs;
-
-        // Apply exponential backoff
-        var exponentialDelay = baseDelay * Math.Pow(2, retryCount - 1);
-
-        // Add jitter to prevent thundering herd
+        var exponentialDelay = BaseDelayMs * Math.Pow(2, retryCount - 1);
         var jitter = Random.Shared.Next(-100, 100);
 
-        // Special handling for rate limiting
         if (statusCode == HttpStatusCode.TooManyRequests)
         {
-            exponentialDelay = Math.Max(exponentialDelay, 1000); // Minimum 1 second for rate limiting
+            exponentialDelay = Math.Max(exponentialDelay, 1000);
         }
 
-        var finalDelay = (int)Math.Min(exponentialDelay + jitter, _maxDelayMs);
-        return Math.Max(finalDelay, 100); // Minimum 100ms
+        var finalDelay = (int)Math.Min(exponentialDelay + jitter, MaxDelayMs);
+        return Math.Max(finalDelay, 100);
     }
 }

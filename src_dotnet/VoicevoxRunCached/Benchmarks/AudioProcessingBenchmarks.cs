@@ -1,5 +1,6 @@
 ﻿using BenchmarkDotNet.Attributes;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging.Abstractions;
 using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
@@ -34,7 +35,7 @@ public class AudioProcessingBenchmarks
         {
             SizeLimit = cacheSettings.MemoryCacheSizeMb * 1024L * 1024L
         });
-        _cacheManager = new AudioCacheManager(cacheSettings, _memoryCache);
+        _cacheManager = new AudioCacheManager(cacheSettings, _memoryCache, NullLogger.Instance);
 
         _testRequest = new VoiceRequest("テスト用の音声データです。", 1);
     }

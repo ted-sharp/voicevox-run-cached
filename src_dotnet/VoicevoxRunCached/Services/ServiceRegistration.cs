@@ -51,19 +51,16 @@ public static class ServiceRegistration
         container.Register<WavePlayerManager>(Reuse.Singleton);
         container.Register<AudioPlayer>(Reuse.Singleton);
 
-        // FillerManager は (FillerSettings, int defaultSpeakerId) を取るので明示的にファクトリ登録
+        // FillerManager は (FillerSettings, int defaultSpeakerId, ILogger) を取るので明示的にファクトリ登録
         container.RegisterDelegate<FillerManager>(
-            r => new FillerManager(r.Resolve<FillerSettings>(), settings.VoiceVox.DefaultSpeaker),
+            r => new FillerManager(r.Resolve<FillerSettings>(), settings.VoiceVox.DefaultSpeaker, r.Resolve<Microsoft.Extensions.Logging.ILogger>()),
             Reuse.Singleton);
 
         // コマンド処理ヘルパ (singleton)
-        container.Register<EngineCoordinator>(Reuse.Singleton);
         container.Register<AudioExportService>(Reuse.Singleton);
-        container.Register<SegmentProcessor>(Reuse.Singleton);
         container.Register<TextToSpeechProcessor>(Reuse.Singleton);
 
         // コマンドハンドラ (singleton)
-        container.Register<TextToSpeechCommandHandler>(Reuse.Singleton);
         container.Register<SpeakerCommandHandler>(Reuse.Singleton);
         container.Register<DeviceCommandHandler>(Reuse.Singleton);
         container.Register<InitCommandHandler>(Reuse.Singleton);

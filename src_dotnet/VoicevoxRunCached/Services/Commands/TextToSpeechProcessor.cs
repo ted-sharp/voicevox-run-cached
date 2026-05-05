@@ -1,27 +1,27 @@
 ﻿using Microsoft.Extensions.Logging;
-using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Commands;
 
 /// <summary>
-/// テキスト読み上げのメイン処理フロー制御を行うクラス
+/// テキスト読み上げのメイン処理フロー制御。
+/// エンジン確認 → セグメント分割 → キャッシュ参照 → 不足分の合成 → 再生 → ファイル出力 までを担う。
 /// </summary>
 public class TextToSpeechProcessor
 {
     private readonly AudioCacheManager _cacheManager;
     private readonly AudioExportService _audioExportService;
     private readonly AudioPlayer _audioPlayer;
-    private readonly EngineCoordinator _engineCoordinator;
+    private readonly VoiceVoxEngineManager _engineManager;
     private readonly FillerManager _fillerManager;
     private readonly ILogger _logger;
-    private readonly SegmentProcessor _segmentProcessor;
+    private readonly TextSegmentProcessor _textProcessor;
     private readonly VoiceVoxApiClient _apiClient;
 
     public TextToSpeechProcessor(
-        EngineCoordinator engineCoordinator,
-        SegmentProcessor segmentProcessor,
+        VoiceVoxEngineManager engineManager,
+        TextSegmentProcessor textProcessor,
         AudioExportService audioExportService,
         AudioPlayer audioPlayer,
         AudioCacheManager cacheManager,
@@ -29,8 +29,8 @@ public class TextToSpeechProcessor
         FillerManager fillerManager,
         ILogger logger)
     {
-        _engineCoordinator = engineCoordinator ?? throw new ArgumentNullException(nameof(engineCoordinator));
-        _segmentProcessor = segmentProcessor ?? throw new ArgumentNullException(nameof(segmentProcessor));
+        _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
+        _textProcessor = textProcessor ?? throw new ArgumentNullException(nameof(textProcessor));
         _audioExportService = audioExportService ?? throw new ArgumentNullException(nameof(audioExportService));
         _audioPlayer = audioPlayer ?? throw new ArgumentNullException(nameof(audioPlayer));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
@@ -39,41 +39,37 @@ public class TextToSpeechProcessor
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-
     public async Task<int> ProcessTextToSpeechAsync(VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false, string? outPath = null, bool noPlay = false, CancellationToken cancellationToken = default)
     {
         var totalStartTime = DateTime.UtcNow;
 
         try
         {
-            if (!await EnsureEngineAvailableAsync(verbose, cancellationToken))
+            if (!await _engineManager.EnsureEngineRunningAsync())
             {
+                ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
                 return 1;
             }
 
-            // セグメント処理（常に実行）
-            var segments = await _segmentProcessor.ProcessSegmentsAsync(request, noCache, cancellationToken);
+            var segments = await LoadSegmentsAsync(request, noCache, cancellationToken);
             if (segments.Count == 0)
             {
                 ConsoleHelper.WriteError("Error: No segments to process", _logger);
                 return 1;
             }
 
-            // キャッシュのみモードの場合、キャッシュされていないセグメントがあるかチェック
             if (cacheOnly)
             {
-                var uncachedSegments = segments.Where(s => !s.IsCached).ToList();
-                if (uncachedSegments.Count > 0)
+                var uncachedCount = segments.Count(s => !s.IsCached);
+                if (uncachedCount > 0)
                 {
-                    ConsoleHelper.WriteWarning($"Warning: {uncachedSegments.Count} segments are not cached", _logger);
+                    ConsoleHelper.WriteWarning($"Warning: {uncachedCount} segments are not cached", _logger);
                     return 1;
                 }
             }
 
-            // キャッシュにないセグメントを合成する（常に実行）
             var synthesisResult = await SynthesizeMissingSegmentsAsync(segments, request, noCache, cancellationToken);
 
-            // 全セグメント失敗時は再生に進まず即エラー終了
             if (synthesisResult.AttemptedCount > 0 && synthesisResult.SuccessCount == 0)
             {
                 throw new VoicevoxRunCachedException(
@@ -85,7 +81,6 @@ public class TextToSpeechProcessor
                 );
             }
 
-            // 部分失敗時は警告を出して処理を続行 (キャッシュ済みセグメントだけでも再生する)
             bool hasPartialFailure = synthesisResult.FailureCount > 0;
             if (hasPartialFailure)
             {
@@ -94,7 +89,6 @@ public class TextToSpeechProcessor
                     _logger);
             }
 
-            // --no-playが指定されている場合、再生をスキップ
             if (noPlay)
             {
                 if (!String.IsNullOrWhiteSpace(outPath))
@@ -103,31 +97,22 @@ public class TextToSpeechProcessor
                 }
 
                 ConsoleHelper.WriteSuccess("Done (no-play mode)!", _logger);
-                if (verbose)
-                {
-                    ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms", _logger);
-                }
+                LogElapsedIfVerbose(verbose, totalStartTime);
                 return hasPartialFailure ? 2 : 0;
             }
 
-            // 音声再生処理（フィラー機能付き）
             var playbackResult = await ProcessAudioPlaybackAsync(segments, verbose, cancellationToken);
             if (playbackResult != 0)
             {
                 return playbackResult;
             }
 
-            // ファイル出力（--out指定時、再生後）
             if (!String.IsNullOrWhiteSpace(outPath))
             {
                 await _audioExportService.ExportSegmentsAsync(segments, outPath, cancellationToken);
             }
 
-            if (verbose)
-            {
-                ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms", _logger);
-            }
-
+            LogElapsedIfVerbose(verbose, totalStartTime);
             return hasPartialFailure ? 2 : 0;
         }
         catch (OperationCanceledException)
@@ -158,21 +143,30 @@ public class TextToSpeechProcessor
         }
     }
 
-    private async Task<bool> EnsureEngineAvailableAsync(bool verbose, CancellationToken cancellationToken)
+    private async Task<List<TextSegment>> LoadSegmentsAsync(VoiceRequest request, bool noCache, CancellationToken cancellationToken)
     {
-        if (!await _engineCoordinator.EnsureEngineRunningAsync(cancellationToken))
+        ConsoleHelper.WriteLine("Processing segments...", _logger);
+
+        var segments = await _textProcessor.ProcessTextAsync(request.Text, request.SpeakerId, cancellationToken);
+        if (segments.Count == 0)
         {
-            ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
-            return false;
+            _logger.LogWarning("処理可能なセグメントがありません");
+            return segments;
         }
 
-        if (verbose)
+        _logger.LogInformation("テキストを {SegmentCount} 個のセグメントに分割しました", segments.Count);
+
+        if (noCache)
         {
-            var engineStatus = await _engineCoordinator.GetEngineStatusAsync();
-            ConsoleHelper.WriteLine($"Engine check completed at {engineStatus.LastChecked:HH:mm:ss}", _logger);
+            return segments;
         }
 
-        return true;
+        // セグメントごとに request の Speed/Pitch/Volume を引き継いでキャッシュを参照する
+        // (この値は cache key の一部なので、未指定値で問い合わせると永遠にミスヒットする)
+        var resolved = await _cacheManager.ProcessTextSegmentsAsync(segments, request, cancellationToken);
+        var hitCount = resolved.Count(s => s.IsCached);
+        _logger.LogInformation("キャッシュヒット: {HitCount}/{TotalCount}", hitCount, resolved.Count);
+        return resolved;
     }
 
     private async Task<int> ProcessAudioPlaybackAsync(List<TextSegment> segments, bool verbose, CancellationToken cancellationToken)
@@ -183,10 +177,10 @@ public class TextToSpeechProcessor
 
             await _audioPlayer.PlaySegmentsAsync(segments, _fillerManager, cancellationToken);
 
-            var playbackElapsed = (DateTime.UtcNow - playbackStartTime).TotalMilliseconds;
             if (verbose)
             {
-                ConsoleHelper.WriteLine($"Audio playback completed in {playbackElapsed:F1}ms", _logger);
+                var elapsed = (DateTime.UtcNow - playbackStartTime).TotalMilliseconds;
+                ConsoleHelper.WriteLine($"Audio playback completed in {elapsed:F1}ms", _logger);
             }
 
             return 0;
@@ -220,15 +214,7 @@ public class TextToSpeechProcessor
 
             try
             {
-                var segmentRequest = new VoiceRequest
-                {
-                    Text = segment.Text,
-                    SpeakerId = originalRequest.SpeakerId,
-                    Speed = originalRequest.Speed,
-                    Pitch = originalRequest.Pitch,
-                    Volume = originalRequest.Volume
-                };
-
+                var segmentRequest = BuildSegmentRequest(segment.Text, originalRequest);
                 var audioQuery = await _apiClient.GenerateAudioQueryAsync(segmentRequest, cancellationToken);
                 var wavData = await _apiClient.SynthesizeAudioAsync(audioQuery, originalRequest.SpeakerId, cancellationToken);
 
@@ -253,6 +239,24 @@ public class TextToSpeechProcessor
         }
 
         return new SynthesisResult(missingSegments.Count, successCount, failureCount);
+    }
+
+    private static VoiceRequest BuildSegmentRequest(string text, VoiceRequest source) => new()
+    {
+        Text = text,
+        SpeakerId = source.SpeakerId,
+        Speed = source.Speed,
+        Pitch = source.Pitch,
+        Volume = source.Volume
+    };
+
+    private void LogElapsedIfVerbose(bool verbose, DateTime startedAt)
+    {
+        if (!verbose)
+        {
+            return;
+        }
+        ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - startedAt).TotalMilliseconds:F1}ms", _logger);
     }
 
     private readonly record struct SynthesisResult(int AttemptedCount, int SuccessCount, int FailureCount)

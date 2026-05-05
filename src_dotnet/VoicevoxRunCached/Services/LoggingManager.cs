@@ -195,7 +195,7 @@ public class LoggingManager
     /// <summary>
     /// セグメント処理統計の記録
     /// </summary>
-    public static void LogSegmentStatistics(SegmentStatistics stats)
+    public static void LogSegmentStatistics(TextSplitStatistics stats)
     {
         Log.Information("セグメント処理統計 - 総セグメント数: {TotalSegments}, 平均長: {AverageLength:F1}, 最小長: {MinLength}, 最大長: {MaxLength}",
             stats.TotalSegments,

@@ -15,7 +15,7 @@ public class CommandRouter
     private readonly DeviceCommandHandler _deviceHandler;
     private readonly InitCommandHandler _initHandler;
     private readonly SpeakerCommandHandler _speakerHandler;
-    private readonly TextToSpeechCommandHandler _ttsHandler;
+    private readonly TextToSpeechProcessor _ttsProcessor;
     private readonly ILogger _logger;
     private readonly AppSettings _settings;
 
@@ -25,7 +25,7 @@ public class CommandRouter
         InitCommandHandler initHandler,
         CacheCommandHandler cacheHandler,
         BenchmarkCommandHandler benchmarkHandler,
-        TextToSpeechCommandHandler ttsHandler,
+        TextToSpeechProcessor ttsProcessor,
         AppSettings settings,
         ILogger logger)
     {
@@ -34,7 +34,7 @@ public class CommandRouter
         _initHandler = initHandler ?? throw new ArgumentNullException(nameof(initHandler));
         _cacheHandler = cacheHandler ?? throw new ArgumentNullException(nameof(cacheHandler));
         _benchmarkHandler = benchmarkHandler ?? throw new ArgumentNullException(nameof(benchmarkHandler));
-        _ttsHandler = ttsHandler ?? throw new ArgumentNullException(nameof(ttsHandler));
+        _ttsProcessor = ttsProcessor ?? throw new ArgumentNullException(nameof(ttsProcessor));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -126,10 +126,6 @@ public class CommandRouter
         ConsoleHelper.WriteLine($"テストメッセージ: {testMessage}", _logger);
 
         var testArgs = new[] { testMessage }.Concat(args).ToArray();
-
-        _logger.LogInformation("Test args constructed: {TestArgs}", String.Join(" ", testArgs));
-        _logger.LogDebug("テストコマンド引数の詳細: {TestArgs}", String.Join(" ", testArgs));
-
         return await ExecuteTextToSpeechCommandAsync(testArgs, cancellationToken);
     }
 
@@ -145,7 +141,7 @@ public class CommandRouter
 
         var options = ArgumentParser.ParseTextToSpeechOptions(args);
 
-        return await _ttsHandler.HandleTextToSpeechAsync(
+        return await _ttsProcessor.ProcessTextToSpeechAsync(
             request, options.NoCache, options.CacheOnly, options.Verbose, options.OutPath, options.NoPlay, cancellationToken);
     }
 }
