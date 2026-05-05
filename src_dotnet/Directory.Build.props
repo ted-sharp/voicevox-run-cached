@@ -1,0 +1,14 @@
+<Project>
+
+  <!--
+    src_dotnet/ 配下の全プロジェクト共通プロパティ。
+    各 csproj 側で上書きしたい項目はそのまま個別指定すれば優先される。
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+  </PropertyGroup>
+
+</Project>

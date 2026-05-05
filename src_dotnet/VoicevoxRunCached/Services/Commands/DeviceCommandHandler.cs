@@ -1,9 +1,26 @@
 ﻿using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using VoicevoxRunCached.Utilities;
 
 namespace VoicevoxRunCached.Services.Commands;
+
+/// <summary>
+/// devices コマンドが返す 1 つのオーディオデバイス情報。
+/// JSON 出力でも使うので JsonPropertyName で小文字キーを保持する。
+/// </summary>
+public sealed record AudioDeviceInfo(
+    [property: JsonPropertyName("id")] string Id,
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("state")] string State);
+
+/// <summary>
+/// devices --json コマンドの出力ペイロード形状。
+/// </summary>
+internal sealed record AudioDeviceListPayload(
+    [property: JsonPropertyName("default")] AudioDeviceInfo Default,
+    [property: JsonPropertyName("devices")] IReadOnlyList<AudioDeviceInfo> Devices);
 
 /// <summary>
 /// デバイス関連のコマンド処理を行うクラス
@@ -17,11 +34,6 @@ public class DeviceCommandHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// 利用可能なオーディオデバイスの一覧を取得・表示します
-    /// </summary>
-    /// <param name="args">コマンドライン引数</param>
-    /// <returns>処理結果の終了コード</returns>
     public int HandleDevices(string[] args)
     {
         try
@@ -32,7 +44,7 @@ public class DeviceCommandHandler
             using var enumerator = new MMDeviceEnumerator();
 
             var (defaultName, defaultId) = GetDefaultAudioEndpoint(enumerator);
-            var deviceList = full ? EnumerateDevices(enumerator) : new List<object>();
+            var deviceList = full ? EnumerateDevices(enumerator) : new List<AudioDeviceInfo>();
 
             if (outputJson)
             {
@@ -64,9 +76,9 @@ public class DeviceCommandHandler
         }
     }
 
-    private List<object> EnumerateDevices(MMDeviceEnumerator enumerator)
+    private List<AudioDeviceInfo> EnumerateDevices(MMDeviceEnumerator enumerator)
     {
-        var list = new List<object>();
+        var list = new List<AudioDeviceInfo>();
         try
         {
             var devices = enumerator.EnumerateAudioEndPoints(DataFlow.Render, DeviceState.Active);
@@ -74,12 +86,7 @@ public class DeviceCommandHandler
             {
                 try
                 {
-                    list.Add(new
-                    {
-                        id = d.ID,
-                        name = d.FriendlyName,
-                        state = d.State.ToString()
-                    });
+                    list.Add(new AudioDeviceInfo(d.ID, d.FriendlyName, d.State.ToString()));
                 }
                 catch (Exception inner)
                 {
@@ -94,18 +101,16 @@ public class DeviceCommandHandler
         return list;
     }
 
-    private static void OutputJson(string? defaultName, string? defaultId, List<object> deviceList)
+    private static void OutputJson(string? defaultName, string? defaultId, IReadOnlyList<AudioDeviceInfo> deviceList)
     {
-        var payload = new
-        {
-            @default = new { id = defaultId, name = defaultName },
-            devices = deviceList
-        };
+        var payload = new AudioDeviceListPayload(
+            new AudioDeviceInfo(defaultId ?? "", defaultName ?? "", ""),
+            deviceList);
         var json = JsonSerializer.Serialize(payload, JsonSerializerOptionsCache.Indented);
         Console.WriteLine(json);
     }
 
-    private void OutputConsole(string? defaultName, string? defaultId, List<object> deviceList, bool full)
+    private void OutputConsole(string? defaultName, string? defaultId, IReadOnlyList<AudioDeviceInfo> deviceList, bool full)
     {
         ConsoleHelper.WriteLine("Available output devices (WASAPI):", _logger);
 
@@ -128,7 +133,7 @@ public class DeviceCommandHandler
         }
     }
 
-    private void OutputDeviceList(List<object> deviceList)
+    private void OutputDeviceList(IReadOnlyList<AudioDeviceInfo> deviceList)
     {
         if (deviceList.Count == 0)
         {
@@ -136,14 +141,10 @@ public class DeviceCommandHandler
             return;
         }
 
-        int idx = 0;
-        foreach (var item in deviceList)
+        for (int idx = 0; idx < deviceList.Count; idx++)
         {
-            var id = (string?)item.GetType().GetProperty("id")?.GetValue(item) ?? "";
-            var name = (string?)item.GetType().GetProperty("name")?.GetValue(item) ?? "";
-            var state = (string?)item.GetType().GetProperty("state")?.GetValue(item) ?? "";
-            ConsoleHelper.WriteLine($"  [{idx}] \"{name}\" (ID: {id}) State: {state}", _logger);
-            idx++;
+            var d = deviceList[idx];
+            ConsoleHelper.WriteLine($"  [{idx}] \"{d.Name}\" (ID: {d.Id}) State: {d.State}", _logger);
         }
     }
 }

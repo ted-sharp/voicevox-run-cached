@@ -8,7 +8,8 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class MediaFoundationInitializer
 {
-    private static readonly object Lock = new object();
+    // .NET 9+ の System.Threading.Lock 型 (旧 object lock より高速・安全)
+    private static readonly Lock Lock = new();
     private static MediaFoundationInitializer? _instance;
     private static int _referenceCount;
     private static bool _isInitialized;

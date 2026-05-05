@@ -1,4 +1,5 @@
 ﻿using DryIoc;
+using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Services;
 
@@ -22,11 +23,19 @@ static class Program
             using var cancellationManager = new CancellationManager(logger);
             var commandRouter = container.Resolve<CommandRouter>();
 
-            var result = await commandRouter.ExecuteCommandAsync(args, cancellationManager.Token);
+            try
+            {
+                var result = await commandRouter.ExecuteCommandAsync(args, cancellationManager.Token);
+                return result;
+            }
+            finally
+            {
+                // ApplicationBootstrap で確保した MediaFoundation を解放 (参照カウンタを減らす)
+                try { MediaFoundationInitializer.GetInstance(logger).Shutdown(); }
+                catch (Exception cleanupEx) { logger.LogDebug(cleanupEx, "MediaFoundation shutdown中の警告"); }
 
-            ProgramExtensions.CleanupSerilog();
-
-            return result;
+                ProgramExtensions.CleanupSerilog();
+            }
         }
         catch (VoicevoxRunCachedException ex)
         {
