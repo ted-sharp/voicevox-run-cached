@@ -67,20 +67,10 @@ public static class ApplicationBootstrap
 
         // 相対パス + UseExecutableBaseDirectory=true の場合、検証前に絶対パスへ解決しておく
         // (検証はパスが書き込み可能か実際に試すため、相対パスのままだと cwd 依存になる)
-        ResolveBaseDirectory(settings.Cache);
-        ResolveBaseDirectory(settings.Filler);
+        settings.Cache.Directory = ResolvePath(settings.Cache.Directory, settings.Cache.UseExecutableBaseDirectory);
+        settings.Filler.Directory = ResolvePath(settings.Filler.Directory, settings.Filler.UseExecutableBaseDirectory);
 
         return settings;
-    }
-
-    private static void ResolveBaseDirectory(CacheSettings cache)
-    {
-        cache.Directory = ResolvePath(cache.Directory, cache.UseExecutableBaseDirectory);
-    }
-
-    private static void ResolveBaseDirectory(FillerSettings filler)
-    {
-        filler.Directory = ResolvePath(filler.Directory, filler.UseExecutableBaseDirectory);
     }
 
     private static string ResolvePath(string path, bool useExecutableBaseDirectory)

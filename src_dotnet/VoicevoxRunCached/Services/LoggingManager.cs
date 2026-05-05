@@ -3,7 +3,6 @@ using Serilog;
 using Serilog.Events;
 using Serilog.Sinks.SystemConsole.Themes;
 using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services;
 
@@ -149,87 +148,4 @@ public class LoggingManager
         }
     }
 
-    /// <summary>
-    /// パフォーマンスメトリクスの記録
-    /// </summary>
-    public static void LogPerformanceMetric(string operation, TimeSpan duration, Dictionary<string, object>? additionalData = null)
-    {
-        var additionalInfo = additionalData != null && additionalData.Count > 0
-            ? String.Join(", ", additionalData.Select(kvp => $"{kvp.Key}={kvp.Value}"))
-            : "";
-
-        var message = String.IsNullOrEmpty(additionalInfo)
-            ? $"パフォーマンスメトリクス - {operation} 完了: {duration:mm\\:ss\\.fff} ({duration.TotalMilliseconds:F2}ms)"
-            : $"パフォーマンスメトリクス - {operation} 完了: {duration:mm\\:ss\\.fff} ({duration.TotalMilliseconds:F2}ms) [{additionalInfo}]";
-
-        Log.Information(message);
-    }
-
-    /// <summary>
-    /// メモリ使用量の記録
-    /// </summary>
-    public static void LogMemoryUsage(string context = "Current")
-    {
-        _ = GC.GetGCMemoryInfo();
-        var totalMemory = GC.GetTotalMemory(false);
-        var workingSet = Environment.WorkingSet;
-
-        Log.Information("メモリ使用量 ({Context}) - ヒープ: {HeapSize:F2}MB, ワーキングセット: {WorkingSet:F2}MB",
-            context,
-            totalMemory / 1024.0 / 1024.0,
-            workingSet / 1024.0 / 1024.0);
-    }
-
-    /// <summary>
-    /// キャッシュ統計の記録
-    /// </summary>
-    public static void LogCacheStatistics(AudioCacheStatistics stats)
-    {
-        Log.Information("キャッシュ統計 - ディスクファイル数: {DiskFileCount}, メモリエントリ数: {MemoryCacheEntries}, 使用サイズ: {UsedSizeBytes:N0} bytes, ヒット率: {HitRate:P1}",
-            stats.DiskFileCount,
-            stats.MemoryCacheEntries,
-            stats.UsedSizeBytes,
-            stats.HitRate);
-    }
-
-    /// <summary>
-    /// セグメント処理統計の記録
-    /// </summary>
-    public static void LogSegmentStatistics(TextSplitStatistics stats)
-    {
-        Log.Information("セグメント処理統計 - 総セグメント数: {TotalSegments}, 平均長: {AverageLength:F1}, 最小長: {MinLength}, 最大長: {MaxLength}",
-            stats.TotalSegments,
-            stats.AverageLength,
-            stats.MinLength,
-            stats.MaxLength);
-    }
-
-    /// <summary>
-    /// エラー統計の記録
-    /// </summary>
-    public static void LogErrorStatistics(string errorType, string context, Exception? exception = null)
-    {
-        if (exception != null)
-        {
-            Log.Warning("エラー統計 - タイプ: {ErrorType}, コンテキスト: {Context}, 例外: {ExceptionType} - {ExceptionMessage}",
-                errorType, context, exception.GetType().Name, exception.Message);
-        }
-        else
-        {
-            Log.Warning("エラー統計 - タイプ: {ErrorType}, コンテキスト: {Context}", errorType, context);
-        }
-    }
-
-    /// <summary>
-    /// アプリケーション終了時のクリーンアップ
-    /// </summary>
-    public void Cleanup()
-    {
-        if (_isInitialized)
-        {
-            Log.Information("VoicevoxRunCached アプリケーションが終了します");
-            Log.CloseAndFlush();
-            _isInitialized = false;
-        }
-    }
 }

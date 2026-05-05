@@ -41,9 +41,9 @@ public static class AudioConstants
     public const int SubsequentSegmentTrailingDelayMs = 100;
 
     /// <summary>
-    /// FFmpeg変換のタイムアウト時間（ミリ秒）
+    /// MP3 エンコード時のビットレート（kbps）
     /// </summary>
-    public const int FfmpegTimeoutMs = 30000;
+    public const int Mp3BitrateKbps = 128;
 
     /// <summary>
     /// デバイス準備のタイムアウト時間（秒）

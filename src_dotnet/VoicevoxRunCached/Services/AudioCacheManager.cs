@@ -16,7 +16,6 @@ public class AudioCacheManager : IDisposable
     private readonly MemoryCacheStore _memory;
     private readonly DiskCacheStore _disk;
     private readonly CacheEvictionPolicy _eviction;
-    private readonly CacheStatisticsCollector _statistics;
     private readonly CacheSettings _settings;
     private readonly ILogger _logger;
     private bool _disposed;
@@ -30,7 +29,6 @@ public class AudioCacheManager : IDisposable
         _memory = new MemoryCacheStore(memoryCache, TimeSpan.FromDays(settings.ExpirationDays));
         _disk = new DiskCacheStore(settings, _logger);
         _eviction = new CacheEvictionPolicy(_disk, settings, _logger);
-        _statistics = new CacheStatisticsCollector(_memory, _disk, settings, _logger);
 
         _logger.LogInformation("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}, メモリキャッシュ: 有効, 最大サイズ: {MaxSizeMB}MB",
             _disk.Directory, settings.MemoryCacheSizeMb);
@@ -82,7 +80,6 @@ public class AudioCacheManager : IDisposable
             var audioData = await _disk.LoadAsync(cacheKey);
             if (audioData != null)
             {
-                _memory.RecordHit();
                 _memory.Set(cacheKey, audioData);
                 return audioData;
             }
@@ -148,10 +145,6 @@ public class AudioCacheManager : IDisposable
                 "アプリケーションを再起動し、問題が続く場合はログを確認してください。", null, ex);
         }
     }
-
-    public AudioCacheStatistics GetCacheStatistics() => _statistics.GetSummary();
-    public DetailedCacheStatistics GetDetailedStatistics() => _statistics.GetDetailed();
-    public CacheEfficiencyAnalysis AnalyzeCacheEfficiency() => _statistics.Analyze();
 
     /// <summary>
     /// 並行処理を使用した複数セグメントの処理。各セグメントはキャッシュからの取得を試み、ヒット時に AudioData を埋める。

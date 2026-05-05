@@ -38,7 +38,6 @@ public partial class TextSegmentProcessor
             .Select(t => new TextSegment
             {
                 Text = t,
-                Position = 0,
                 Length = t.Length,
                 SpeakerId = speakerId,
                 IsCached = false
@@ -93,46 +92,6 @@ public partial class TextSegmentProcessor
         return String.IsNullOrWhiteSpace(optimized) ? "。" : optimized;
     }
 
-    public void UpdateSegmentPositions(List<TextSegment> segments)
-    {
-        var currentPosition = 0;
-        foreach (var segment in segments)
-        {
-            segment.Position = currentPosition;
-            currentPosition += segment.Length;
-        }
-    }
-
-    public TextSplitStatistics GetSegmentStatistics(List<TextSegment> segments)
-    {
-        if (segments.Count == 0)
-        {
-            return new TextSplitStatistics();
-        }
-
-        var totalLength = segments.Sum(s => s.Length);
-        return new TextSplitStatistics
-        {
-            TotalSegments = segments.Count,
-            TotalLength = totalLength,
-            AverageLength = (double)totalLength / segments.Count,
-            MinLength = segments.Min(s => s.Length),
-            MaxLength = segments.Max(s => s.Length)
-        };
-    }
-
     [GeneratedRegex(@"\s+")]
     private static partial Regex WhitespaceRegex();
-}
-
-/// <summary>
-/// テキスト分割の結果統計。
-/// </summary>
-public class TextSplitStatistics
-{
-    public int TotalSegments { get; set; }
-    public int TotalLength { get; set; }
-    public double AverageLength { get; set; }
-    public int MinLength { get; set; }
-    public int MaxLength { get; set; }
 }

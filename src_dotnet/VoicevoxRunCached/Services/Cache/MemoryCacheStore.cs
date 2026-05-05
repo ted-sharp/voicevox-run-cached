@@ -3,16 +3,12 @@
 namespace VoicevoxRunCached.Services.Cache;
 
 /// <summary>
-/// IMemoryCache のラッパ。Hit/Miss/エントリ数の統計と SetSize/Expiration を一元管理する。
+/// IMemoryCache のラッパ。SetSize/Expiration を一元管理する。
 /// </summary>
 public class MemoryCacheStore
 {
     private readonly IMemoryCache _memoryCache;
     private readonly TimeSpan _expiration;
-
-    private long _hitCount;
-    private long _missCount;
-    private int _entryCount;
 
     public MemoryCacheStore(IMemoryCache memoryCache, TimeSpan expiration)
     {
@@ -20,44 +16,31 @@ public class MemoryCacheStore
         _expiration = expiration;
     }
 
-    public long HitCount => Interlocked.Read(ref _hitCount);
-    public long MissCount => Interlocked.Read(ref _missCount);
-    public int EntryCount => _entryCount;
-
     /// <summary>
-    /// メモリキャッシュから取得。ヒット/ミスのカウントも更新する。
+    /// メモリキャッシュから取得。
     /// </summary>
     public bool TryGet(string key, out byte[]? data)
     {
         if (_memoryCache.TryGetValue(key, out byte[]? cached) && cached != null)
         {
-            Interlocked.Increment(ref _hitCount);
             data = cached;
             return true;
         }
 
-        Interlocked.Increment(ref _missCount);
         data = null;
         return false;
     }
 
     /// <summary>
-    /// 統計上のヒットとして記録 (ディスクからの読み戻しなど)
-    /// </summary>
-    public void RecordHit() => Interlocked.Increment(ref _hitCount);
-
-    /// <summary>
-    /// メモリキャッシュにエントリを保存。Compact 時に自動デクリメント。
+    /// メモリキャッシュにエントリを保存。
     /// </summary>
     public void Set(string key, byte[] data)
     {
         var entryOptions = new MemoryCacheEntryOptions()
             .SetSize(data.Length)
-            .SetAbsoluteExpiration(_expiration)
-            .RegisterPostEvictionCallback((_, _, _, _) => Interlocked.Decrement(ref _entryCount));
+            .SetAbsoluteExpiration(_expiration);
 
         _memoryCache.Set(key, data, entryOptions);
-        Interlocked.Increment(ref _entryCount);
     }
 
     /// <summary>
@@ -69,6 +52,5 @@ public class MemoryCacheStore
         {
             mc.Compact(1.0);
         }
-        Interlocked.Exchange(ref _entryCount, 0);
     }
 }

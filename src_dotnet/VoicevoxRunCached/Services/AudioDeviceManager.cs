@@ -130,18 +130,6 @@ public class AudioDeviceManager : IDisposable
         }
     }
 
-    public static List<string> GetAvailableDevices()
-    {
-        try
-        {
-            return ["-1: Default Device"];
-        }
-        catch
-        {
-            return [];
-        }
-    }
-
     ~AudioDeviceManager()
     {
         Dispose(false);

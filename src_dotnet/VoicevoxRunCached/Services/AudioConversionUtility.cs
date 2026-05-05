@@ -1,8 +1,7 @@
 ﻿using System.Text;
+using NAudio.Lame;
 using NAudio.Wave;
-using Serilog;
 using VoicevoxRunCached.Constants;
-using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services;
 
@@ -12,7 +11,7 @@ namespace VoicevoxRunCached.Services;
 public static class AudioConversionUtility
 {
     /// <summary>
-    /// WAV音声データをMP3に変換します
+    /// WAV 音声データを MP3 に変換します。NAudio.Lame による in-memory 変換のため外部プロセス起動を伴いません。
     /// </summary>
     /// <param name="wavData">変換元のWAVデータ</param>
     /// <returns>変換後のMP3データ</returns>
@@ -24,81 +23,17 @@ public static class AudioConversionUtility
             using var wavReader = new WaveFileReader(wavStream);
             using var mp3Stream = new MemoryStream();
 
-            // 一時的なWAVファイルとして保存（NAudioの制約のため）
-            // セキュアなランダムファイル名を生成（S5445対応）
-            var tempWavPath = Path.Combine(Path.GetTempPath(), $"{Path.GetRandomFileName()}.wav");
-            var mp3Path = Path.ChangeExtension(tempWavPath, ".mp3");
-            try
+            using (var mp3Writer = new LameMP3FileWriter(mp3Stream, wavReader.WaveFormat, AudioConstants.Mp3BitrateKbps))
             {
-                WaveFileWriter.CreateWaveFile(tempWavPath, wavReader);
-
-                // FFmpegを使用してWAVからMP3に変換
-                ConvertWavToMp3WithFfmpeg(tempWavPath, mp3Path);
-
-                return File.ReadAllBytes(mp3Path);
+                wavReader.CopyTo(mp3Writer);
             }
-            finally
-            {
-                // 一時ファイルの削除
-                try
-                {
-                    if (File.Exists(tempWavPath))
-                        File.Delete(tempWavPath);
-                    if (File.Exists(mp3Path))
-                        File.Delete(mp3Path);
-                }
-                catch (IOException ex)
-                {
-                    Log.Debug(ex, "一時ファイルの削除に失敗しました: {TempWavPath}, {Mp3Path}", tempWavPath, mp3Path);
-                }
-            }
-        }
-        catch (ArgumentException ex) when (ex.Source == "NAudio.Wave")
-        {
-            Log.Error(ex, "NAudio処理中にエラーが発生しました");
-            throw new InvalidOperationException($"Failed to process audio with NAudio: {ex.Message}", ex);
-        }
-        catch (IOException ex)
-        {
-            Log.Error(ex, "音声ファイルの読み書き中にエラーが発生しました");
-            throw new InvalidOperationException($"Failed to access audio file: {ex.Message}", ex);
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            Log.Error(ex, "音声ファイルへのアクセスが拒否されました");
-            throw new InvalidOperationException($"Access denied to audio file: {ex.Message}", ex);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "WAVからMP3への変換中に予期しないエラーが発生しました");
-            throw new InvalidOperationException($"Unexpected error during WAV to MP3 conversion: {ex.Message}", ex);
-        }
-    }
 
-    /// <summary>
-    /// Detects audio format from header bytes
-    /// </summary>
-    /// <param name="audioData">Audio data to analyze</param>
-    /// <returns>Detected format (WAV, MP3, or Unknown)</returns>
-    public static AudioFormat DetectFormat(byte[] audioData)
-    {
-        if (audioData.Length < 12)
-            return AudioFormat.Unknown;
-
-        // Check for WAV header (RIFF....WAVE)
-        if (audioData[0] == 'R' && audioData[1] == 'I' && audioData[2] == 'F' && audioData[3] == 'F' &&
-            audioData[8] == 'W' && audioData[9] == 'A' && audioData[10] == 'V' && audioData[11] == 'E')
-        {
-            return AudioFormat.Wav;
+            return mp3Stream.ToArray();
         }
-
-        // Check for MP3 header (starts with 0xFF)
-        if (audioData[0] == 0xFF && (audioData[1] & 0xE0) == 0xE0)
+        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException)
         {
-            return AudioFormat.Mp3;
+            throw new InvalidOperationException($"Failed to convert WAV to MP3: {ex.Message}", ex);
         }
-
-        return AudioFormat.Unknown;
     }
 
     /// <summary>
@@ -159,66 +94,5 @@ public static class AudioConversionUtility
         }
 
         return stream.ToArray();
-    }
-
-    /// <summary>
-    /// FFmpegを使用してWAVファイルをMP3に変換します
-    /// </summary>
-    /// <param name="inputWavPath">入力WAVファイルのパス</param>
-    /// <param name="outputMp3Path">出力MP3ファイルのパス</param>
-    private static void ConvertWavToMp3WithFfmpeg(string inputWavPath, string outputMp3Path)
-    {
-        try
-        {
-            var startInfo = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "ffmpeg",
-                Arguments = $"-i \"{inputWavPath}\" -acodec libmp3lame -ab 128k \"{outputMp3Path}\"",
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
-
-            using var process = System.Diagnostics.Process.Start(startInfo);
-            if (process == null)
-            {
-                throw new InvalidOperationException("FFmpegプロセスの起動に失敗しました");
-            }
-
-            process.WaitForExit(AudioConstants.FfmpegTimeoutMs); // FFmpeg変換のタイムアウト
-
-            if (process.ExitCode != 0)
-            {
-                var errorOutput = process.StandardError.ReadToEnd();
-                throw new InvalidOperationException($"FFmpeg変換に失敗しました: {errorOutput}");
-            }
-
-            if (!File.Exists(outputMp3Path))
-            {
-                throw new InvalidOperationException("MP3ファイルの出力に失敗しました");
-            }
-        }
-        catch (System.ComponentModel.Win32Exception ex)
-        {
-            Log.Warning(ex, "FFmpegが見つかりません。フォールバックとしてWAVデータをそのまま返します");
-            // FFmpegが利用できない場合は、WAVデータをそのまま返す
-            File.Copy(inputWavPath, outputMp3Path, true);
-        }
-        catch (TimeoutException ex)
-        {
-            Log.Warning(ex, "FFmpeg変換がタイムアウトしました。フォールバックとしてWAVデータをそのまま返します");
-            File.Copy(inputWavPath, outputMp3Path, true);
-        }
-        catch (IOException ex)
-        {
-            Log.Warning(ex, "FFmpeg変換中にファイルアクセスエラーが発生しました。フォールバックとしてWAVデータをそのまま返します");
-            File.Copy(inputWavPath, outputMp3Path, true);
-        }
-        catch (Exception ex)
-        {
-            Log.Warning(ex, "FFmpeg変換中に予期しないエラーが発生しました。フォールバックとしてWAVデータをそのまま返します");
-            File.Copy(inputWavPath, outputMp3Path, true);
-        }
     }
 }

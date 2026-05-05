@@ -81,35 +81,9 @@ public class CommandRouter
             ConsoleHelper.WriteLine("操作がキャンセルされました。", _logger);
             return 0;
         }
-        catch (ArgumentException ex)
-        {
-            _logger.LogError(ex, "コマンドの引数が無効です: {Command}, Args: {Args}, ErrorCode: {ErrorCode}",
-                command, String.Join(" ", subArgs), ErrorHandlingUtility.GetErrorCodeFromException(ex));
-            return ErrorHandlingUtility.HandleExceptionAndGetExitCode(ex, _logger, $"コマンド実行: {command}", String.Join(" ", subArgs));
-        }
-        catch (InvalidOperationException ex)
-        {
-            _logger.LogError(ex, "コマンドの実行に必要な前提条件が満たされていません: {Command}, ErrorCode: {ErrorCode}",
-                command, ErrorHandlingUtility.GetErrorCodeFromException(ex));
-            return ErrorHandlingUtility.HandleExceptionAndGetExitCode(ex, _logger, $"コマンド実行: {command}");
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            _logger.LogError(ex, "コマンド実行に必要な権限がありません: {Command}, ErrorCode: {ErrorCode}",
-                command, ErrorHandlingUtility.GetErrorCodeFromException(ex));
-            return ErrorHandlingUtility.HandleExceptionAndGetExitCode(ex, _logger, $"コマンド実行: {command}");
-        }
-        catch (IOException ex)
-        {
-            _logger.LogError(ex, "ファイルまたはディレクトリの操作に失敗しました: {Command}, ErrorCode: {ErrorCode}",
-                command, ErrorHandlingUtility.GetErrorCodeFromException(ex));
-            return ErrorHandlingUtility.HandleExceptionAndGetExitCode(ex, _logger, $"コマンド実行: {command}");
-        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "コマンド実行中に予期しないエラーが発生しました: {Command}, ErrorCode: {ErrorCode}",
-                command, ErrorHandlingUtility.GetErrorCodeFromException(ex));
-            return ErrorHandlingUtility.HandleExceptionAndGetExitCode(ex, _logger, $"コマンド実行: {command}");
+            return ErrorHandlingUtility.HandleExceptionAndGetExitCode(ex, _logger, $"コマンド実行: {command}", String.Join(" ", subArgs));
         }
     }
 

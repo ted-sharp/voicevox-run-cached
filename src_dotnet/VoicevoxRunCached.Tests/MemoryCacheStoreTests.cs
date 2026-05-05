@@ -12,7 +12,7 @@ public class MemoryCacheStoreTests
     }
 
     [Test]
-    public async Task TryGet_Miss_IncrementsMissCount()
+    public async Task TryGet_Miss_ReturnsFalseAndNullData()
     {
         var store = CreateStore();
 
@@ -20,12 +20,10 @@ public class MemoryCacheStoreTests
 
         await Assert.That(found).IsFalse();
         await Assert.That(data).IsNull();
-        await Assert.That(store.MissCount).IsEqualTo(1L);
-        await Assert.That(store.HitCount).IsEqualTo(0L);
     }
 
     [Test]
-    public async Task SetThenTryGet_HitCountIncreases()
+    public async Task SetThenTryGet_ReturnsCachedData()
     {
         var store = CreateStore();
         var bytes = new byte[] { 1, 2, 3, 4 };
@@ -35,20 +33,6 @@ public class MemoryCacheStoreTests
 
         await Assert.That(found).IsTrue();
         await Assert.That(data!.Length).IsEqualTo(4);
-        await Assert.That(store.HitCount).IsEqualTo(1L);
-        await Assert.That(store.EntryCount).IsEqualTo(1);
-    }
-
-    [Test]
-    public async Task RecordHit_DoesNotChangeMissCount()
-    {
-        var store = CreateStore();
-
-        store.RecordHit();
-        store.RecordHit();
-
-        await Assert.That(store.HitCount).IsEqualTo(2L);
-        await Assert.That(store.MissCount).IsEqualTo(0L);
     }
 
     [Test]
@@ -60,8 +44,7 @@ public class MemoryCacheStoreTests
 
         store.Clear();
 
-        await Assert.That(store.EntryCount).IsEqualTo(0);
-        // クリア後の TryGet は miss
         await Assert.That(store.TryGet("a", out _)).IsFalse();
+        await Assert.That(store.TryGet("b", out _)).IsFalse();
     }
 }

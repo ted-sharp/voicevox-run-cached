@@ -212,8 +212,6 @@ public class AudioPlayer : IDisposable
         }
     }
 
-    public static List<string> GetAvailableDevices() => AudioDeviceManager.GetAvailableDevices();
-
     private Task PlaySharedSegmentAsync(byte[] audioData, bool isFirstSegment, CancellationToken cancellationToken)
     {
         if (_currentWavePlayer == null)
