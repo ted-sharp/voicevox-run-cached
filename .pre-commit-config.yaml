@@ -17,7 +17,7 @@ repos:
         
       - id: dotnet-test
         name: Run C# tests
-        entry: bash -c "cd src_dotnet/VoicevoxRunCached && if find . -name '*.Tests.csproj' -o -name '*Test*.csproj' | grep -q .; then dotnet test --verbosity quiet; else echo 'No test projects found'; fi"
+        entry: bash -c "cd src_dotnet && if ls VoicevoxRunCached.Tests/*.csproj >/dev/null 2>&1; then dotnet run --project VoicevoxRunCached.Tests --no-launch-profile --configuration Debug; else echo 'No test projects found'; fi"
         language: system
         pass_filenames: false
         always_run: true

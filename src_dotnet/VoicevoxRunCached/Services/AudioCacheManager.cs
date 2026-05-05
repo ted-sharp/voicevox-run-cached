@@ -16,7 +16,6 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class AudioCacheManager : IDisposable
 {
-    private static readonly SHA256 Sha256 = SHA256.Create();
     private readonly IMemoryCache _memoryCache;
     private readonly CacheSettings _settings;
     private readonly TimeSpan _cacheExpiration;
@@ -516,8 +515,8 @@ public class AudioCacheManager : IDisposable
         var keyString = String.Format(System.Globalization.CultureInfo.InvariantCulture,
             "{0}|{1}|{2:F2}|{3:F2}|{4:F2}", request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
 
-        // 軽量なハッシュ計算（SHA256の再利用）
-        var hashBytes = Sha256.ComputeHash(Encoding.UTF8.GetBytes(keyString));
+        // SHA256.HashData は static + スレッドセーフ。共有 SHA256 インスタンスを保持するとマルチスレッドで CryptographicException が発生する。
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(keyString));
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 
