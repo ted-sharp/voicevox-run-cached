@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+
+    defaults:
+      run:
+        working-directory: src_dotnet
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore VoicevoxRunCached.slnx
+
+      - name: Build (Release)
+        run: dotnet build VoicevoxRunCached.slnx --configuration Release --no-restore
+
+      - name: Format check
+        run: dotnet format VoicevoxRunCached/VoicevoxRunCached.csproj --verify-no-changes --no-restore
+
+      - name: Run tests (TUnit / Microsoft.Testing.Platform)
+        # TUnit は Microsoft.Testing.Platform で動くため、テストプロジェクトを直接 dotnet run で起動する。
+        # .NET 10 SDK の従来の dotnet test は VSTest 経路が無効化されているため使えない。
+        run: dotnet run --project VoicevoxRunCached.Tests --no-launch-profile --configuration Release
