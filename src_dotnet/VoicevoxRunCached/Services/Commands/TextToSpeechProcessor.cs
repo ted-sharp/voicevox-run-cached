@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
@@ -6,8 +7,13 @@ namespace VoicevoxRunCached.Services.Commands;
 
 /// <summary>
 /// テキスト読み上げのメイン処理フロー制御。
-/// エンジン確認 → セグメント分割 → キャッシュ参照 → 不足分の合成 → 再生 → ファイル出力 までを担う。
+/// エンジン確認 → セグメント分割 → キャッシュ参照 → 不足分の合成と再生を <see cref="Channel{T}"/> 経由で並走 → ファイル出力 までを担う。
 /// </summary>
+/// <remarks>
+/// Producer (合成側) と Consumer (再生側) を Channel で繋ぐことで、キャッシュ済みセグメントは即座に再生開始しつつ、
+/// 未キャッシュ分はバックグラウンドで生成する。生成待ちの隙間は <see cref="FillerManager"/> 経由でフィラー音声が挿入される。
+/// VOICEVOX API の直列性は producer 側 1 本の <c>foreach</c> で担保している。
+/// </remarks>
 public class TextToSpeechProcessor
 {
     private readonly AudioCacheManager _cacheManager;
@@ -68,7 +74,7 @@ public class TextToSpeechProcessor
                 }
             }
 
-            var synthesisResult = await SynthesizeMissingSegmentsAsync(segments, request, noCache, cancellationToken);
+            var synthesisResult = await SynthesizeAndPlayAsync(segments, request, noCache, noPlay, verbose, cancellationToken);
 
             if (synthesisResult.AttemptedCount > 0 && synthesisResult.SuccessCount == 0)
             {
@@ -89,27 +95,14 @@ public class TextToSpeechProcessor
                     _logger);
             }
 
-            if (noPlay)
-            {
-                if (!String.IsNullOrWhiteSpace(outPath))
-                {
-                    await _audioExportService.ExportSegmentsAsync(segments, outPath, cancellationToken);
-                }
-
-                ConsoleHelper.WriteSuccess("Done (no-play mode)!", _logger);
-                LogElapsedIfVerbose(verbose, totalStartTime);
-                return hasPartialFailure ? 2 : 0;
-            }
-
-            var playbackResult = await ProcessAudioPlaybackAsync(segments, verbose, cancellationToken);
-            if (playbackResult != 0)
-            {
-                return playbackResult;
-            }
-
             if (!String.IsNullOrWhiteSpace(outPath))
             {
                 await _audioExportService.ExportSegmentsAsync(segments, outPath, cancellationToken);
+            }
+
+            if (noPlay)
+            {
+                ConsoleHelper.WriteSuccess("Done (no-play mode)!", _logger);
             }
 
             LogElapsedIfVerbose(verbose, totalStartTime);
@@ -169,76 +162,152 @@ public class TextToSpeechProcessor
         return resolved;
     }
 
-    private async Task<int> ProcessAudioPlaybackAsync(List<TextSegment> segments, bool verbose, CancellationToken cancellationToken)
+    /// <summary>
+    /// Producer (合成) と Consumer (再生) を <see cref="Channel{T}"/> で繋ぎ、両方が並走しながら処理する。
+    /// </summary>
+    private async Task<SynthesisResult> SynthesizeAndPlayAsync(
+        List<TextSegment> segments,
+        VoiceRequest request,
+        bool noCache,
+        bool noPlay,
+        bool verbose,
+        CancellationToken cancellationToken)
     {
+        var anyMissing = segments.Any(s => !s.IsCached);
+        if (anyMissing)
+        {
+            await _apiClient.InitializeSpeakerAsync(request.SpeakerId, cancellationToken);
+        }
+
+        var channel = Channel.CreateUnbounded<TextSegment>(new UnboundedChannelOptions
+        {
+            SingleWriter = true,
+            SingleReader = true,
+        });
+
+        // 一方が落ちたらもう一方も止める。Linked CTS は finally でキャンセル伝播に使う。
+        using var sharedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        var producerTask = ProduceSegmentsAsync(segments, channel.Writer, request, noCache, sharedCts.Token);
+        var playbackTask = noPlay
+            ? Task.CompletedTask
+            : RunPlaybackAsync(channel.Reader, verbose, sharedCts.Token);
+
         try
         {
-            var playbackStartTime = DateTime.UtcNow;
-
-            await _audioPlayer.PlaySegmentsAsync(segments, _fillerManager, cancellationToken);
-
-            if (verbose)
-            {
-                var elapsed = (DateTime.UtcNow - playbackStartTime).TotalMilliseconds;
-                ConsoleHelper.WriteLine($"Audio playback completed in {elapsed:F1}ms", _logger);
-            }
-
-            return 0;
+            await Task.WhenAll(producerTask, playbackTask);
         }
-        catch (Exception ex)
+        catch
         {
-            _logger.LogError(ex, "音声再生処理中にエラーが発生しました");
-            ConsoleHelper.WriteError($"Error: Failed to play audio: {ex.Message}", _logger);
-            return 1;
+            // 片側の例外でもう一方が終わるよう CTS をキャンセルし、両 Task の終了を待ってから rethrow
+            sharedCts.Cancel();
+            try
+            { await Task.WhenAll(producerTask, playbackTask); }
+            catch
+            { /* 二次例外は既出例外を上書きしないよう握る */ }
+            throw;
+        }
+
+        return await producerTask;
+    }
+
+    private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, bool verbose, CancellationToken cancellationToken)
+    {
+        var playbackStartTime = DateTime.UtcNow;
+        await _audioPlayer.PlayStreamingAsync(reader, _fillerManager, cancellationToken);
+
+        if (verbose)
+        {
+            var elapsed = (DateTime.UtcNow - playbackStartTime).TotalMilliseconds;
+            ConsoleHelper.WriteLine($"Audio playback completed in {elapsed:F1}ms", _logger);
         }
     }
 
-    private async Task<SynthesisResult> SynthesizeMissingSegmentsAsync(List<TextSegment> segments, VoiceRequest originalRequest, bool noCache, CancellationToken cancellationToken)
+    /// <summary>
+    /// セグメントを順次合成して channel に流す。キャッシュ済みは即座に流すだけ。
+    /// 各 API 呼び出しは直列。channel への書き込み後にキャッシュ保存を fire-and-forget して、次の API 呼び出しを遅らせない。
+    /// </summary>
+    private async Task<SynthesisResult> ProduceSegmentsAsync(
+        List<TextSegment> segments,
+        ChannelWriter<TextSegment> writer,
+        VoiceRequest originalRequest,
+        bool noCache,
+        CancellationToken cancellationToken)
     {
-        var missingSegments = segments.Where(s => s.AudioData == null).ToList();
-        if (missingSegments.Count == 0)
-        {
-            return SynthesisResult.Empty;
-        }
-
-        _logger.LogInformation("Synthesizing {Count} missing segments...", missingSegments.Count);
-
-        await _apiClient.InitializeSpeakerAsync(originalRequest.SpeakerId, cancellationToken);
-
+        int attempted = 0;
         int successCount = 0;
         int failureCount = 0;
+        var pendingCacheSaves = new List<Task>();
 
-        foreach (var segment in missingSegments)
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            try
+            foreach (var segment in segments)
             {
-                var segmentRequest = BuildSegmentRequest(segment.Text, originalRequest);
-                var audioQuery = await _apiClient.GenerateAudioQueryAsync(segmentRequest, cancellationToken);
-                var wavData = await _apiClient.SynthesizeAudioAsync(audioQuery, originalRequest.SpeakerId, cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
 
-                segment.AudioData = wavData;
-                segment.IsCached = true; // 事前合成済みフラグを兼用 (再生側がフィラー判定に利用)
-                successCount++;
-
-                if (!noCache)
+                if (segment.IsCached && segment.AudioData != null)
                 {
-                    await _cacheManager.SaveAudioCacheAsync(segmentRequest, wavData);
+                    await writer.WriteAsync(segment, cancellationToken);
+                    continue;
+                }
+
+                attempted++;
+                VoiceRequest? segmentRequest = null;
+                byte[]? wavData = null;
+
+                try
+                {
+                    segmentRequest = BuildSegmentRequest(segment.Text, originalRequest);
+                    var audioQuery = await _apiClient.GenerateAudioQueryAsync(segmentRequest, cancellationToken);
+                    wavData = await _apiClient.SynthesizeAudioAsync(audioQuery, originalRequest.SpeakerId, cancellationToken);
+
+                    segment.AudioData = wavData;
+                    segment.IsCached = true; // 再生側がスキップ判定に利用 (合成成功フラグを兼用)
+                    successCount++;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Failed to synthesize segment: {Text}", segment.Text);
+                    failureCount++;
+                    // segment.AudioData は null のまま — 再生側で skip される
+                }
+
+                // 合成失敗 (AudioData == null) でも channel には流す。再生側で skip ログを出す
+                await writer.WriteAsync(segment, cancellationToken);
+
+                if (!noCache && wavData != null && segmentRequest != null)
+                {
+                    pendingCacheSaves.Add(SaveCacheBestEffortAsync(segmentRequest, wavData));
                 }
             }
-            catch (OperationCanceledException)
+
+            if (pendingCacheSaves.Count > 0)
             {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to synthesize segment: {Text}", segment.Text);
-                failureCount++;
+                await Task.WhenAll(pendingCacheSaves);
             }
         }
+        finally
+        {
+            writer.TryComplete();
+        }
 
-        return new SynthesisResult(missingSegments.Count, successCount, failureCount);
+        return new SynthesisResult(attempted, successCount, failureCount);
+    }
+
+    private async Task SaveCacheBestEffortAsync(VoiceRequest request, byte[] wavData)
+    {
+        try
+        {
+            await _cacheManager.SaveAudioCacheAsync(request, wavData);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "キャッシュ保存に失敗しました (best-effort、再生は継続)");
+        }
     }
 
     private static VoiceRequest BuildSegmentRequest(string text, VoiceRequest source) => new()
@@ -259,8 +328,5 @@ public class TextToSpeechProcessor
         ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - startedAt).TotalMilliseconds:F1}ms", _logger);
     }
 
-    private readonly record struct SynthesisResult(int AttemptedCount, int SuccessCount, int FailureCount)
-    {
-        public static SynthesisResult Empty { get; } = new(0, 0, 0);
-    }
+    private readonly record struct SynthesisResult(int AttemptedCount, int SuccessCount, int FailureCount);
 }

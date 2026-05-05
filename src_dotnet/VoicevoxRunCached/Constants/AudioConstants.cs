@@ -31,6 +31,11 @@ public static class AudioConstants
     public const int InterSegmentGapMs = 50;
 
     /// <summary>
+    /// ストリーミング再生で次のセグメントが届かないままこの時間を超えたらフィラー音声を挿入する（ミリ秒）。
+    /// </summary>
+    public const int FillerStartDelayMs = 800;
+
+    /// <summary>
     /// 最初のセグメント再生完了後の遅延時間（ミリ秒）
     /// </summary>
     public const int FirstSegmentTrailingDelayMs = 150;

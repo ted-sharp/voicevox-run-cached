@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using System.Threading.Channels;
+using Microsoft.Extensions.Logging;
 using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
@@ -135,18 +136,22 @@ public class AudioPlayer : IDisposable
     }
 
     /// <summary>
-    /// 事前合成済みのセグメントを順次再生し、必要に応じてフィラー音声を挿入する。
+    /// セグメントが届くたびに順次再生する。次のセグメントが <see cref="AudioConstants.FillerStartDelayMs"/>
+    /// 以内に届かない場合はフィラー音声で隙間を埋める。
     /// </summary>
-    public async Task PlaySegmentsAsync(
-        List<TextSegment> segments,
+    /// <remarks>
+    /// 呼び出し元 (producer) が <see cref="ChannelWriter{T}.Complete"/> するまでループする。
+    /// AudioData が null のセグメントは合成失敗扱いで読み飛ばす。
+    /// </remarks>
+    public async Task PlayStreamingAsync(
+        ChannelReader<TextSegment> reader,
         FillerManager? fillerManager = null,
         CancellationToken cancellationToken = default)
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
-        _logger.LogDebug("PlaySegmentsAsync 開始 - セグメント数: {SegmentCount}, フィラーマネージャー: {HasFillerManager}",
-            segments.Count, fillerManager != null);
+        _logger.LogDebug("PlayStreamingAsync 開始 - フィラーマネージャー: {HasFillerManager}", fillerManager != null);
 
         await _deviceManager.EnsureDeviceReadyAsync();
 
@@ -154,43 +159,67 @@ public class AudioPlayer : IDisposable
         {
             _currentWavePlayer = _wavePlayerManager.GetOrCreateSharedWavePlayer();
 
-            bool isFirstSegment = true;
+            bool isFirstPlayback = true;
+            int playedCount = 0;
 
-            for (int i = 0; i < segments.Count; i++)
+            while (true)
             {
-                var segment = segments[i];
-                _logger.LogDebug("セグメント {SegmentNumber}/{Total} を処理中: \"{Text}\" (キャッシュ済み: {IsCached})",
-                    i + 1, segments.Count, segment.Text, segment.IsCached);
+                cancellationToken.ThrowIfCancellationRequested();
 
-                if (segment.AudioData == null || segment.AudioData.Length == 0)
+                if (reader.TryRead(out var segment))
                 {
-                    _logger.LogWarning("セグメント {SegmentIndex} に音声データがありません。スキップします: {Text}",
-                        i + 1, segment.Text);
+                    playedCount++;
+
+                    if (segment.AudioData == null || segment.AudioData.Length == 0)
+                    {
+                        _logger.LogWarning("セグメント {Index} に音声データがありません。スキップします: {Text}",
+                            playedCount, segment.Text);
+                        continue;
+                    }
+
+                    _logger.LogDebug("セグメント {Index} を再生中 (size: {Size} bytes): \"{Text}\"",
+                        playedCount, segment.AudioData.Length, segment.Text);
+
+                    await PlaySharedSegmentAsync(segment.AudioData, isFirstPlayback, cancellationToken);
+                    isFirstPlayback = false;
                     continue;
                 }
 
-                await PlaySharedSegmentAsync(segment.AudioData, isFirstSegment, cancellationToken);
-                isFirstSegment = false;
+                // 次のセグメントが未到着 — フィラー閾値だけ待機
+                var waitTask = reader.WaitToReadAsync(cancellationToken).AsTask();
+                var fillerTask = Task.Delay(AudioConstants.FillerStartDelayMs, cancellationToken);
+                var done = await Task.WhenAny(waitTask, fillerTask);
 
-                var fillerAudio = await CheckAndGetFillerAsync(i, segments, fillerManager, cancellationToken);
-                if (fillerAudio != null)
+                if (done == fillerTask)
                 {
-                    _logger.LogDebug("フィラー音声を再生します (サイズ: {Size} bytes)", fillerAudio.Length);
-                    await PlaySharedSegmentAsync(fillerAudio, isFirstSegment: false, cancellationToken);
+                    var fillerAudio = fillerManager != null
+                        ? await fillerManager.GetRandomFillerAudioAsync()
+                        : null;
+                    if (fillerAudio != null && fillerAudio.Length > 0)
+                    {
+                        _logger.LogDebug("フィラー音声を挿入 (size: {Size} bytes)", fillerAudio.Length);
+                        await PlaySharedSegmentAsync(fillerAudio, isFirstPlayback, cancellationToken);
+                        isFirstPlayback = false;
+                    }
+                    continue;
                 }
 
-                if (i < segments.Count - 1)
+                if (!await waitTask)
                 {
-                    await Task.Delay(AudioConstants.InterSegmentGapMs, cancellationToken);
+                    break;
                 }
             }
 
-            _logger.LogDebug("全セグメントの再生が完了しました");
+            _logger.LogDebug("ストリーミング再生が完了しました - 再生数: {Count}", playedCount);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (OperationCanceledException)
         {
-            _logger.LogError(ex, "PlaySegmentsAsync でエラーが発生しました");
-            throw new InvalidOperationException("音声シーケンシャル再生中にエラーが発生しました", ex);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "PlayStreamingAsync でエラーが発生しました");
+            throw new InvalidOperationException("ストリーミング再生中にエラーが発生しました", ex);
         }
         finally
         {
@@ -319,48 +348,4 @@ public class AudioPlayer : IDisposable
         }
     }
 
-    private async Task<byte[]?> CheckAndGetFillerAsync(
-        int currentIndex,
-        List<TextSegment> segments,
-        FillerManager? fillerManager,
-        CancellationToken cancellationToken)
-    {
-        if (fillerManager == null)
-        {
-            _logger.LogDebug("フィラーマネージャーが設定されていないため、フィラーは挿入されません");
-            return null;
-        }
-
-        if (currentIndex >= segments.Count - 1)
-        {
-            _logger.LogDebug("最後のセグメントのため、フィラーは挿入されません");
-            return null;
-        }
-
-        var nextSegment = segments[currentIndex + 1];
-        bool nextSegmentReady = nextSegment.IsCached && nextSegment.AudioData != null && nextSegment.AudioData.Length > 0;
-
-        if (nextSegmentReady)
-        {
-            _logger.LogDebug("次のセグメントは既に準備完了のため、フィラーは挿入されません (サイズ: {Size} bytes)",
-                nextSegment.AudioData?.Length ?? 0);
-            return null;
-        }
-
-        try
-        {
-            _logger.LogDebug("次のセグメントの準備が間に合わないため、フィラー音声を取得します");
-            var fillerAudio = await fillerManager.GetRandomFillerAudioAsync();
-            if (fillerAudio != null)
-            {
-                _logger.LogDebug("フィラー音声を取得しました (サイズ: {Size} bytes)", fillerAudio.Length);
-            }
-            return fillerAudio;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "フィラー音声の取得中にエラーが発生しました");
-            return null;
-        }
-    }
 }

@@ -41,11 +41,11 @@ _fix-all.ps1          # 上記 + tests + SonarQube + ReSharper
 
 ### Critical Implementation Details
 
-**Serial API Calls**: VOICEVOX API は呼び出し元 (`TextToSpeechProcessor.SynthesizeMissingSegmentsAsync`) が `foreach` で 1 件ずつ処理することで直列性を担保している。`VoiceVoxApiClient` 自身に明示的なロックは無いので、もし複数スレッドから同時に呼び出すコードを足す場合は呼び出し元で直列化すること。各 speaker は session 内で初回のみ `/initialize_speaker` する。
+**Serial API Calls**: VOICEVOX API は producer 側 (`TextToSpeechProcessor.ProduceSegmentsAsync`) が `foreach` で 1 件ずつ処理することで直列性を担保している。`VoiceVoxApiClient` 自身に明示的なロックは無いので、もし複数スレッドから同時に呼び出すコードを足す場合は呼び出し元で直列化すること。各 speaker は session 内で初回のみ `/initialize_speaker` する。
 
 **Cache Keys**: `SHA256(speaker_id + raw_text + speed + pitch + volume)` を 16 進文字列化したものをファイル名として使用。`{CacheDirectory}/{SHA256_HEX}.mp3` と `{SHA256_HEX}.meta.json` (speaker_id, parameters, text hash) のペアで保存。**SHA256 生成ロジックを変えると既存キャッシュが全て無効化されるため変更禁止**。
 
-**Streaming Playback**: キャッシュ済みセグメントは即座に再生開始しつつ、未キャッシュ分はバックグラウンドで生成。生成待ちの隙間は `FillerManager` が自然な相槌音声を再生して無音を回避する。
+**Streaming Playback**: `TextToSpeechProcessor.SynthesizeAndPlayAsync` で `Channel<TextSegment>` を介した producer (合成) / consumer (再生) を並走させる。キャッシュ済みセグメントは即座に channel に流して再生開始、未キャッシュ分は producer が直列に API を叩きながら順次 channel に流す。consumer 側 (`AudioPlayer.PlayStreamingAsync`) が `AudioConstants.FillerStartDelayMs` 以内に次セグメントを取れない場合は `FillerManager.GetRandomFillerAudioAsync` で相槌音声を挿入して無音を回避する。片側の例外は linked CTS で双方を停止する。キャッシュ書き込みは channel 書き込みの後で fire-and-forget して producer の次の API 呼び出しを遅らせない (producer 終了時に `Task.WhenAll` で待機)。
 
 **Audio Format Chain**: API (WAV) → NAudio で変換 → NAudio.Lame で MP3 化 → `.mp3` + `.meta.json` でキャッシュ。
 
