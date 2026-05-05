@@ -22,17 +22,17 @@ public class SpeakerCommandHandler
     /// 利用可能なスピーカーの一覧を取得・表示します
     /// </summary>
     /// <returns>処理結果の終了コード</returns>
-    public async Task<int> HandleSpeakersAsync()
+    public async Task<int> HandleSpeakersAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            if (!await _engineManager.EnsureEngineRunningAsync())
+            if (!await _engineManager.EnsureEngineRunningAsync(cancellationToken))
             {
                 ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
                 return 1;
             }
 
-            var speakers = await _apiClient.GetSpeakersAsync();
+            var speakers = await _apiClient.GetSpeakersAsync(cancellationToken);
 
             ConsoleHelper.WriteLine("Available speakers:", _logger);
             foreach (var speaker in speakers)

@@ -20,27 +20,25 @@ public class AudioFormatDetector
     /// <summary>
     /// 音声データのヘッダから検出して適切な WaveStream を返す。
     /// </summary>
-    public async Task<WaveStream> CreateWaveStreamAsync(byte[] audioData)
+    /// <remarks>
+    /// 中身は同期処理 (NAudio reader が同期) なので Task は返さない。
+    /// 返却した <see cref="WaveStream"/> が内部 <see cref="MemoryStream"/> を所有・破棄するため、
+    /// 呼び出し側は WaveStream を Dispose するだけで良い。
+    /// </remarks>
+    public WaveStream CreateWaveStream(byte[] audioData)
     {
-        using (var tempStream = new MemoryStream(audioData))
+        ArgumentNullException.ThrowIfNull(audioData);
+
+        var format = DetectFormat(audioData);
+        _logger.LogDebug("音声フォーマットを検出: {Format}", format);
+
+        var audioStream = new MemoryStream(audioData);
+        return format switch
         {
-            tempStream.Position = 0;
-            var headerBuffer = new byte[12];
-            _ = await tempStream.ReadAsync(headerBuffer.AsMemory(0, 12));
-
-            var format = DetectFormat(headerBuffer);
-            _logger.LogDebug("音声フォーマットを検出: {Format}", format);
-
-            var audioStream = new MemoryStream(audioData);
-            audioStream.Position = 0;
-
-            return format switch
-            {
-                AudioFormat.Wav => new WaveFileReader(audioStream),
-                AudioFormat.Mp3 => new Mp3FileReader(audioStream),
-                _ => CreateFallbackWaveStream(audioStream)
-            };
-        }
+            AudioFormat.Wav => new WaveFileReader(audioStream),
+            AudioFormat.Mp3 => new Mp3FileReader(audioStream),
+            _ => CreateFallbackWaveStream(audioStream)
+        };
     }
 
     public static AudioFormat DetectFormat(byte[] headerBuffer)

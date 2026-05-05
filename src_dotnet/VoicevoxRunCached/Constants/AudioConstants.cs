@@ -116,21 +116,6 @@ public static class AudioConstants
     public const int ProgressSpinnerStopWaitTimeoutMs = 1000;
 
     /// <summary>
-    /// Polly サーキットブレーカーの遮断継続時間（秒）
-    /// </summary>
-    public const int CircuitBreakerDurationSeconds = 30;
-
-    /// <summary>
-    /// Polly タイムアウトポリシーの 1 操作あたりの上限時間（秒）
-    /// </summary>
-    public const int OperationTimeoutSeconds = 30;
-
-    /// <summary>
-    /// Polly サーキットブレーカーが開く前に許容する例外回数
-    /// </summary>
-    public const int CircuitBreakerExceptionThreshold = 3;
-
-    /// <summary>
     /// API リトライの最大試行回数
     /// </summary>
     public const int RetryMaxAttempts = 3;

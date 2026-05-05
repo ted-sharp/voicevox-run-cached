@@ -36,8 +36,7 @@
     <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
 
-    <!-- Phase 2: Polly + メモリキャッシュ -->
-    <PackageReference Include="Polly" Version="8.6.5" />
+    <!-- Phase 2: メモリキャッシュ -->
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.2" />
 
     <!-- Phase 3: BenchmarkDotNet + Channels -->

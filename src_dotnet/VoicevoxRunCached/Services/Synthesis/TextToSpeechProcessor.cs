@@ -49,17 +49,25 @@ public class TextToSpeechProcessor
     {
         var totalStartTime = DateTime.UtcNow;
 
-        if (!await _engineManager.EnsureEngineRunningAsync())
+        if (!await _engineManager.EnsureEngineRunningAsync(cancellationToken))
         {
-            ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
-            return 1;
+            throw new VoicevoxRunCachedException(
+                ErrorCodes.Engine.EngineNotAvailable,
+                "VOICEVOX engine is not available",
+                "VOICEVOXエンジンが利用できません。",
+                null,
+                "VOICEVOXエンジンが起動しているか、appsettings.json の EnginePath が正しいか確認してください。");
         }
 
         var segments = await LoadSegmentsAsync(request, noCache, cancellationToken);
         if (segments.Count == 0)
         {
-            ConsoleHelper.WriteError("Error: No segments to process", _logger);
-            return 1;
+            throw new VoicevoxRunCachedException(
+                ErrorCodes.General.InvalidArguments,
+                "No segments to process",
+                "処理対象のセグメントがありません。",
+                null,
+                "テキストが空でないか確認してください。");
         }
 
         if (cacheOnly)
@@ -67,8 +75,12 @@ public class TextToSpeechProcessor
             var uncachedCount = segments.Count(s => !s.IsCached);
             if (uncachedCount > 0)
             {
-                ConsoleHelper.WriteWarning($"Warning: {uncachedCount} segments are not cached", _logger);
-                return 1;
+                throw new VoicevoxRunCachedException(
+                    ErrorCodes.Cache.CacheReadError,
+                    $"{uncachedCount} segments are not cached",
+                    $"{uncachedCount} 個のセグメントがキャッシュに存在しません。",
+                    null,
+                    "--cache-only を外すか、事前に該当テキストを合成してキャッシュを作成してください。");
             }
         }
 
@@ -199,9 +211,10 @@ public class TextToSpeechProcessor
     /// 各 API 呼び出しは直列。channel への書き込み後にキャッシュ保存を fire-and-forget して、次の API 呼び出しを遅らせない。
     /// </summary>
     /// <remarks>
-    /// 全セグメントを書き終えたら writer.TryComplete() を即座に呼んで再生側を解放する。
-    /// その後にキャッシュ保存の WhenAll を待つことで、再生終了直後に発生するフィラー誤発火を避けつつ、
-    /// 戻り値で保存完了まで上位に伝える。
+    /// 順序契約 (フィラー誤発火を避けるため厳守):
+    ///   1. 全セグメントの write 完了 (または例外) → writer.TryComplete() で再生側を即座に解放
+    ///   2. その後に pendingCacheSaves を WhenAll で待つ
+    /// 例外パスでも 2. を必ず実行することで、producer 終了 = 全 cache save 完了を上位に保証する。
     /// </remarks>
     private async Task<SynthesisResult> ProduceSegmentsAsync(
         List<TextSegment> segments,
@@ -263,15 +276,19 @@ public class TextToSpeechProcessor
         }
         finally
         {
-            // ディスク I/O より前に再生側を解放する。
-            // ここを WhenAll 後に置くと、最終セグメント再生後の WaitToReadAsync が
-            // FillerStartDelayMs を超えてフィラーを誤発火させる。
+            // 1. ディスク I/O より前に再生側を解放する。
+            //    ここを WhenAll 後に置くと、最終セグメント再生後の WaitToReadAsync が
+            //    FillerStartDelayMs を超えてフィラーを誤発火させる。
             writer.TryComplete();
-        }
 
-        if (pendingCacheSaves.Count > 0)
-        {
-            await Task.WhenAll(pendingCacheSaves);
+            // 2. 例外パスでも cache save の完了を待つ (best-effort タスクなので例外は握る)。
+            //    finally 内で await することで、上位は producer 終了 = 全保存完了を期待できる。
+            if (pendingCacheSaves.Count > 0)
+            {
+                try
+                { await Task.WhenAll(pendingCacheSaves); }
+                catch { /* SaveCacheBestEffortAsync 内でログ済み */ }
+            }
         }
 
         return new SynthesisResult(attempted, successCount, failureCount);

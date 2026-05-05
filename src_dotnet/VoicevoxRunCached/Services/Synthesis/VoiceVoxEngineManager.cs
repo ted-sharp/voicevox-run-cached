@@ -38,24 +38,28 @@ public class VoiceVoxEngineManager : IDisposable
         _disposed = true;
     }
 
-    public async Task<bool> EnsureEngineRunningAsync()
+    public async Task<bool> EnsureEngineRunningAsync(CancellationToken cancellationToken = default)
     {
         if (!_settings.AutoStartEngine)
-            return await IsEngineRunningAsync();
+            return await IsEngineRunningAsync(cancellationToken);
 
-        if (await IsEngineRunningAsync())
+        if (await IsEngineRunningAsync(cancellationToken))
             return true;
 
         _logger.LogInformation("VOICEVOXエンジンが検出されていません。起動を試行します...");
-        return await StartEngineAsync();
+        return await StartEngineAsync(cancellationToken);
     }
 
-    private async Task<bool> IsEngineRunningAsync()
+    private async Task<bool> IsEngineRunningAsync(CancellationToken cancellationToken)
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{_settings.BaseUrl}/version");
+            var response = await _httpClient.GetAsync($"{_settings.BaseUrl}/version", cancellationToken);
             return response.IsSuccessStatusCode;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
@@ -63,7 +67,7 @@ public class VoiceVoxEngineManager : IDisposable
         }
     }
 
-    private async Task<bool> StartEngineAsync()
+    private async Task<bool> StartEngineAsync(CancellationToken cancellationToken)
     {
         string enginePath = _settings.EnginePath;
 
@@ -110,13 +114,15 @@ public class VoiceVoxEngineManager : IDisposable
 
             while (DateTime.UtcNow - startTime < timeout)
             {
-                if (await IsEngineRunningAsync())
+                cancellationToken.ThrowIfCancellationRequested();
+
+                if (await IsEngineRunningAsync(cancellationToken))
                 {
                     _logger.LogInformation("VOICEVOXエンジンが正常に起動しました");
                     return true;
                 }
 
-                await Task.Delay(AudioConstants.EngineStartupPollIntervalMs);
+                await Task.Delay(AudioConstants.EngineStartupPollIntervalMs, cancellationToken);
             }
 
             _logger.LogError("VOICEVOXエンジンの起動タイムアウトが発生しました");
@@ -135,7 +141,9 @@ public class VoiceVoxEngineManager : IDisposable
         {
             try
             {
-                _engineProcess.Kill();
+                // VOICEVOX/AivisSpeech は run.exe から uvicorn worker 等の子プロセスを spawn するため、
+                // 親だけ Kill するとワーカープロセスがゾンビ化する。
+                _engineProcess.Kill(entireProcessTree: true);
                 _engineProcess.WaitForExit(AudioConstants.EngineStopWaitTimeoutMs);
             }
             catch (Exception ex)

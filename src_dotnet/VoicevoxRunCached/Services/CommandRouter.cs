@@ -54,11 +54,11 @@ public class CommandRouter
         {
             return command switch
             {
-                "speakers" => await _speakerHandler.HandleSpeakersAsync(),
+                "speakers" => await _speakerHandler.HandleSpeakersAsync(cancellationToken),
                 "devices" => _deviceHandler.HandleDevices(subArgs),
-                "--init" => await _initHandler.HandleInitAsync(),
+                "--init" => await _initHandler.HandleInitAsync(cancellationToken),
                 "--clear" => await _cacheHandler.HandleClearCacheAsync(),
-                "--benchmark" => await _benchmarkHandler.HandleBenchmarkAsync(),
+                "--benchmark" => await _benchmarkHandler.HandleBenchmarkAsync(cancellationToken),
                 "--test" => await HandleTestCommandAsync(subArgs, cancellationToken),
                 _ => await ExecuteTextToSpeechCommandAsync(args, cancellationToken)
             };

@@ -1,62 +1,29 @@
 ﻿using System.Net;
 using System.Net.Sockets;
 using Microsoft.Extensions.Logging;
-using Polly;
-using Polly.CircuitBreaker;
-using Polly.Retry;
 using VoicevoxRunCached.Constants;
 
 namespace VoicevoxRunCached.Services.Infrastructure;
 
+/// <summary>
+/// HTTP/IO 系の retry ポリシーを集約する。指数バックオフ + jitter で再試行する。
+/// </summary>
+/// <remarks>
+/// HTTP ステータスコード別の判定 (5xx/429 のみ retry) と TooManyRequests 下限調整を持つため、
+/// 単純な Polly ポリシーで置き換えるとロジックが薄くなる。手書きループで保守する方針。
+/// </remarks>
 public class RetryPolicyService
 {
     private const int BaseDelayMs = AudioConstants.RetryBaseDelayMs;
     private const int MaxDelayMs = AudioConstants.RetryMaxDelayMs;
     private const int MaxRetryAttempts = AudioConstants.RetryMaxAttempts;
 
-    private readonly AsyncCircuitBreakerPolicy _circuitBreakerPolicy;
-    private readonly AsyncPolicy _combinedPolicy;
-    private readonly AsyncRetryPolicy _retryPolicy;
     private readonly ILogger _logger;
 
     public RetryPolicyService(ILogger logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
-        _retryPolicy = Policy
-            .Handle<HttpRequestException>()
-            .Or<TimeoutException>()
-            .Or<OperationCanceledException>()
-            .WaitAndRetryAsync(
-                retryCount: MaxRetryAttempts,
-                sleepDurationProvider: retryAttempt =>
-                    TimeSpan.FromSeconds(Math.Pow(2, retryAttempt - 1)),
-                onRetry: (exception, timeSpan, retryCount, _) =>
-                {
-                    _logger.LogWarning(exception, "リトライ {RetryCount}/{MaxRetries} - {TimeSpan}後に再試行します",
-                        retryCount, MaxRetryAttempts, timeSpan);
-                }
-            );
-
-        _circuitBreakerPolicy = Policy
-            .Handle<HttpRequestException>()
-            .Or<TimeoutException>()
-            .CircuitBreakerAsync(
-                exceptionsAllowedBeforeBreaking: AudioConstants.CircuitBreakerExceptionThreshold,
-                durationOfBreak: TimeSpan.FromSeconds(AudioConstants.CircuitBreakerDurationSeconds),
-                onBreak: (exception, duration) =>
-                    _logger.LogError(exception, "サーキットブレーカーが開きました - {Duration}間隔でブロック", duration),
-                onReset: () => _logger.LogInformation("サーキットブレーカーがリセットされました"),
-                onHalfOpen: () => _logger.LogInformation("サーキットブレーカーが半開状態になりました")
-            );
-
-        var timeoutPolicy = Policy.TimeoutAsync(TimeSpan.FromSeconds(AudioConstants.OperationTimeoutSeconds));
-        _combinedPolicy = Policy.WrapAsync(_retryPolicy, _circuitBreakerPolicy, timeoutPolicy);
     }
-
-    public AsyncPolicy GetRetryPolicy() => _retryPolicy;
-    public AsyncPolicy GetCircuitBreakerPolicy() => _circuitBreakerPolicy;
-    public AsyncPolicy GetCombinedPolicy() => _combinedPolicy;
 
     public async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> operation, string operationName, CancellationToken cancellationToken = default)
     {

@@ -28,11 +28,11 @@ public class InitCommandHandler
     /// フィラーキャッシュの初期化を行います
     /// </summary>
     /// <returns>処理結果の終了コード</returns>
-    public async Task<int> HandleInitAsync()
+    public async Task<int> HandleInitAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            if (!await _engineManager.EnsureEngineRunningAsync())
+            if (!await _engineManager.EnsureEngineRunningAsync(cancellationToken))
             {
                 ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
                 return 1;

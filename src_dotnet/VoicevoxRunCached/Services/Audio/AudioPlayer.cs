@@ -212,7 +212,7 @@ public class AudioPlayer : IDisposable
         {
             _logger.LogDebug("PlayWaveAsync 開始 - サイズ: {Size} bytes", audioData.Length);
 
-            reader = await _formatDetector.CreateWaveStreamAsync(audioData);
+            reader = _formatDetector.CreateWaveStream(audioData);
 
             var tcs = new TaskCompletionSource<bool>();
             EventHandler<StoppedEventArgs>? handler = null;

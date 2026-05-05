@@ -122,6 +122,11 @@ public class VoiceVoxApiClient : IDisposable
     /// <summary>
     /// API 呼び出しの共通ラッパ: リトライ + エラーハンドリング + 例外変換。
     /// </summary>
+    /// <remarks>
+    /// ユーザーキャンセル (cancellationToken.IsCancellationRequested) は素のまま再 throw して
+    /// CommandRouter 側で exit code 0 として処理させる。HTTP 由来のタイムアウト (TaskCanceledException
+    /// で IsCancellationRequested = false) は MapToApiException で API timeout に変換する。
+    /// </remarks>
     private async Task<T> ExecuteApiAsync<T>(string operationName, Func<CancellationToken, Task<T>> apiCall, CancellationToken cancellationToken)
     {
         try
@@ -132,16 +137,10 @@ public class VoiceVoxApiClient : IDisposable
         {
             throw;
         }
-        catch (TaskCanceledException ex) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             _logger.LogInformation("{OperationName} がキャンセルされました", operationName);
-            throw new VoicevoxRunCachedException(
-                ErrorCodes.General.OperationCancelled,
-                $"{operationName} was cancelled",
-                $"{operationName} がキャンセルされました。",
-                ex,
-                "操作を再実行してください。"
-            );
+            throw;
         }
         catch (Exception ex)
         {

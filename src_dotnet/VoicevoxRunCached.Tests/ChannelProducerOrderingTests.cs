@@ -1,4 +1,4 @@
-using System.Threading.Channels;
+﻿using System.Threading.Channels;
 
 namespace VoicevoxRunCached.Tests;
 
@@ -19,7 +19,7 @@ public class ChannelProducerOrderingTests
         // 「キャッシュ保存」を擬似する遅延タスク。saveCompletion を上位から制御する。
         Task Save() => saveCompletion.Task;
 
-        var producerTask = ProduceCoreAsync(channel.Writer, Save);
+        var producerTask = ProduceCoreAsync(channel.Writer, Save, throwAfterWrites: false);
 
         // consumer 側 — channel が閉じるまで読む
         var readCount = 0;
@@ -40,10 +40,40 @@ public class ChannelProducerOrderingTests
         await Assert.That(producerTask.IsCompletedSuccessfully).IsTrue();
     }
 
+    [Test]
+    public async Task WriterCompletes_AndCacheSavesAwait_OnException()
+    {
+        // 例外パスでも writer.TryComplete() が走り、かつ pendingCacheSaves が
+        // 最後まで await されることを検証する。
+        var channel = Channel.CreateUnbounded<int>();
+        var saveCompletion = new TaskCompletionSource<bool>();
+
+        Task Save() => saveCompletion.Task;
+
+        var producerTask = ProduceCoreAsync(channel.Writer, Save, throwAfterWrites: true);
+
+        // 例外発生まで producer は writes を完了させてから throw する。
+        // 先に consumer が channel を完全に drain できる (= TryComplete が finally で走った証拠)。
+        var readCount = 0;
+        await foreach (var _ in channel.Reader.ReadAllAsync())
+        {
+            readCount++;
+        }
+        await Assert.That(readCount).IsEqualTo(3);
+
+        // しかし producer はまだ pendingCacheSaves 待機中
+        await Assert.That(producerTask.IsCompleted).IsFalse();
+
+        // saves が解放されると producer が完了 (例外で faulted)
+        saveCompletion.SetResult(true);
+        await Assert.That(async () => await producerTask).ThrowsExactly<InvalidOperationException>();
+    }
+
     /// <summary>
-    /// 本番側 ProduceSegmentsAsync と同じ順序: write 群 → finally で TryComplete → 後処理 await
+    /// 本番側 ProduceSegmentsAsync と同じ順序: write 群 → finally で TryComplete + WhenAll
+    /// 例外パスでも cache save 待機が走ることを保証する。
     /// </summary>
-    private static async Task ProduceCoreAsync(ChannelWriter<int> writer, Func<Task> saveTaskFactory)
+    private static async Task ProduceCoreAsync(ChannelWriter<int> writer, Func<Task> saveTaskFactory, bool throwAfterWrites)
     {
         var pendingSaves = new List<Task>();
         try
@@ -53,12 +83,22 @@ public class ChannelProducerOrderingTests
                 await writer.WriteAsync(i);
                 pendingSaves.Add(saveTaskFactory());
             }
+
+            if (throwAfterWrites)
+            {
+                throw new InvalidOperationException("simulated failure after writes");
+            }
         }
         finally
         {
             writer.TryComplete();
-        }
 
-        await Task.WhenAll(pendingSaves);
+            if (pendingSaves.Count > 0)
+            {
+                try
+                { await Task.WhenAll(pendingSaves); }
+                catch { /* best-effort */ }
+            }
+        }
     }
 }

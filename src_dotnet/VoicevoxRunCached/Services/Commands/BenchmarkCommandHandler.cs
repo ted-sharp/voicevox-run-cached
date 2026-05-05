@@ -30,11 +30,11 @@ public class BenchmarkCommandHandler
     /// パフォーマンスベンチマークを実行します
     /// </summary>
     /// <returns>処理結果の終了コード</returns>
-    public async Task<int> HandleBenchmarkAsync()
+    public async Task<int> HandleBenchmarkAsync(CancellationToken cancellationToken = default)
     {
         try
         {
-            if (!await _engineManager.EnsureEngineRunningAsync())
+            if (!await _engineManager.EnsureEngineRunningAsync(cancellationToken))
             {
                 ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
                 return 1;
@@ -43,7 +43,7 @@ public class BenchmarkCommandHandler
             ConsoleHelper.WriteLine("Starting performance benchmark...", _logger);
             ConsoleHelper.WriteLine("Warming up...", _logger);
 
-            await _apiClient.InitializeSpeakerAsync(_settings.DefaultSpeaker);
+            await _apiClient.InitializeSpeakerAsync(_settings.DefaultSpeaker, cancellationToken);
 
             ConsoleHelper.WriteLine("Benchmarking...", _logger);
             var segments = new List<TextSegment>
@@ -58,6 +58,7 @@ public class BenchmarkCommandHandler
 
             for (int i = 0; i < 10; i++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 spinner.UpdateMessage($"Benchmark iteration {i + 1}/10");
                 var request = new VoiceRequest
                 {
@@ -68,8 +69,8 @@ public class BenchmarkCommandHandler
                     Volume = 1.0
                 };
 
-                var audioQuery = await _apiClient.GenerateAudioQueryAsync(request, CancellationToken.None);
-                _ = await _apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId, CancellationToken.None);
+                var audioQuery = await _apiClient.GenerateAudioQueryAsync(request, cancellationToken);
+                _ = await _apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId, cancellationToken);
             }
 
             var elapsedTime = (DateTime.UtcNow - totalStartTime).TotalMilliseconds;
