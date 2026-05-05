@@ -568,7 +568,9 @@ Thumbs.db
 *~
 
 # VoicevoxRunCached specific
-cache/
+# 実行時キャッシュ。ソース側の Services/Cache/ を巻き込まないよう / で anchor する。
+/cache/
+**/bin/**/cache/
 *.mp3
 *.meta.json
 release/
