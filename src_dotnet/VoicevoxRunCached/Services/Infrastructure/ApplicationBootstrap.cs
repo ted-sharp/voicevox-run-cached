@@ -98,17 +98,8 @@ public static class ApplicationBootstrap
     private static Task ValidateConfigurationAsync(AppSettings settings)
     {
         var validationService = new ConfigurationValidationService();
-        try
-        {
-            validationService.ValidateConfiguration(settings);
-            ConsoleHelper.WriteValidationSuccess("設定の検証が完了しました");
-        }
-        catch (InvalidOperationException ex)
-        {
-            ConsoleHelper.WriteValidationError($"設定の検証に失敗しました: {ex.Message}");
-            throw;
-        }
-
+        validationService.ValidateConfiguration(settings);
+        ConsoleHelper.WriteValidationSuccess("設定の検証が完了しました");
         return Task.CompletedTask;
     }
 

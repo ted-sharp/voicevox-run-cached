@@ -21,16 +21,6 @@ public static class AudioConstants
     public const int SubsequentSegmentDelayMs = 20;
 
     /// <summary>
-    /// バッファフラッシュのための遅延時間（ミリ秒）
-    /// </summary>
-    public const int BufferFlushDelayMs = 150;
-
-    /// <summary>
-    /// セグメント間の挿入待機時間（ミリ秒）
-    /// </summary>
-    public const int InterSegmentGapMs = 50;
-
-    /// <summary>
     /// ストリーミング再生で次のセグメントが届かないままこの時間を超えたらフィラー音声を挿入する（ミリ秒）。
     /// </summary>
     public const int FillerStartDelayMs = 800;
@@ -59,11 +49,6 @@ public static class AudioConstants
     /// デバイス準備クリーンアップのタイムアウト時間（秒）
     /// </summary>
     public const int DevicePreparationCleanupTimeoutSeconds = 2;
-
-    /// <summary>
-    /// バックグラウンドキャッシュクリーンアップのタイムアウト時間（ミリ秒）
-    /// </summary>
-    public const int BackgroundCacheCleanupTimeoutMs = 5000;
 
     /// <summary>
     /// デフォルトサンプルレート

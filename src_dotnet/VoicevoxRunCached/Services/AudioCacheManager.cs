@@ -172,20 +172,19 @@ public class AudioCacheManager : IDisposable
     /// 複数セグメントを順次処理する。各セグメントはキャッシュからの取得を試み、ヒット時に AudioData を埋める。
     /// </summary>
     /// <remarks>
-    /// 並列化は I/O 集中時にディスクシークを増やすだけでメモリヒットでは無意味。
-    /// 順次にすることで進捗ログも読みやすくなる。
+    /// 引数 <paramref name="segments"/> を in-place で mutate し、同じ List を返す。
+    /// 並列化は I/O 集中時にディスクシークを増やすだけでメモリヒットでは無意味なので順次実行する。
     /// </remarks>
     public async Task<List<TextSegment>> ProcessTextSegmentsAsync(List<TextSegment> segments, VoiceRequest request, CancellationToken cancellationToken = default)
     {
-        var results = new List<TextSegment>(segments.Count);
         foreach (var segment in segments)
         {
-            results.Add(await ProcessSegmentAsync(segment, request, cancellationToken));
+            await ProcessSegmentAsync(segment, request, cancellationToken);
         }
-        return results;
+        return segments;
     }
 
-    private async Task<TextSegment> ProcessSegmentAsync(TextSegment segment, VoiceRequest request, CancellationToken cancellationToken)
+    private async Task ProcessSegmentAsync(TextSegment segment, VoiceRequest request, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -205,8 +204,6 @@ public class AudioCacheManager : IDisposable
             segment.IsCached = false;
             _logger.LogDebug("セグメントはキャッシュにありません - テキスト: {Text}", segment.Text);
         }
-
-        return segment;
     }
 
     private Task<T> WithCacheErrorHandling<T>(CacheErrorMapper.OperationKind kind, string operation, string? cacheKey, Func<Task<T>> action)

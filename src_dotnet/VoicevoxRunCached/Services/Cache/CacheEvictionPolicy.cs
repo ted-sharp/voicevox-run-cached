@@ -72,75 +72,66 @@ public class CacheEvictionPolicy
     /// <summary>
     /// MaxSizeGb を超えていれば古いものから削除する。
     /// </summary>
-    public async Task CleanupByMaxSizeAsync(CancellationToken cancellationToken = default)
+    public Task CleanupByMaxSizeAsync(CancellationToken cancellationToken = default)
     {
-        try
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (!Directory.Exists(_settings.Directory))
-                return;
-
-            var dirInfo = new DirectoryInfo(_settings.Directory);
-            var entries = dirInfo.GetFiles("*.mp3", SearchOption.TopDirectoryOnly)
-                .Select(f => new FileEntry(
-                    f,
-                    new FileInfo(Path.Combine(_settings.Directory,
-                        Path.GetFileNameWithoutExtension(f.Name) + ".meta.json"))))
-                .ToList();
-
-            long totalBytes = entries.Sum(x => x.File.Length);
-            long maxBytes = (long)(Math.Max(0.0, _settings.MaxSizeGb) * 1024 * 1024 * 1024);
-
-            if (maxBytes <= 0 || totalBytes <= maxBytes)
-                return;
-
-            // タイムスタンプで降順比較するため、各エントリの timestamp を非同期で先に解決する
-            var withTimestamps = new List<(FileEntry Entry, DateTime Timestamp)>(entries.Count);
-            foreach (var entry in entries)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var ts = await ResolveTimestampAsync(entry, cancellationToken);
-                withTimestamps.Add((entry, ts));
-            }
-
-            var ordered = withTimestamps.OrderBy(x => x.Timestamp).Select(x => x.Entry).ToList();
-
-            int deleted = 0;
-            foreach (var entry in ordered)
+        return CacheErrorMapper.WithMappingAsync<object?>(
+            CacheErrorMapper.OperationKind.Cleanup,
+            "サイズ制限によるキャッシュクリーンアップ",
+            null,
+            _settings.Directory,
+            _logger,
+            async () =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (totalBytes <= maxBytes)
-                    break;
+                if (!Directory.Exists(_settings.Directory))
+                    return null;
 
-                try
+                var dirInfo = new DirectoryInfo(_settings.Directory);
+                var entries = dirInfo.GetFiles("*.mp3", SearchOption.TopDirectoryOnly)
+                    .Select(f => new FileEntry(
+                        f,
+                        new FileInfo(Path.Combine(_settings.Directory,
+                            Path.GetFileNameWithoutExtension(f.Name) + ".meta.json"))))
+                    .ToList();
+
+                long totalBytes = entries.Sum(x => x.File.Length);
+                long maxBytes = (long)(Math.Max(0.0, _settings.MaxSizeGb) * 1024 * 1024 * 1024);
+
+                if (maxBytes <= 0 || totalBytes <= maxBytes)
+                    return null;
+
+                // タイムスタンプで昇順比較するため、各エントリの timestamp を非同期で先に解決する (古いものから削除)
+                var withTimestamps = new List<(FileEntry Entry, DateTime Timestamp)>(entries.Count);
+                foreach (var entry in entries)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var ts = await ResolveTimestampAsync(entry, cancellationToken);
+                    withTimestamps.Add((entry, ts));
+                }
+
+                var ordered = withTimestamps.OrderBy(x => x.Timestamp).Select(x => x.Entry).ToList();
+
+                int deleted = 0;
+                foreach (var entry in ordered)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    if (totalBytes <= maxBytes)
+                        break;
+
                     var key = Path.GetFileNameWithoutExtension(entry.File.Name);
                     _disk.Delete(key);
                     totalBytes -= entry.File.Length;
                     deleted++;
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "サイズクリーンアップ中のファイル削除に失敗: {File}", entry.File.Name);
-                }
-            }
 
-            if (deleted > 0)
-            {
-                _logger.LogInformation("サイズ制限によるキャッシュクリーンアップが完了しました - {Count} ファイル削除", deleted);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogDebug("サイズクリーンアップがキャンセルされました");
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "サイズクリーンアップに失敗しました");
-        }
+                if (deleted > 0)
+                {
+                    _logger.LogInformation("サイズ制限によるキャッシュクリーンアップが完了しました - {Count} ファイル削除", deleted);
+                }
+                return null;
+            });
     }
 
     /// <summary>

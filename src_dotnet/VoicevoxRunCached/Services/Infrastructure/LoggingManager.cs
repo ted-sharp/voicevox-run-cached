@@ -47,9 +47,6 @@ public class LoggingManager
             ConfigureFileLogging(loggerConfiguration);
         }
 
-        // パフォーマンスメトリクスの設定
-        ConfigurePerformanceLogging(loggerConfiguration);
-
         // グローバルロガーを設定
         Log.Logger = loggerConfiguration.CreateLogger();
 
@@ -100,17 +97,6 @@ public class LoggingManager
             outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}",
             shared: true,
             flushToDiskInterval: TimeSpan.FromSeconds(1));
-    }
-
-    /// <summary>
-    /// パフォーマンスメトリクスの設定
-    /// </summary>
-    private void ConfigurePerformanceLogging(LoggerConfiguration config)
-    {
-        // パフォーマンス関連のログを特別に処理
-        config.WriteTo.Logger(lc => lc
-            .Filter.ByIncludingOnly(e => e.Properties.ContainsKey("PerformanceMetric"))
-            .WriteTo.Console(outputTemplate: "[PERF] {Message:lj} {Properties:j}{NewLine}"));
     }
 
     /// <summary>

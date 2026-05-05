@@ -1,7 +1,6 @@
 ﻿using BenchmarkDotNet.Attributes;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
-using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services;
@@ -20,6 +19,10 @@ public class AudioProcessingBenchmarks
     [GlobalSetup]
     public void Setup()
     {
+        // BenchmarkDotNet 経由の単体起動では ApplicationBootstrap が走らないため、
+        // MP3 エンコードが MediaFoundation を踏むケースを考慮して MFA を確保しておく
+        MediaFoundationManager.Acquire();
+
         // サンプルWAVデータを生成（1秒間の44.1kHz 16bit モノラル）
         _sampleWavData = GenerateSampleWavData();
 
@@ -45,12 +48,13 @@ public class AudioProcessingBenchmarks
     {
         _cacheManager.Dispose();
         (_memoryCache as MemoryCache)?.Dispose();
+        MediaFoundationManager.Release();
     }
 
     [Benchmark]
     public byte[] WavToMp3Conversion()
     {
-        return ConvertWavToMp3(_sampleWavData);
+        return AudioConversionUtility.ConvertWavToMp3(_sampleWavData);
     }
 
     [Benchmark]
@@ -130,21 +134,4 @@ public class AudioProcessingBenchmarks
         return wavData;
     }
 
-    private static byte[] ConvertWavToMp3(byte[] wavData)
-    {
-        try
-        {
-            using var wavStream = new MemoryStream(wavData);
-            using var waveReader = new WaveFileReader(wavStream);
-            using var outputStream = new MemoryStream();
-
-            MediaFoundationManager.EnsureInitialized();
-            MediaFoundationEncoder.EncodeToMp3(waveReader, outputStream, 128000);
-            return outputStream.ToArray();
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException($"Failed to convert WAV to MP3: {ex.Message}", ex);
-        }
-    }
 }

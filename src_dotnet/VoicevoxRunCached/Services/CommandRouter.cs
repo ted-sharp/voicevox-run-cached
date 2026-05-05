@@ -122,7 +122,6 @@ public class CommandRouter
 
     private Task<int> RunTextToSpeechAsync(Models.VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken)
     {
-        return _ttsProcessor.ProcessTextToSpeechAsync(
-            request, options.NoCache, options.CacheOnly, options.Verbose, options.OutPath, options.NoPlay, cancellationToken);
+        return _ttsProcessor.ProcessTextToSpeechAsync(request, options, cancellationToken);
     }
 }

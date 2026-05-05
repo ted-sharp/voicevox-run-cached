@@ -57,30 +57,6 @@ public static class MediaFoundationManager
     }
 
     /// <summary>
-    /// 参照カウントを増やさず、未初期化なら初期化のみ行う安全弁。
-    /// (単発呼び出しの利用元向け)
-    /// </summary>
-    public static void EnsureInitialized()
-    {
-        lock (_lock)
-        {
-            if (_isInitialized)
-            {
-                return;
-            }
-
-            MediaFoundationApi.Startup();
-            _isInitialized = true;
-
-            if (!_processExitRegistered)
-            {
-                AppDomain.CurrentDomain.ProcessExit += (_, _) => SafeShutdown();
-                _processExitRegistered = true;
-            }
-        }
-    }
-
-    /// <summary>
     /// 参照カウントを 1 減算し、0 になったら MediaFoundationApi.Shutdown() を呼ぶ。
     /// </summary>
     public static void Release(ILogger? logger = null)

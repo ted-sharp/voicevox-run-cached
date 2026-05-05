@@ -23,7 +23,6 @@ public class AudioPlayer : IDisposable
     private readonly WavePlayerManager _wavePlayerManager;
     private readonly ILogger _logger;
     private bool _disposed;
-    private IWavePlayer? _currentWavePlayer;
 
     public AudioPlayer(
         AudioSettings settings,
@@ -81,7 +80,7 @@ public class AudioPlayer : IDisposable
 
         try
         {
-            _currentWavePlayer = _wavePlayerManager.GetOrCreateSharedWavePlayer();
+            var wavePlayer = _wavePlayerManager.GetOrCreateSharedWavePlayer();
 
             bool isFirstPlayback = true;
             int playedCount = 0;
@@ -104,7 +103,7 @@ public class AudioPlayer : IDisposable
                     _logger.LogDebug("セグメント {Index} を再生中 (size: {Size} bytes): \"{Text}\"",
                         playedCount, segment.AudioData.Length, segment.Text);
 
-                    await PlaySharedSegmentAsync(segment.AudioData, isFirstPlayback, cancellationToken);
+                    await PlaySharedSegmentAsync(wavePlayer, segment.AudioData, isFirstPlayback, cancellationToken);
                     isFirstPlayback = false;
                     continue;
                 }
@@ -116,7 +115,7 @@ public class AudioPlayer : IDisposable
                     break;
                 }
                 if (waitOutcome == NextSegmentWait.FillerTimeout
-                    && await TryPlayFillerAsync(fillerManager, isFirstPlayback, cancellationToken))
+                    && await TryPlayFillerAsync(wavePlayer, fillerManager, isFirstPlayback, cancellationToken))
                 {
                     isFirstPlayback = false;
                 }
@@ -153,8 +152,6 @@ public class AudioPlayer : IDisposable
     {
         try
         {
-            _currentWavePlayer?.Stop();
-            _currentWavePlayer = null;
             _wavePlayerManager.StopSharedWavePlayer();
         }
         catch (Exception ex)
@@ -195,7 +192,7 @@ public class AudioPlayer : IDisposable
     /// <summary>
     /// フィラー音声を再生する。フィラーが無効/未取得時は何もせず false を返す。
     /// </summary>
-    private async Task<bool> TryPlayFillerAsync(FillerManager? fillerManager, bool isFirstPlayback, CancellationToken cancellationToken)
+    private async Task<bool> TryPlayFillerAsync(IWavePlayer wavePlayer, FillerManager? fillerManager, bool isFirstPlayback, CancellationToken cancellationToken)
     {
         var fillerAudio = fillerManager != null
             ? await fillerManager.GetRandomFillerAudioAsync(cancellationToken)
@@ -205,17 +202,12 @@ public class AudioPlayer : IDisposable
             return false;
         }
         _logger.LogDebug("フィラー音声を挿入 (size: {Size} bytes)", fillerAudio.Length);
-        await PlaySharedSegmentAsync(fillerAudio, isFirstPlayback, cancellationToken);
+        await PlaySharedSegmentAsync(wavePlayer, fillerAudio, isFirstPlayback, cancellationToken);
         return true;
     }
 
-    private Task PlaySharedSegmentAsync(byte[] audioData, bool isFirstSegment, CancellationToken cancellationToken)
+    private Task PlaySharedSegmentAsync(IWavePlayer wavePlayer, byte[] audioData, bool isFirstSegment, CancellationToken cancellationToken)
     {
-        if (_currentWavePlayer == null)
-        {
-            throw new InvalidOperationException("共有 WavePlayer が初期化されていません");
-        }
-
         var leadingDelayMs = isFirstSegment
             ? AudioConstants.FirstSegmentDelayMs
             : AudioConstants.SubsequentSegmentDelayMs;
@@ -225,7 +217,7 @@ public class AudioPlayer : IDisposable
 
         return PlayWaveAsync(
             audioData,
-            _currentWavePlayer,
+            wavePlayer,
             leadingDelayMs,
             trailingDelayMs,
             cancellationToken);
@@ -242,27 +234,26 @@ public class AudioPlayer : IDisposable
         CancellationToken cancellationToken)
     {
         WaveStream? reader = null;
+        var tcs = new TaskCompletionSource<bool>();
+
+        void OnPlaybackStopped(object? sender, StoppedEventArgs e)
+        {
+            if (e.Exception != null)
+            {
+                tcs.TrySetException(e.Exception);
+            }
+            else
+            {
+                tcs.TrySetResult(true);
+            }
+        }
+
+        wavePlayer.PlaybackStopped += OnPlaybackStopped;
         try
         {
             _logger.LogDebug("PlayWaveAsync 開始 - サイズ: {Size} bytes", audioData.Length);
 
             reader = _formatDetector.CreateWaveStream(audioData);
-
-            var tcs = new TaskCompletionSource<bool>();
-            // ローカル関数化することで自己参照に null 抑制 (`handler!`) が要らなくなる。
-            void OnPlaybackStopped(object? sender, StoppedEventArgs e)
-            {
-                if (e.Exception != null)
-                {
-                    tcs.TrySetException(e.Exception);
-                }
-                else
-                {
-                    tcs.TrySetResult(true);
-                }
-                wavePlayer.PlaybackStopped -= OnPlaybackStopped;
-            }
-            wavePlayer.PlaybackStopped += OnPlaybackStopped;
 
             wavePlayer.Init(reader);
             await Task.Delay(leadingDelayMs, cancellationToken);
@@ -308,6 +299,9 @@ public class AudioPlayer : IDisposable
         }
         finally
         {
+            // Init/Play/Delay のいずれの段階で失敗しても確実に handler を外す
+            // (共有 WavePlayer の次回再生時に古いハンドラが発火するのを防ぐ)
+            wavePlayer.PlaybackStopped -= OnPlaybackStopped;
             try
             { reader?.Dispose(); }
             catch (Exception ex) { _logger.LogDebug(ex, "Failed to dispose audio reader"); }

@@ -45,7 +45,7 @@ public class TextToSpeechProcessor
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<int> ProcessTextToSpeechAsync(VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false, string? outPath = null, bool noPlay = false, CancellationToken cancellationToken = default)
+    public async Task<int> ProcessTextToSpeechAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken = default)
     {
         var totalStartTime = DateTime.UtcNow;
 
@@ -59,7 +59,7 @@ public class TextToSpeechProcessor
                 "VOICEVOXエンジンが起動しているか、appsettings.json の EnginePath が正しいか確認してください。");
         }
 
-        var segments = await LoadSegmentsAsync(request, noCache, cancellationToken);
+        var segments = await LoadSegmentsAsync(request, options.NoCache, cancellationToken);
         if (segments.Count == 0)
         {
             throw new VoicevoxRunCachedException(
@@ -70,7 +70,7 @@ public class TextToSpeechProcessor
                 "テキストが空でないか確認してください。");
         }
 
-        if (cacheOnly)
+        if (options.CacheOnly)
         {
             var uncachedCount = segments.Count(s => !s.IsCached);
             if (uncachedCount > 0)
@@ -84,7 +84,7 @@ public class TextToSpeechProcessor
             }
         }
 
-        var synthesisResult = await SynthesizeAndPlayAsync(segments, request, noCache, noPlay, verbose, cancellationToken);
+        var synthesisResult = await SynthesizeAndPlayAsync(segments, request, options.NoCache, options.NoPlay, options.Verbose, cancellationToken);
 
         if (synthesisResult.AttemptedCount > 0 && synthesisResult.SuccessCount == 0)
         {
@@ -105,17 +105,17 @@ public class TextToSpeechProcessor
                 _logger);
         }
 
-        if (!String.IsNullOrWhiteSpace(outPath))
+        if (!String.IsNullOrWhiteSpace(options.OutPath))
         {
-            await _audioExportService.ExportSegmentsAsync(segments, outPath, cancellationToken);
+            await _audioExportService.ExportSegmentsAsync(segments, options.OutPath, cancellationToken);
         }
 
-        if (noPlay)
+        if (options.NoPlay)
         {
             ConsoleHelper.WriteSuccess("Done (no-play mode)!", _logger);
         }
 
-        LogElapsedIfVerbose(verbose, totalStartTime);
+        LogElapsedIfVerbose(options.Verbose, totalStartTime);
         return hasPartialFailure ? 2 : 0;
     }
 

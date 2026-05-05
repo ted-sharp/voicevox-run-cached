@@ -101,14 +101,6 @@ public static class ErrorHandlingUtility
             "アプリケーションを再起動し、問題が続く場合はログを確認してください。"),
     };
 
-    public static string GetErrorCodeFromHttpStatus(HttpStatusCode statusCode) => FromHttpStatus(statusCode).Code;
-    public static string GetUserFriendlyMessageFromHttpStatus(HttpStatusCode statusCode) => FromHttpStatus(statusCode).UserMessage;
-    public static string GetSuggestedSolutionFromHttpStatus(HttpStatusCode statusCode) => FromHttpStatus(statusCode).Solution;
-
-    public static string GetErrorCodeFromException(Exception exception) => FromException(exception).Code;
-    public static string GetUserFriendlyMessageFromException(Exception exception) => FromException(exception).UserMessage;
-    public static string GetSuggestedSolutionFromException(Exception exception) => FromException(exception).Solution;
-
     /// <summary>
     /// エラーコードから終了コードを取得します
     /// </summary>
@@ -127,20 +119,6 @@ public static class ErrorHandlingUtility
             "API" => 6,
             _ => 1,
         };
-    }
-
-    /// <summary>
-    /// エラーの詳細情報をログに記録します
-    /// </summary>
-    public static void LogErrorDetails(ILogger logger, Exception exception, string operation, string? context = null)
-    {
-        var ctx = FromException(exception);
-        logger.LogError(exception,
-            "エラーが発生しました - 操作: {Operation}, エラーコード: {ErrorCode}, コンテキスト: {Context}",
-            operation, ctx.Code, context ?? "なし");
-
-        logger.LogInformation("ユーザーメッセージ: {UserMessage}", ctx.UserMessage);
-        logger.LogInformation("推奨される解決策: {SuggestedSolution}", ctx.Solution);
     }
 
     /// <summary>

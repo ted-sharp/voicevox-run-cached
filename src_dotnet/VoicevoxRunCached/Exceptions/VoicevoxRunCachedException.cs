@@ -1,6 +1,4 @@
 ﻿using System.Net;
-using System.Text.Json;
-using VoicevoxRunCached.Utilities;
 
 namespace VoicevoxRunCached.Exceptions;
 
@@ -27,71 +25,10 @@ public class VoicevoxRunCachedException : Exception
         Context = context;
     }
 
-    /// <summary>
-    /// エラーコード
-    /// </summary>
     public string ErrorCode { get; }
-
-    /// <summary>
-    /// ユーザーフレンドリーなエラーメッセージ
-    /// </summary>
     public string UserMessage { get; }
-
-    /// <summary>
-    /// 推奨される解決策
-    /// </summary>
     public string? SuggestedSolution { get; }
-
-    /// <summary>
-    /// エラーが発生したコンテキスト
-    /// </summary>
     public string? Context { get; }
-
-    /// <summary>
-    /// エラーの詳細情報を取得
-    /// </summary>
-    public string GetDetailedErrorInfo()
-    {
-        var info = $"Error Code: {ErrorCode}\n";
-        info += $"User Message: {UserMessage}\n";
-
-        if (!String.IsNullOrEmpty(SuggestedSolution))
-        {
-            info += $"Suggested Solution: {SuggestedSolution}\n";
-        }
-
-        if (!String.IsNullOrEmpty(Context))
-        {
-            info += $"Context: {Context}\n";
-        }
-
-        info += $"Technical Details: {Message}";
-
-        if (InnerException != null)
-        {
-            info += $"\nInner Exception: {InnerException.Message}";
-        }
-
-        return info;
-    }
-
-    /// <summary>
-    /// 例外をJSON形式でシリアライズ
-    /// </summary>
-    public string ToJson()
-    {
-        var data = new
-        {
-            ErrorCode,
-            UserMessage,
-            SuggestedSolution,
-            Context,
-            Message,
-            InnerException = InnerException?.Message
-        };
-
-        return JsonSerializer.Serialize(data, JsonSerializerOptionsCache.Indented);
-    }
 }
 
 /// <summary>
@@ -115,26 +52,6 @@ public class VoiceVoxApiException : VoicevoxRunCachedException
 
     public HttpStatusCode? StatusCode { get; }
     public string? ApiResponse { get; }
-
-    /// <summary>
-    /// 例外をJSON形式でシリアライズ
-    /// </summary>
-    public new string ToJson()
-    {
-        var data = new
-        {
-            ErrorCode,
-            UserMessage,
-            SuggestedSolution,
-            Context,
-            Message,
-            StatusCode,
-            ApiResponse,
-            InnerException = InnerException?.Message
-        };
-
-        return JsonSerializer.Serialize(data, JsonSerializerOptionsCache.Indented);
-    }
 }
 
 /// <summary>
@@ -155,25 +72,6 @@ public class ConfigurationException : VoicevoxRunCachedException
     }
 
     public string? SettingPath { get; }
-
-    /// <summary>
-    /// 例外をJSON形式でシリアライズ
-    /// </summary>
-    public new string ToJson()
-    {
-        var data = new
-        {
-            ErrorCode,
-            UserMessage,
-            SuggestedSolution,
-            Context,
-            Message,
-            SettingPath,
-            InnerException = InnerException?.Message
-        };
-
-        return JsonSerializer.Serialize(data, JsonSerializerOptionsCache.Indented);
-    }
 }
 
 /// <summary>
@@ -197,26 +95,6 @@ public class CacheException : VoicevoxRunCachedException
 
     public string? CacheKey { get; }
     public string? CachePath { get; }
-
-    /// <summary>
-    /// 例外をJSON形式でシリアライズ
-    /// </summary>
-    public new string ToJson()
-    {
-        var data = new
-        {
-            ErrorCode,
-            UserMessage,
-            SuggestedSolution,
-            Context,
-            Message,
-            CacheKey,
-            CachePath,
-            InnerException = InnerException?.Message
-        };
-
-        return JsonSerializer.Serialize(data, JsonSerializerOptionsCache.Indented);
-    }
 }
 
 /// <summary>

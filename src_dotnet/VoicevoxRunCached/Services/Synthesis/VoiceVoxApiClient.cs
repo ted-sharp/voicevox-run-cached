@@ -215,14 +215,17 @@ public class VoiceVoxApiClient : IDisposable
         var response = await _httpClient.SendAsync(request, cancellationToken);
         _logger.LogDebug("HTTP response: {StatusCode}", response.StatusCode);
 
-        // 失敗時は呼び出し元の using に戻らないので、ローカル所有のまま明示 Dispose する。
-        if (!response.IsSuccessStatusCode)
+        try
         {
-            var statusCode = response.StatusCode;
-            response.Dispose();
-            throw new HttpRequestException($"HTTP {(int)statusCode} {statusCode}", null, statusCode);
+            // .NET 5+ の EnsureSuccessStatusCode は HttpRequestException に StatusCode を含めて投げる
+            response.EnsureSuccessStatusCode();
         }
-
+        catch
+        {
+            // 失敗時は呼び出し元の using に到達しないので、ローカル所有のまま明示 Dispose する
+            response.Dispose();
+            throw;
+        }
         return response;
     }
 }

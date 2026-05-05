@@ -1,57 +1,25 @@
 ﻿using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Services.Infrastructure;
 
 public class ConfigurationValidationService
 {
-    private readonly AppSettingsValidator _validator;
-
-    public ConfigurationValidationService()
-    {
-        _validator = new AppSettingsValidator();
-    }
-
-    public async Task<FluentValidation.Results.ValidationResult> ValidateConfigurationAsync(AppSettings settings)
-    {
-        if (settings == null)
-        {
-            throw new ArgumentNullException(nameof(settings));
-        }
-
-        return await _validator.ValidateAsync(settings);
-    }
+    private readonly AppSettingsValidator _validator = new();
 
     public void ValidateConfiguration(AppSettings settings)
     {
-        if (settings == null)
-        {
-            throw new ArgumentNullException(nameof(settings));
-        }
+        ArgumentNullException.ThrowIfNull(settings);
 
         var result = _validator.Validate(settings);
         if (!result.IsValid)
         {
             var errors = String.Join(Environment.NewLine, result.Errors.Select(e => $"- {e.PropertyName}: {e.ErrorMessage}"));
-            throw new InvalidOperationException($"設定の検証に失敗しました:{Environment.NewLine}{errors}");
+            throw new ConfigurationException(
+                ErrorCodes.Configuration.InvalidSettings,
+                $"Configuration validation failed: {errors}",
+                "設定の検証に失敗しました。",
+                suggestedSolution: "appsettings.json を確認してエラー箇所を修正してください。");
         }
-    }
-
-    public async Task<bool> IsConfigurationValidAsync(AppSettings settings)
-    {
-        try
-        {
-            var result = await ValidateConfigurationAsync(settings);
-            return result.IsValid;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    public List<string> GetValidationErrors(AppSettings settings)
-    {
-        var result = _validator.Validate(settings);
-        return result.Errors.Select(e => $"{e.PropertyName}: {e.ErrorMessage}").ToList();
     }
 }

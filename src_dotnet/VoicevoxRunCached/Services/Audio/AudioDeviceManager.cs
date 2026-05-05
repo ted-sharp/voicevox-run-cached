@@ -20,7 +20,7 @@ public class AudioDeviceManager : IDisposable
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        MediaFoundationManager.EnsureInitialized();
+        // MediaFoundation は ApplicationBootstrap で Acquire 済み。DI 経由で生成されるため二重初期化の心配は無い
 
         if (_settings.PrepareDevice)
         {
@@ -40,8 +40,19 @@ public class AudioDeviceManager : IDisposable
 
     public void Dispose()
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
+        if (_disposed)
+            return;
+
+        try
+        {
+            CleanupDevicePreparationTask();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "AudioDeviceManagerの破棄中にエラーが発生しました");
+        }
+
+        _disposed = true;
     }
 
     public async Task EnsureDeviceReadyAsync()
@@ -94,33 +105,6 @@ public class AudioDeviceManager : IDisposable
         {
             _logger.LogWarning(ex, "デバイス事前準備に失敗しました");
         }
-    }
-
-    ~AudioDeviceManager()
-    {
-        Dispose(false);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (_disposed)
-        {
-            return;
-        }
-
-        if (disposing)
-        {
-            try
-            {
-                CleanupDevicePreparationTask();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "AudioDeviceManagerの破棄中にエラーが発生しました");
-            }
-        }
-
-        _disposed = true;
     }
 
     private void CleanupDevicePreparationTask()

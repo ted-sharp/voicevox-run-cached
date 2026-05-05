@@ -48,9 +48,9 @@ public class BenchmarkCommandHandler
             ConsoleHelper.WriteLine("Benchmarking...", _logger);
             var segments = new List<TextSegment>
             {
-                new TextSegment { Text = "Hello, this is a performance benchmark." },
-                new TextSegment { Text = "This is a longer text to test the caching mechanism." },
-                new TextSegment { Text = "And another segment to ensure the pipeline is efficient." }
+                new TextSegment { Text = "こんにちは、これはパフォーマンス計測です。" },
+                new TextSegment { Text = "キャッシュ機構を検証するための、少し長めのテキストです。" },
+                new TextSegment { Text = "もう一つのセグメントでパイプラインの効率を確認します。" }
             };
 
             using var spinner = new ProgressSpinner("Benchmarking...");
