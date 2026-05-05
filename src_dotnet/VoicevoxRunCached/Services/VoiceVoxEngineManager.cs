@@ -8,29 +8,32 @@ namespace VoicevoxRunCached.Services;
 public class VoiceVoxEngineManager : IDisposable
 {
     private readonly VoiceVoxSettings _settings;
+    private readonly HttpClient _httpClient;
     private Process? _engineProcess;
+    private bool _disposed;
 
     public VoiceVoxEngineManager(VoiceVoxSettings settings)
     {
-        _settings = settings;
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        _httpClient = new HttpClient
+        {
+            Timeout = TimeSpan.FromSeconds(5)
+        };
     }
 
     public void Dispose()
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
+        if (_disposed)
+            return;
 
-    protected virtual void Dispose(bool disposing)
-    {
-        if (disposing)
+        if (!_settings.KeepEngineRunning)
         {
-            if (!_settings.KeepEngineRunning)
-            {
-                StopEngine();
-            }
-            _engineProcess?.Dispose();
+            StopEngine();
         }
+
+        _engineProcess?.Dispose();
+        _httpClient.Dispose();
+        _disposed = true;
     }
 
     public async Task<bool> EnsureEngineRunningAsync()
@@ -49,9 +52,7 @@ public class VoiceVoxEngineManager : IDisposable
     {
         try
         {
-            using var client = new HttpClient();
-            client.Timeout = TimeSpan.FromSeconds(5);
-            var response = await client.GetAsync($"{_settings.BaseUrl}/version");
+            var response = await _httpClient.GetAsync($"{_settings.BaseUrl}/version");
             return response.IsSuccessStatusCode;
         }
         catch

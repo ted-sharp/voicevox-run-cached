@@ -71,7 +71,28 @@ public class TextToSpeechProcessor
             }
 
             // キャッシュにないセグメントを合成する（常に実行）
-            await SynthesizeMissingSegmentsAsync(segments, request, noCache, cancellationToken);
+            var synthesisResult = await SynthesizeMissingSegmentsAsync(segments, request, noCache, cancellationToken);
+
+            // 全セグメント失敗時は再生に進まず即エラー終了
+            if (synthesisResult.AttemptedCount > 0 && synthesisResult.SuccessCount == 0)
+            {
+                throw new VoicevoxRunCachedException(
+                    ErrorCodes.Audio.AudioGenerationFailed,
+                    $"All {synthesisResult.AttemptedCount} segments failed to synthesize",
+                    "全てのセグメントの音声合成に失敗しました。",
+                    null,
+                    "VOICEVOXエンジンの状態とログを確認してください。"
+                );
+            }
+
+            // 部分失敗時は警告を出して処理を続行 (キャッシュ済みセグメントだけでも再生する)
+            bool hasPartialFailure = synthesisResult.FailureCount > 0;
+            if (hasPartialFailure)
+            {
+                ConsoleHelper.WriteWarning(
+                    $"Warning: {synthesisResult.FailureCount}/{synthesisResult.AttemptedCount} segments failed to synthesize",
+                    _logger);
+            }
 
             // --no-playが指定されている場合、再生をスキップ
             if (noPlay)
@@ -86,7 +107,7 @@ public class TextToSpeechProcessor
                 {
                     ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms", _logger);
                 }
-                return 0;
+                return hasPartialFailure ? 2 : 0;
             }
 
             // 音声再生処理（フィラー機能付き）
@@ -107,7 +128,7 @@ public class TextToSpeechProcessor
                 ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - totalStartTime).TotalMilliseconds:F1}ms", _logger);
             }
 
-            return 0;
+            return hasPartialFailure ? 2 : 0;
         }
         catch (OperationCanceledException)
         {
@@ -178,17 +199,20 @@ public class TextToSpeechProcessor
         }
     }
 
-    private async Task SynthesizeMissingSegmentsAsync(List<TextSegment> segments, VoiceRequest originalRequest, bool noCache, CancellationToken cancellationToken)
+    private async Task<SynthesisResult> SynthesizeMissingSegmentsAsync(List<TextSegment> segments, VoiceRequest originalRequest, bool noCache, CancellationToken cancellationToken)
     {
         var missingSegments = segments.Where(s => s.AudioData == null).ToList();
         if (missingSegments.Count == 0)
         {
-            return;
+            return SynthesisResult.Empty;
         }
 
         _logger.LogInformation("Synthesizing {Count} missing segments...", missingSegments.Count);
 
         await _apiClient.InitializeSpeakerAsync(originalRequest.SpeakerId, cancellationToken);
+
+        int successCount = 0;
+        int failureCount = 0;
 
         foreach (var segment in missingSegments)
         {
@@ -210,16 +234,29 @@ public class TextToSpeechProcessor
 
                 segment.AudioData = wavData;
                 segment.IsCached = true; // 事前合成済みフラグを兼用 (再生側がフィラー判定に利用)
+                successCount++;
 
                 if (!noCache)
                 {
                     await _cacheManager.SaveAudioCacheAsync(segmentRequest, wavData);
                 }
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Failed to synthesize segment: {Text}", segment.Text);
+                failureCount++;
             }
         }
+
+        return new SynthesisResult(missingSegments.Count, successCount, failureCount);
+    }
+
+    private readonly record struct SynthesisResult(int AttemptedCount, int SuccessCount, int FailureCount)
+    {
+        public static SynthesisResult Empty { get; } = new(0, 0, 0);
     }
 }

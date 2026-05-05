@@ -54,34 +54,46 @@ _fix-all.ps1          # 上記 + tests + SonarQube + ReSharper
 ## Project Structure
 
 ```
-src_dotnet/VoicevoxRunCached/
-├── Program.cs                     # Entry point
-├── Configuration/                 # AppSettings + FluentValidation Validators
-├── Models/                        # VoiceRequest, TextSegment, AudioFormat
-├── Services/                      # コア実装
-│   ├── Audio/                     # WavePlayerManager
-│   └── Commands/                  # コマンドハンドラ群 + 補助クラス
-│       ├── TextToSpeechCommandHandler.cs   # 通常の合成・再生
-│       ├── SpeakerCommandHandler.cs        # speakers
-│       ├── DeviceCommandHandler.cs         # devices
-│       ├── InitCommandHandler.cs           # --init
-│       ├── CacheCommandHandler.cs          # --clear
-│       ├── BenchmarkCommandHandler.cs      # --benchmark
-│       ├── EngineCoordinator.cs            # エンジン起動/停止の共通処理
-│       ├── SegmentProcessor.cs             # セグメント単位の生成制御
-│       ├── TextToSpeechProcessor.cs        # 合成パイプライン本体
-│       └── AudioExportService.cs           # --out 用の保存処理
-├── Benchmarks/                    # AudioProcessingBenchmarks (BenchmarkDotNet)
-├── Exceptions/                    # VoicevoxRunCachedException, ErrorCodes
-└── appsettings.json
+src_dotnet/
+├── VoicevoxRunCached/
+│   ├── Program.cs                     # Entry point
+│   ├── Configuration/                 # AppSettings + FluentValidation Validators
+│   ├── Constants/                     # AudioConstants 等のマジックナンバー集約
+│   ├── Models/                        # VoiceRequest, TextSegment, AudioFormat
+│   ├── Services/                      # コア実装
+│   │   ├── Audio/                     # WavePlayerManager
+│   │   ├── Cache/                     # AudioCacheManager の構成要素
+│   │   │   ├── CacheKeyGenerator.cs        # SHA256 キー生成 (変更禁止)
+│   │   │   ├── MemoryCacheStore.cs         # IMemoryCache ラッパ
+│   │   │   ├── DiskCacheStore.cs           # mp3 + meta の永続化
+│   │   │   ├── CacheEvictionPolicy.cs      # 期限切れ・サイズ超過の eviction
+│   │   │   └── CacheStatisticsCollector.cs # 統計情報収集
+│   │   └── Commands/                  # コマンドハンドラ群 + 補助クラス
+│   │       ├── TextToSpeechCommandHandler.cs   # 通常の合成・再生
+│   │       ├── SpeakerCommandHandler.cs        # speakers
+│   │       ├── DeviceCommandHandler.cs         # devices
+│   │       ├── InitCommandHandler.cs           # --init
+│   │       ├── CacheCommandHandler.cs          # --clear
+│   │       ├── BenchmarkCommandHandler.cs      # --benchmark
+│   │       ├── EngineCoordinator.cs            # エンジン起動/停止の共通処理
+│   │       ├── SegmentProcessor.cs             # セグメント単位の生成制御
+│   │       ├── TextToSpeechProcessor.cs        # 合成パイプライン本体
+│   │       └── AudioExportService.cs           # --out 用の保存処理
+│   ├── Benchmarks/                    # AudioProcessingBenchmarks (BenchmarkDotNet)
+│   ├── Exceptions/                    # VoicevoxRunCachedException, ErrorCodes
+│   └── appsettings.json
+└── VoicevoxRunCached.Tests/           # TUnit ベースのユニットテスト
 ```
+
+DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する。新しいクラスを singleton 登録する箇所はここに集約されている。
 
 ## Common Development Patterns
 
 ### Adding a New Command
 
 1. `Services/Commands/` にハンドラクラス (例: `XxxCommandHandler`) を作成。共通インターフェースは無く、具象クラスで `HandleXxxAsync()` 等の固有メソッドを公開する
-2. `CommandRouter` のコンストラクタでフィールドとして `new` し、`ExecuteCommandAsync` の switch 文 (CommandRouter.cs:56) に分岐を追加 (`ApplicationBootstrap` への DI 登録は不要)
+2. `Services/ServiceRegistration.cs` に `container.Register<XxxCommandHandler>(Reuse.Singleton)` で登録
+3. `CommandRouter` のコンストラクタ引数として受け取り、`ExecuteCommandAsync` の switch 文に分岐を追加
 
 ### Reusable Utilities (新規実装の前にこれらを探すこと)
 
@@ -137,7 +149,7 @@ Serilog を `ILogger` 経由で使う。
 
 1. **dotnet-build** (Release 構成)
 2. **dotnet-format** (idempotent、いつでも安全に実行可)
-3. **dotnet-test** (テストプロジェクトが存在すれば。現状は無し)
+3. **dotnet-test** (`VoicevoxRunCached.Tests/` の TUnit テスト)
 4. ファイル系チェック (trailing whitespace, EOF, YAML/JSON 検証, merge conflict 検出)
 
 **フック失敗時**: `dotnet-format` 起因なら `dotnet format` を再実行すれば大半は解消する。`--no-verify` で skip しない。`_fix-all.ps1 -Fast` で同等のクイック確認ができる。
