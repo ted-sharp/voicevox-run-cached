@@ -69,4 +69,34 @@ public static class AudioConstants
     /// フィラー音声生成用の低音量レベル
     /// </summary>
     public const short FillerAmplitude = 32;
+
+    /// <summary>
+    /// VOICEVOX エンジンプロセス停止時の待機時間（ミリ秒）
+    /// </summary>
+    public const int EngineStopWaitTimeoutMs = 5000;
+
+    /// <summary>
+    /// AudioCacheManager のバックグラウンドサイズ eviction の最大実行時間（分）
+    /// </summary>
+    public const int CacheBackgroundEvictionTimeoutMinutes = 5;
+
+    /// <summary>
+    /// ProgressSpinner のアニメーション停止待機時間（ミリ秒）
+    /// </summary>
+    public const int ProgressSpinnerStopWaitTimeoutMs = 1000;
+
+    /// <summary>
+    /// Polly サーキットブレーカーの遮断継続時間（秒）
+    /// </summary>
+    public const int CircuitBreakerDurationSeconds = 30;
+
+    /// <summary>
+    /// Polly タイムアウトポリシーの 1 操作あたりの上限時間（秒）
+    /// </summary>
+    public const int OperationTimeoutSeconds = 30;
+
+    /// <summary>
+    /// Polly サーキットブレーカーが開く前に許容する例外回数
+    /// </summary>
+    public const int CircuitBreakerExceptionThreshold = 3;
 }

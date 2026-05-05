@@ -105,17 +105,17 @@ public class DeviceCommandHandler
         Console.WriteLine(json);
     }
 
-    private static void OutputConsole(string? defaultName, string? defaultId, List<object> deviceList, bool full)
+    private void OutputConsole(string? defaultName, string? defaultId, List<object> deviceList, bool full)
     {
-        Console.WriteLine("Available output devices (WASAPI):");
+        ConsoleHelper.WriteLine("Available output devices (WASAPI):", _logger);
 
         if (!String.IsNullOrEmpty(defaultName))
         {
-            Console.WriteLine($"  Default: \"{defaultName}\" (ID: {defaultId})");
+            ConsoleHelper.WriteLine($"  Default: \"{defaultName}\" (ID: {defaultId})", _logger);
         }
         else
         {
-            Console.WriteLine("  Default: (unavailable)");
+            ConsoleHelper.WriteLine("  Default: (unavailable)", _logger);
         }
 
         if (full)
@@ -124,15 +124,15 @@ public class DeviceCommandHandler
         }
         else
         {
-            Console.WriteLine("  (use 'devices --full' for a detailed list)");
+            ConsoleHelper.WriteLine("  (use 'devices --full' for a detailed list)", _logger);
         }
     }
 
-    private static void OutputDeviceList(List<object> deviceList)
+    private void OutputDeviceList(List<object> deviceList)
     {
         if (deviceList.Count == 0)
         {
-            Console.WriteLine("  (no active render devices)");
+            ConsoleHelper.WriteLine("  (no active render devices)", _logger);
             return;
         }
 
@@ -142,7 +142,7 @@ public class DeviceCommandHandler
             var id = (string?)item.GetType().GetProperty("id")?.GetValue(item) ?? "";
             var name = (string?)item.GetType().GetProperty("name")?.GetValue(item) ?? "";
             var state = (string?)item.GetType().GetProperty("state")?.GetValue(item) ?? "";
-            Console.WriteLine($"  [{idx}] \"{name}\" (ID: {id}) State: {state}");
+            ConsoleHelper.WriteLine($"  [{idx}] \"{name}\" (ID: {id}) State: {state}", _logger);
             idx++;
         }
     }

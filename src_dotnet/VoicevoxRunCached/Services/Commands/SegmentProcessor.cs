@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Commands;

@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -42,7 +42,7 @@ public class SpeakerCommandHandler
                 {
                     ConsoleHelper.WriteLine($"    ID: {style.Id} - {style.Name}", _logger);
                 }
-                Console.WriteLine();
+                ConsoleHelper.WriteLine("", _logger);
             }
             return 0;
         }

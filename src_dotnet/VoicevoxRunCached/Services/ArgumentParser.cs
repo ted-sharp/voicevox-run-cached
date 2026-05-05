@@ -108,7 +108,7 @@ public static class ArgumentParser
                     i += 2;
                     break;
                 default:
-                    Console.WriteLine($"Warning: Unknown option '{processedArgs[i]}'");
+                    ConsoleHelper.WriteWarning($"Warning: Unknown option '{processedArgs[i]}'", logger);
                     i++;
                     break;
             }
@@ -171,45 +171,49 @@ public static class ArgumentParser
 
     public static void ShowUsage()
     {
-        Console.WriteLine("VOICEVOX REST API wrapper with caching");
-        Console.WriteLine();
-        Console.WriteLine("Usage:");
-        Console.WriteLine("  VoicevoxRunCached <text> [options]");
-        Console.WriteLine("  VoicevoxRunCached --test [options]");
-        Console.WriteLine("  VoicevoxRunCached speakers");
-        Console.WriteLine("  VoicevoxRunCached devices [--full] [--json]");
-        Console.WriteLine("  VoicevoxRunCached --init");
-        Console.WriteLine("  VoicevoxRunCached --clear");
-        Console.WriteLine();
-        Console.WriteLine("Arguments:");
-        Console.WriteLine("  <text>                    The text to convert to speech");
-        Console.WriteLine();
-        Console.WriteLine("Options:");
-        Console.WriteLine("  --speaker, -s <id>        Speaker ID (default: 1)");
-        Console.WriteLine("  --speed <value>           Speech speed (default: 1.0)");
-        Console.WriteLine("  --pitch <value>           Speech pitch (default: 0.0)");
-        Console.WriteLine("  --volume <value>          Speech volume (default: 1.0)");
-        Console.WriteLine("  --no-cache               Skip cache usage");
-        Console.WriteLine("  --cache-only             Use cache only, don't call API");
-        Console.WriteLine("  --out, -o <path>         Save output audio to file (.wav or .mp3)");
-        Console.WriteLine("  --no-play                Do not play audio (useful with --out)");
-        Console.WriteLine("  --verbose                Show detailed timing information");
-        Console.WriteLine("  --log-level <level>      Log level: trace|debug|info|warn|error|crit|none (default: info; verbose=debug)");
-        Console.WriteLine("  --log-format <fmt>       Log format: simple|json (default: simple)");
-        Console.WriteLine("  --help, -h               Show this help message");
-        Console.WriteLine();
-        Console.WriteLine("Commands:");
-        Console.WriteLine("  speakers                 List available speakers");
-        Console.WriteLine("  devices                  List audio output devices");
-        Console.WriteLine("  --test                   Play the configured test message (Test.Message)");
-        Console.WriteLine("  --init                   Initialize filler audio cache");
-        Console.WriteLine("  --clear                  Clear all audio cache files");
-        Console.WriteLine("  --benchmark              Run performance benchmarks");
-        Console.WriteLine();
-        Console.WriteLine("Enhanced Features:");
-        Console.WriteLine("  • Standalone flags: --verbose → --verbose true");
-        Console.WriteLine("  • Concatenated options: -s1 → -s 1");
-        Console.WriteLine("  • Configuration integration: Planned for future versions");
-        Console.WriteLine("  • Priority: Command-line > Environment > appsettings.json");
+        // ヘルプ出力は人間向けの 1 ブロックなので raw Console.Write でまとめて流す
+        // (logger 経由だと毎行プレフィクスが付いてしまう)
+        Console.WriteLine("""
+VOICEVOX REST API wrapper with caching
+
+Usage:
+  VoicevoxRunCached <text> [options]
+  VoicevoxRunCached --test [options]
+  VoicevoxRunCached speakers
+  VoicevoxRunCached devices [--full] [--json]
+  VoicevoxRunCached --init
+  VoicevoxRunCached --clear
+
+Arguments:
+  <text>                    The text to convert to speech
+
+Options:
+  --speaker, -s <id>        Speaker ID (default: 1)
+  --speed <value>           Speech speed (default: 1.0)
+  --pitch <value>           Speech pitch (default: 0.0)
+  --volume <value>          Speech volume (default: 1.0)
+  --no-cache               Skip cache usage
+  --cache-only             Use cache only, don't call API
+  --out, -o <path>         Save output audio to file (.wav or .mp3)
+  --no-play                Do not play audio (useful with --out)
+  --verbose                Show detailed timing information
+  --log-level <level>      Log level: trace|debug|info|warn|error|crit|none (default: info; verbose=debug)
+  --log-format <fmt>       Log format: simple|json (default: simple)
+  --help, -h               Show this help message
+
+Commands:
+  speakers                 List available speakers
+  devices                  List audio output devices
+  --test                   Play the configured test message (Test.Message)
+  --init                   Initialize filler audio cache
+  --clear                  Clear all audio cache files
+  --benchmark              Run performance benchmarks
+
+Enhanced Features:
+  • Standalone flags: --verbose → --verbose true
+  • Concatenated options: -s1 → -s 1
+  • Configuration integration: Planned for future versions
+  • Priority: Command-line > Environment > appsettings.json
+""");
     }
 }

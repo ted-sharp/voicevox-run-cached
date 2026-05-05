@@ -1,4 +1,4 @@
-using DryIoc;
+﻿using DryIoc;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Services;
 
@@ -30,24 +30,24 @@ static class Program
         }
         catch (VoicevoxRunCachedException ex)
         {
-            Console.WriteLine($"\e[31mFatal Error: {ex.UserMessage}\e[0m");
+            ConsoleHelper.WriteError($"Fatal Error: {ex.UserMessage}");
 
             if (!String.IsNullOrEmpty(ex.SuggestedSolution))
             {
-                Console.WriteLine($"\e[33m解決策: {ex.SuggestedSolution}\e[0m");
+                ConsoleHelper.WriteWarning($"解決策: {ex.SuggestedSolution}");
             }
 
             if (!String.IsNullOrEmpty(ex.Context))
             {
-                Console.WriteLine($"\e[36mコンテキスト: {ex.Context}\e[0m");
+                ConsoleHelper.WriteInfo($"コンテキスト: {ex.Context}");
             }
 
-            Console.WriteLine($"\e[90mエラーコード: {ex.ErrorCode}\e[0m");
+            ConsoleHelper.WriteDebug($"エラーコード: {ex.ErrorCode}");
             return ErrorHandlingUtility.GetExitCodeFromErrorCode(ex.ErrorCode);
         }
         catch (OperationCanceledException)
         {
-            Console.WriteLine("\e[33mアプリケーションがキャンセルされました\e[0m");
+            ConsoleHelper.WriteWarning("アプリケーションがキャンセルされました");
             return 0;
         }
         catch (Exception ex)
@@ -67,7 +67,7 @@ public static class ProgramExtensions
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Warning: Failed to cleanup Serilog: {ex.Message}");
+            ConsoleHelper.WriteWarning($"Warning: Failed to cleanup Serilog: {ex.Message}");
         }
     }
 }

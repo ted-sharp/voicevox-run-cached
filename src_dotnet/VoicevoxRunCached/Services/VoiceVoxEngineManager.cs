@@ -1,6 +1,7 @@
 ﻿using System.Diagnostics;
 using Serilog;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Constants;
 
 namespace VoicevoxRunCached.Services;
 
@@ -134,7 +135,7 @@ public class VoiceVoxEngineManager : IDisposable
             try
             {
                 _engineProcess.Kill();
-                _engineProcess.WaitForExit(5000);
+                _engineProcess.WaitForExit(AudioConstants.EngineStopWaitTimeoutMs);
             }
             catch (Exception ex)
             {

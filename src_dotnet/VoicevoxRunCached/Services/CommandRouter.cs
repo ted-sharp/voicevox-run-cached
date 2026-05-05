@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Services.Commands;
@@ -118,7 +118,7 @@ public class CommandRouter
         var testMessage = _settings.Test.Message;
         if (String.IsNullOrWhiteSpace(testMessage))
         {
-            Console.WriteLine("\e[31mError: Test.Message is empty in configuration\e[0m");
+            ConsoleHelper.WriteError("Error: Test.Message is empty in configuration", _logger);
             return 1;
         }
 

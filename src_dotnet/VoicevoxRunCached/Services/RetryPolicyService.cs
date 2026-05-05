@@ -4,6 +4,7 @@ using Polly;
 using Polly.CircuitBreaker;
 using Polly.Retry;
 using Serilog;
+using VoicevoxRunCached.Constants;
 
 namespace VoicevoxRunCached.Services;
 
@@ -40,8 +41,8 @@ public class RetryPolicyService
             .Handle<HttpRequestException>()
             .Or<TimeoutException>()
             .CircuitBreakerAsync(
-                exceptionsAllowedBeforeBreaking: 3,
-                durationOfBreak: TimeSpan.FromSeconds(30),
+                exceptionsAllowedBeforeBreaking: AudioConstants.CircuitBreakerExceptionThreshold,
+                durationOfBreak: TimeSpan.FromSeconds(AudioConstants.CircuitBreakerDurationSeconds),
                 onBreak: (exception, duration) =>
                 {
                     Log.Error(exception, "サーキットブレーカーが開きました - {Duration}間隔でブロック", duration);
@@ -57,7 +58,7 @@ public class RetryPolicyService
             );
 
         // タイムアウトポリシー
-        var timeoutPolicy = Policy.TimeoutAsync(TimeSpan.FromSeconds(30));
+        var timeoutPolicy = Policy.TimeoutAsync(TimeSpan.FromSeconds(AudioConstants.OperationTimeoutSeconds));
 
         // ポリシーを組み合わせ
         _combinedPolicy = Policy.WrapAsync(_retryPolicy, _circuitBreakerPolicy, timeoutPolicy);

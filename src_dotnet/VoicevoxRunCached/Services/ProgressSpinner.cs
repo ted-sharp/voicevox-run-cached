@@ -1,4 +1,6 @@
-﻿namespace VoicevoxRunCached.Services;
+﻿using VoicevoxRunCached.Constants;
+
+namespace VoicevoxRunCached.Services;
 
 public class ProgressSpinner : IDisposable
 {
@@ -33,7 +35,7 @@ public class ProgressSpinner : IDisposable
                 _cancellationTokenSource.Cancel();
                 try
                 {
-                    _animationTask.Wait(1000); // Wait up to 1 second for cleanup
+                    _animationTask.Wait(AudioConstants.ProgressSpinnerStopWaitTimeoutMs);
                 }
                 catch (AggregateException)
                 {

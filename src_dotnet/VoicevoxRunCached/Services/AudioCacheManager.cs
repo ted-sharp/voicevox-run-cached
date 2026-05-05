@@ -4,6 +4,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Serilog;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Utilities;
@@ -434,7 +435,7 @@ public class AudioCacheManager : IDisposable
         {
             try
             {
-                using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+                using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(AudioConstants.CacheBackgroundEvictionTimeoutMinutes));
                 CleanupByMaxSize(cts.Token);
             }
             catch (OperationCanceledException)
