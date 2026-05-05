@@ -1,12 +1,11 @@
-﻿using System.Security.Cryptography;
-using System.Text;
-using System.Text.Json;
+﻿using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
 using Serilog;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
+using VoicevoxRunCached.Services.Cache;
 using VoicevoxRunCached.Utilities;
 
 namespace VoicevoxRunCached.Services;
@@ -511,15 +510,10 @@ public class AudioCacheManager : IDisposable
         }
     }
 
-    public static string ComputeCacheKey(VoiceRequest request)
-    {
-        var keyString = String.Format(System.Globalization.CultureInfo.InvariantCulture,
-            "{0}|{1}|{2:F2}|{3:F2}|{4:F2}", request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
-
-        // SHA256.HashData は static + スレッドセーフ。共有 SHA256 インスタンスを保持するとマルチスレッドで CryptographicException が発生する。
-        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(keyString));
-        return Convert.ToHexString(hashBytes).ToLowerInvariant();
-    }
+    /// <summary>
+    /// 後方互換のためのファサード。実装は <see cref="CacheKeyGenerator.Compute"/> へ委譲。
+    /// </summary>
+    public static string ComputeCacheKey(VoiceRequest request) => CacheKeyGenerator.Compute(request);
 
 
     private void ResolveCacheBaseDirectory()
