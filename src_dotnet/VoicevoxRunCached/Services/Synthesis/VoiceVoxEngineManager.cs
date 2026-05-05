@@ -10,6 +10,8 @@ public class VoiceVoxEngineManager : IDisposable
     private readonly VoiceVoxSettings _settings;
     private readonly HttpClient _httpClient;
     private readonly ILogger _logger;
+    // 自プロセスから起動したエンジンプロセス。外部で既に動いていたエンジンを発見した場合は null。
+    // この区別は Dispose 時の停止対象を「自分が起こしたものだけ」に絞るために必要。
     private Process? _engineProcess;
     private bool _disposed;
 
@@ -23,12 +25,19 @@ public class VoiceVoxEngineManager : IDisposable
         };
     }
 
+    /// <summary>
+    /// このプロセスがエンジンを起動した場合に true。外部で既に動いていたエンジンを利用している間は false。
+    /// </summary>
+    private bool StartedByUs => _engineProcess != null;
+
     public void Dispose()
     {
         if (_disposed)
             return;
 
-        if (!_settings.KeepEngineRunning)
+        // KeepEngineRunning=true ならこのプロセスが起動した子も生かしておく (常駐運用)。
+        // false なら自分で起動したものだけ止める (外部起動エンジンには触れない)。
+        if (!_settings.KeepEngineRunning && StartedByUs)
         {
             StopEngine();
         }

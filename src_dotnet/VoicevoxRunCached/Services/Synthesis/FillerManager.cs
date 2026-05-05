@@ -175,7 +175,8 @@ public class FillerManager
     {
         try
         {
-            var mp3 = await Task.Run(() => AudioConversionUtility.ConvertWavToMp3(audioData), cancellationToken);
+            // CLI は単一スレッドで進むため Task.Run のスレッド分離は無意味。同期呼び出しで十分
+            var mp3 = AudioConversionUtility.ConvertWavToMp3(audioData);
             await File.WriteAllBytesAsync(filePath, mp3, cancellationToken);
         }
         catch (OperationCanceledException)

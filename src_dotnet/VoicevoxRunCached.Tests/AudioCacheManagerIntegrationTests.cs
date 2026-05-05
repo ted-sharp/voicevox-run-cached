@@ -1,8 +1,7 @@
 ﻿using Microsoft.Extensions.Caching.Memory;
 using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
-using VoicevoxRunCached.Services;
+using VoicevoxRunCached.Services.Cache;
 
 namespace VoicevoxRunCached.Tests;
 

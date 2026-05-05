@@ -91,11 +91,6 @@ public static class AudioConstants
     public const int EngineStartupPollIntervalMs = 1000;
 
     /// <summary>
-    /// AudioCacheManager のバックグラウンドサイズ eviction の最大実行時間（分）
-    /// </summary>
-    public const int CacheBackgroundEvictionTimeoutMinutes = 5;
-
-    /// <summary>
     /// ProgressSpinner のアニメーション停止待機時間（ミリ秒）
     /// </summary>
     public const int ProgressSpinnerStopWaitTimeoutMs = 1000;

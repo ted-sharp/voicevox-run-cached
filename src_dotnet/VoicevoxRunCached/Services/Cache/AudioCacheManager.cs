@@ -1,34 +1,25 @@
 ﻿using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
-using VoicevoxRunCached.Services.Cache;
 
-namespace VoicevoxRunCached.Services;
+namespace VoicevoxRunCached.Services.Cache;
 
 /// <summary>
 /// 音声キャッシュの統合ファサード。メモリ・ディスクストア、eviction、統計収集を組み合わせて公開 API を提供する。
 /// </summary>
 public class AudioCacheManager : IDisposable
 {
-    private readonly IMemoryCache _memoryCache;
     private readonly MemoryCacheStore _memory;
     private readonly DiskCacheStore _disk;
     private readonly CacheEvictionPolicy _eviction;
     private readonly CacheSettings _settings;
     private readonly ILogger _logger;
-    // 起動済みだが完了していないバックグラウンド eviction を Dispose 時に待機するための追跡セット。
-    // SaveAudioCacheAsync は fire-and-forget だが、プロセス終了時に走行中タスクが mp3/meta を
-    // 中途半端な状態で残さないよう、Dispose で短時間待ち合わせる。
-    private readonly HashSet<Task> _pendingEvictions = new();
-    private readonly object _pendingEvictionsLock = new();
-    private bool _disposed;
 
     public AudioCacheManager(CacheSettings settings, IMemoryCache memoryCache, ILogger? logger = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
+        ArgumentNullException.ThrowIfNull(memoryCache);
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
         _memory = new MemoryCacheStore(memoryCache, TimeSpan.FromDays(settings.ExpirationDays));
@@ -41,56 +32,23 @@ public class AudioCacheManager : IDisposable
 
     public void Dispose()
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (_disposed)
-            return;
-        if (disposing)
-        {
-            try
-            {
-                Task[] pending;
-                lock (_pendingEvictionsLock)
-                {
-                    pending = _pendingEvictions.ToArray();
-                }
-                if (pending.Length > 0)
-                {
-                    // 走行中の eviction が中途半端に終了しないよう短時間待つ
-                    Task.WhenAll(pending).Wait(TimeSpan.FromSeconds(2));
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "走行中の eviction 待機中に警告が発生しました");
-            }
-
-            try
-            {
-                if (_memoryCache is MemoryCache mc)
-                {
-                    mc.Dispose();
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "AudioCacheManagerの破棄中にエラーが発生しました");
-            }
-        }
-        _disposed = true;
+        // IMemoryCache は DI コンテナが管理する singleton なので、ここでは触らない。
+        // SaveAudioCacheAsync が同期的に eviction まで完了するため走行中タスクの追跡も不要。
+        // 互換のため IDisposable は残すが本体は no-op。
     }
 
     /// <summary>
     /// キャッシュから音声データを取得する。メモリ→ディスクの順で fallback。
     /// </summary>
-    public Task<byte[]?> GetCachedAudioAsync(VoiceRequest request, CancellationToken cancellationToken = default)
+    /// <remarks>
+    /// 読み込み I/O エラー (破損ファイル、権限不足等) は warning ログを残して null を返す。
+    /// 呼び出し側は「ヒットしなかった」と同じ扱いになり API へ fallback する。
+    /// (キャッシュ層の障害でユーザー操作が破綻しないことを優先する)
+    /// </remarks>
+    public async Task<byte[]?> GetCachedAudioAsync(VoiceRequest request, CancellationToken cancellationToken = default)
     {
         var cacheKey = CacheKeyGenerator.Compute(request);
-        return WithCacheErrorHandling(CacheErrorMapper.OperationKind.Read, "キャッシュからの音声データ取得", cacheKey, async () =>
+        try
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -108,11 +66,21 @@ public class AudioCacheManager : IDisposable
             }
 
             return null;
-        });
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "キャッシュ読み込みに失敗 (API fallback します): {CacheKey}", cacheKey);
+            return null;
+        }
     }
 
     /// <summary>
     /// 音声データをキャッシュに保存する。WAV はディスク保存前に MP3 に変換される。
+    /// 容量超過時は同じ呼び出し内で eviction を走らせるため、戻り Task の完了は永続状態の確定を意味する。
     /// </summary>
     public Task SaveAudioCacheAsync(VoiceRequest request, byte[] audioData, CancellationToken cancellationToken = default)
     {
@@ -127,24 +95,11 @@ public class AudioCacheManager : IDisposable
 
             _logger.LogDebug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes", cacheKey, mp3Data.Length);
 
-            TrackBackgroundEviction(_eviction.RunBackgroundSizeCleanupAsync());
+            // size 超過時のみ古いファイルを削除 (通常はノーオペで安価)。
+            // 旧実装は fire-and-forget で Dispose 時に追跡していたが、producer 側で WhenAll する設計と冗長だったため同期化。
+            await _eviction.CleanupByMaxSizeAsync(cancellationToken);
             return null;
         });
-    }
-
-    private void TrackBackgroundEviction(Task task)
-    {
-        lock (_pendingEvictionsLock)
-        {
-            _pendingEvictions.Add(task);
-        }
-        task.ContinueWith(t =>
-        {
-            lock (_pendingEvictionsLock)
-            {
-                _pendingEvictions.Remove(t);
-            }
-        }, TaskScheduler.Default);
     }
 
     public Task ClearAllCacheAsync(CancellationToken cancellationToken = default)

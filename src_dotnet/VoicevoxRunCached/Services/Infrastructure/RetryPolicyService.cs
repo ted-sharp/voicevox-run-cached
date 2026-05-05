@@ -14,15 +14,24 @@ namespace VoicevoxRunCached.Services.Infrastructure;
 /// </remarks>
 public class RetryPolicyService
 {
-    private const int BaseDelayMs = AudioConstants.RetryBaseDelayMs;
-    private const int MaxDelayMs = AudioConstants.RetryMaxDelayMs;
-    private const int MaxRetryAttempts = AudioConstants.RetryMaxAttempts;
-
+    private readonly int _baseDelayMs;
+    private readonly int _maxDelayMs;
+    private readonly int _maxRetryAttempts;
     private readonly ILogger _logger;
 
-    public RetryPolicyService(ILogger logger)
+    /// <param name="baseDelayMs">指数バックオフの初回遅延 (ms)。テストで短縮可能</param>
+    /// <param name="maxDelayMs">バックオフ上限 (ms)</param>
+    /// <param name="maxRetryAttempts">最大試行回数</param>
+    public RetryPolicyService(
+        ILogger logger,
+        int baseDelayMs = AudioConstants.RetryBaseDelayMs,
+        int maxDelayMs = AudioConstants.RetryMaxDelayMs,
+        int maxRetryAttempts = AudioConstants.RetryMaxAttempts)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _baseDelayMs = baseDelayMs;
+        _maxDelayMs = maxDelayMs;
+        _maxRetryAttempts = maxRetryAttempts;
     }
 
     public async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> operation, string operationName, CancellationToken cancellationToken = default)
@@ -30,7 +39,7 @@ public class RetryPolicyService
         var retryCount = 0;
         Exception? lastException = null;
 
-        while (retryCount < MaxRetryAttempts)
+        while (retryCount < _maxRetryAttempts)
         {
             try
             {
@@ -75,7 +84,7 @@ public class RetryPolicyService
         HttpStatusCode? statusCode,
         CancellationToken cancellationToken)
     {
-        if (retryCount >= MaxRetryAttempts)
+        if (retryCount >= _maxRetryAttempts)
         {
             return;
         }
@@ -87,7 +96,7 @@ public class RetryPolicyService
         // 全試行が失敗した時の `Non-retryable error` / `failed after maximum retry attempts` は
         // 別のログパスで Error として残るため、運用ログ上の追跡性は保たれる。
         _logger.LogDebug(exception, "{ErrorType} during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
-            errorType, operationName, delay, retryCount, MaxRetryAttempts);
+            errorType, operationName, delay, retryCount, _maxRetryAttempts);
 
         await Task.Delay(delay, cancellationToken);
     }
@@ -124,9 +133,9 @@ public class RetryPolicyService
             || ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static int CalculateDelay(int retryCount, HttpStatusCode? statusCode)
+    private int CalculateDelay(int retryCount, HttpStatusCode? statusCode)
     {
-        var exponentialDelay = BaseDelayMs * Math.Pow(2, retryCount - 1);
+        var exponentialDelay = _baseDelayMs * Math.Pow(2, retryCount - 1);
         var jitter = Random.Shared.Next(-100, 100);
 
         if (statusCode == HttpStatusCode.TooManyRequests)
@@ -134,7 +143,9 @@ public class RetryPolicyService
             exponentialDelay = Math.Max(exponentialDelay, 1000);
         }
 
-        var finalDelay = (int)Math.Min(exponentialDelay + jitter, MaxDelayMs);
-        return Math.Max(finalDelay, 100);
+        var finalDelay = (int)Math.Min(exponentialDelay + jitter, _maxDelayMs);
+        // テスト用に短い baseDelay (例: 1) を渡された場合の最低保証は外す。
+        // 本番デフォルトの 1000ms なら下限はもう超えているので影響無し。
+        return Math.Max(finalDelay, 0);
     }
 }

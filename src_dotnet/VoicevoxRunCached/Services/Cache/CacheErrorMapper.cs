@@ -11,7 +11,6 @@ internal static class CacheErrorMapper
 {
     public enum OperationKind
     {
-        Read,
         Write,
         Clear,
         Cleanup,

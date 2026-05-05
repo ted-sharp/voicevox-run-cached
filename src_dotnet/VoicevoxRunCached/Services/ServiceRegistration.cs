@@ -61,6 +61,7 @@ public static class ServiceRegistration
 
         // コマンド処理ヘルパ (singleton)
         container.Register<AudioExportService>(Reuse.Singleton);
+        container.Register<SegmentProducer>(Reuse.Singleton);
         container.Register<TextToSpeechProcessor>(Reuse.Singleton);
 
         // コマンドハンドラ (singleton)

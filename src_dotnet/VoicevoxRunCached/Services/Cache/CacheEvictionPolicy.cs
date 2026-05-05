@@ -134,30 +134,6 @@ public class CacheEvictionPolicy
             });
     }
 
-    /// <summary>
-    /// バックグラウンドでサイズ制限クリーンアップを実行する (fire-and-forget)。
-    /// </summary>
-    public Task RunBackgroundSizeCleanupAsync()
-    {
-        return Task.Run(async () =>
-        {
-            try
-            {
-                using var cts = new CancellationTokenSource(
-                    TimeSpan.FromMinutes(AudioConstants.CacheBackgroundEvictionTimeoutMinutes));
-                await CleanupByMaxSizeAsync(cts.Token);
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogDebug("バックグラウンドキャッシュクリーンアップがタイムアウトしました");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "バックグラウンドキャッシュクリーンアップに失敗しました");
-            }
-        }, CancellationToken.None);
-    }
-
     private async Task<DateTime> ResolveTimestampAsync(FileEntry entry, CancellationToken cancellationToken)
     {
         if (entry.Meta.Exists)
