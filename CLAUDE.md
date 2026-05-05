@@ -129,7 +129,7 @@ Serilog を `ILogger` 経由で使う。
 
 ## Configuration
 
-`appsettings.json` で `VoiceVox` / `Cache` / `Audio` / `Filler` / `Serilog` / `Test` セクションを定義。各セクションは `Configuration/AppSettings.cs` の型にバインドされ `Validators.cs` (FluentValidation) で検証される。詳細プロパティは appsettings.json と AppSettings.cs を直接参照。
+`appsettings.json` で `VoiceVox` / `Cache` / `Audio` / `Filler` / `Logging` / `Test` セクションを定義。各セクションは `Configuration/AppSettings.cs` の型にバインドされ `Validators.cs` (FluentValidation) で検証される。Serilog は `LoggingManager` が `LoggingSettings` を使ってプログラム的に構成 (`appsettings.json` から `Serilog:*` セクションを直接読み込んでいるわけではない)。詳細プロパティは appsettings.json と AppSettings.cs を直接参照。
 
 ## Pre-Commit Hooks and Code Quality
 

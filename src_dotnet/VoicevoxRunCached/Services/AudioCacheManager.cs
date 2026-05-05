@@ -877,7 +877,10 @@ public class AudioCacheManager : IDisposable
                     totalSize += fileInfo.Length;
                     validFiles++;
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Log.Debug(ex, "キャッシュファイル情報の取得に失敗 (統計集計時): {FilePath}", filePath);
+                }
             }
 
             return (validFiles, totalSize);

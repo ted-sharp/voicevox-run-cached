@@ -41,21 +41,6 @@ public static class ArgumentParser
         "-o"
     }.ToFrozenSet();
 
-    // コマンドライン引数と設定プロパティのマッピング（現在は使用されていないが将来の拡張用）
-    // S3887対応: FrozenDictionaryを使用して不変コレクションに
-    public static readonly FrozenDictionary<string, string> Aliases = new Dictionary<string, string>
-    {
-        // Note: These mappings are currently not used but kept for future configuration integration
-        // { "--verbose", "Logging:Verbose" },
-        // { "--no-cache", "Cache:Disabled" },
-        // { "--cache-only", "Cache:Only" },
-        // { "--no-play", "Audio:NoPlay" },
-        // { "--json", "Output:Json" },
-        // { "--full", "Output:Full" },
-        // { "-s", "VoiceVox:SpeakerId" },
-        // { "-o", "Output:Path" }
-    }.ToFrozenDictionary();
-
     /// <summary>
     /// コマンドライン引数を前処理して、IConfigurationで使用できる形式に変換
     /// </summary>

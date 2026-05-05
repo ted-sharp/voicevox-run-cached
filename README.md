@@ -128,7 +128,10 @@ VoicevoxRunCached --benchmark           # パフォーマンスベンチマー�
     "UseExecutableBaseDirectory": true,
     "FillerTexts": ["えーっと、", "あのー、", "あのう、", "ええと、", "ええっと、", "えとえと、"]
   },
-  "Serilog": { /* Serilog 標準設定 (Console + File sink) */ },
+  "Logging": {
+    "Level": "info",              // trace|debug|info|warn|error|crit|none
+    "Format": "simple"            // simple | json
+  },
   "Test": { "Message": "..." }    // --test で読み上げる文
 }
 ```

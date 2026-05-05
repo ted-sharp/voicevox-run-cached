@@ -86,7 +86,7 @@ public class ConfigurationManager
             .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
             .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true)
             // コマンドライン引数（最高優先度）
-            .AddCommandLine(processedArgs, ArgumentParser.Aliases)
+            .AddCommandLine(processedArgs)
             .Build();
     }
 }
