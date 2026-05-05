@@ -31,7 +31,8 @@ static class Program
             finally
             {
                 // ApplicationBootstrap で確保した MediaFoundation を解放 (参照カウンタを減らす)
-                try { MediaFoundationInitializer.GetInstance(logger).Shutdown(); }
+                try
+                { MediaFoundationManager.Release(logger); }
                 catch (Exception cleanupEx) { logger.LogDebug(cleanupEx, "MediaFoundation shutdown中の警告"); }
 
                 ProgramExtensions.CleanupSerilog();

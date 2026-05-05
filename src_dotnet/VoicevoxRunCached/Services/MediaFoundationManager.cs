@@ -1,44 +1,126 @@
-﻿using NAudio.MediaFoundation;
-using Serilog;
+﻿using Microsoft.Extensions.Logging;
+using NAudio.MediaFoundation;
+using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Services;
 
+/// <summary>
+/// MediaFoundation の Startup/Shutdown を参照カウンタ付きで管理する static サービス。
+/// </summary>
 public static class MediaFoundationManager
 {
-    private static int _initialized;
+    private static readonly Lock _lock = new();
+    private static int _referenceCount;
+    private static bool _isInitialized;
+    private static bool _processExitRegistered;
 
-    public static void Initialize()
+    /// <summary>
+    /// 参照カウントを 1 加算し、未初期化なら MediaFoundationApi.Startup() を呼ぶ。
+    /// </summary>
+    public static void Acquire(ILogger? logger = null)
     {
-        if (Interlocked.Exchange(ref _initialized, 1) == 0)
+        lock (_lock)
         {
-            MediaFoundationApi.Startup();
-            AppDomain.CurrentDomain.ProcessExit += (_, _) => SafeShutdown();
+            _referenceCount++;
+            if (_isInitialized)
+            {
+                logger?.LogDebug("MediaFoundation は既に初期化済みです。参照カウント: {ReferenceCount}", _referenceCount);
+                return;
+            }
+
+            try
+            {
+                MediaFoundationApi.Startup();
+                _isInitialized = true;
+
+                if (!_processExitRegistered)
+                {
+                    AppDomain.CurrentDomain.ProcessExit += (_, _) => SafeShutdown();
+                    _processExitRegistered = true;
+                }
+
+                logger?.LogDebug("MediaFoundation の初期化が完了しました。参照カウント: {ReferenceCount}", _referenceCount);
+            }
+            catch (Exception ex)
+            {
+                _referenceCount--;
+                logger?.LogError(ex, "MediaFoundation の初期化に失敗しました");
+                throw new VoicevoxRunCachedException(
+                    ErrorCodes.Audio.MediaFoundationInitFailed,
+                    "MediaFoundation initialization failed",
+                    "音声システムの初期化に失敗しました",
+                    "NAudioライブラリが正常にインストールされているか確認してください",
+                    "MediaFoundation initialization"
+                );
+            }
         }
     }
 
+    /// <summary>
+    /// 参照カウントを増やさず、未初期化なら初期化のみ行う安全弁。
+    /// (単発呼び出しの利用元向け)
+    /// </summary>
     public static void EnsureInitialized()
     {
-        if (Volatile.Read(ref _initialized) == 0)
+        lock (_lock)
         {
-            Initialize();
+            if (_isInitialized)
+            {
+                return;
+            }
+
+            MediaFoundationApi.Startup();
+            _isInitialized = true;
+
+            if (!_processExitRegistered)
+            {
+                AppDomain.CurrentDomain.ProcessExit += (_, _) => SafeShutdown();
+                _processExitRegistered = true;
+            }
         }
     }
 
-    public static void Shutdown()
+    /// <summary>
+    /// 参照カウントを 1 減算し、0 になったら MediaFoundationApi.Shutdown() を呼ぶ。
+    /// </summary>
+    public static void Release(ILogger? logger = null)
     {
-        SafeShutdown();
+        lock (_lock)
+        {
+            if (_referenceCount <= 0)
+            {
+                logger?.LogDebug("MediaFoundation は既にシャットダウン済みです");
+                return;
+            }
+
+            _referenceCount--;
+            logger?.LogDebug("MediaFoundation の参照カウントを減らしました: {ReferenceCount}", _referenceCount);
+
+            if (_referenceCount == 0 && _isInitialized)
+            {
+                SafeShutdown();
+            }
+        }
     }
 
     private static void SafeShutdown()
     {
-        if (Interlocked.Exchange(ref _initialized, 0) == 1)
+        if (!_isInitialized)
         {
-            try
-            { MediaFoundationApi.Shutdown(); }
-            catch (Exception ex)
-            { Log.Debug(ex, "Failed to shutdown MediaFoundation"); }
+            return;
+        }
+
+        try
+        {
+            MediaFoundationApi.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Debug(ex, "Failed to shutdown MediaFoundation");
+        }
+        finally
+        {
+            _isInitialized = false;
         }
     }
 }
-
-

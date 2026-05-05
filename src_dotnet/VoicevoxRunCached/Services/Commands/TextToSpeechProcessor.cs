@@ -39,6 +39,7 @@ public class TextToSpeechProcessor
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+
     public async Task<int> ProcessTextToSpeechAsync(VoiceRequest request, bool noCache, bool cacheOnly, bool verbose = false, string? outPath = null, bool noPlay = false, CancellationToken cancellationToken = default)
     {
         var totalStartTime = DateTime.UtcNow;
@@ -159,10 +160,7 @@ public class TextToSpeechProcessor
         {
             var playbackStartTime = DateTime.UtcNow;
 
-            using var processingChannel = new AudioProcessingChannel(_cacheManager, _apiClient);
-
-            await _audioPlayer.PlayAudioSequentiallyWithGenerationAsync(
-                segments, processingChannel, _fillerManager, cancellationToken);
+            await _audioPlayer.PlaySegmentsAsync(segments, _fillerManager, cancellationToken);
 
             var playbackElapsed = (DateTime.UtcNow - playbackStartTime).TotalMilliseconds;
             if (verbose)
@@ -211,6 +209,7 @@ public class TextToSpeechProcessor
                 var wavData = await _apiClient.SynthesizeAudioAsync(audioQuery, originalRequest.SpeakerId, cancellationToken);
 
                 segment.AudioData = wavData;
+                segment.IsCached = true; // 事前合成済みフラグを兼用 (再生側がフィラー判定に利用)
 
                 if (!noCache)
                 {

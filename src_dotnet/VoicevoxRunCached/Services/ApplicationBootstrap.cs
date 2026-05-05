@@ -44,8 +44,7 @@ public static class ApplicationBootstrap
         var logger = loggerFactory.CreateLogger("VoicevoxRunCached");
 
         // Media Foundation初期化（ロガー作成後）
-        var mediaFoundationInitializer = MediaFoundationInitializer.GetInstance(logger);
-        mediaFoundationInitializer.Initialize();
+        MediaFoundationManager.Acquire(logger);
 
         // アプリケーション開始をログ出力
         logger.LogInformation("VoicevoxRunCached アプリケーションを開始します - バージョン {Version}", GetVersion());

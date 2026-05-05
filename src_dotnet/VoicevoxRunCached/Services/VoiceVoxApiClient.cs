@@ -14,11 +14,10 @@ public class VoiceVoxApiClient : IDisposable
     private readonly RetryPolicyService _retryPolicyService;
     private readonly VoiceVoxSettings _settings;
 
-    public VoiceVoxApiClient(VoiceVoxSettings settings, RetryPolicyService? retryPolicyService = null)
+    public VoiceVoxApiClient(VoiceVoxSettings settings, RetryPolicyService retryPolicyService)
     {
-        // C# 13 nameof expression for type-safe parameter validation
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _retryPolicyService = retryPolicyService ?? new RetryPolicyService();
+        _retryPolicyService = retryPolicyService ?? throw new ArgumentNullException(nameof(retryPolicyService));
 
         _httpClient = new HttpClient
         {

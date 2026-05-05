@@ -120,18 +120,17 @@ public class AudioPlayer : IDisposable
     }
 
     /// <summary>
-    /// 音声セグメントのリストを順次再生し、必要に応じて音声生成を行います
+    /// 事前合成済みのセグメントを順次再生し、必要に応じてフィラー音声を挿入する。
     /// </summary>
-    public async Task PlayAudioSequentiallyWithGenerationAsync(
+    public async Task PlaySegmentsAsync(
         List<TextSegment> segments,
-        AudioProcessingChannel? processingChannel,
         FillerManager? fillerManager = null,
         CancellationToken cancellationToken = default)
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
-        Log.Information("PlayAudioSequentiallyWithGenerationAsync 開始 - セグメント数: {SegmentCount}, フィラーマネージャー: {HasFillerManager}",
+        Log.Information("PlaySegmentsAsync 開始 - セグメント数: {SegmentCount}, フィラーマネージャー: {HasFillerManager}",
             segments.Count, fillerManager != null);
 
         await _deviceManager.EnsureDeviceReadyAsync();
@@ -149,17 +148,16 @@ public class AudioPlayer : IDisposable
                 Log.Information("セグメント {SegmentNumber}/{Total} を処理中: \"{Text}\" (キャッシュ済み: {IsCached})",
                     i + 1, segments.Count, segment.Text, segment.IsCached);
 
-                // 未キャッシュセグメントの音声生成を待機
-                if (!segment.IsCached || segment.AudioData == null)
+                if (segment.AudioData == null || segment.AudioData.Length == 0)
                 {
-                    await WaitForSegmentGenerationAsync(segment, i, processingChannel, cancellationToken);
+                    Log.Warning("セグメント {SegmentIndex} に音声データがありません。スキップします: {Text}",
+                        i + 1, segment.Text);
+                    continue;
                 }
 
-                // セグメントを再生
-                await PlaySegmentAsync(segment.AudioData!, isFirstSegment, cancellationToken);
+                await PlaySegmentAsync(segment.AudioData, isFirstSegment, cancellationToken);
                 isFirstSegment = false;
 
-                // フィラーの挿入をチェック
                 var fillerAudio = await CheckAndGetFillerAsync(i, segments, fillerManager, cancellationToken);
                 if (fillerAudio != null)
                 {
@@ -167,7 +165,6 @@ public class AudioPlayer : IDisposable
                     await PlaySegmentAsync(fillerAudio, false, cancellationToken);
                 }
 
-                // セグメント間の間隔を確保
                 if (i < segments.Count - 1)
                 {
                     await Task.Delay(50, cancellationToken);
@@ -178,7 +175,7 @@ public class AudioPlayer : IDisposable
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "PlayAudioSequentiallyWithGenerationAsync でエラーが発生しました");
+            Log.Error(ex, "PlaySegmentsAsync でエラーが発生しました");
             throw new InvalidOperationException("音声シーケンシャル再生中にエラーが発生しました", ex);
         }
         finally
@@ -377,91 +374,6 @@ public class AudioPlayer : IDisposable
             try
             { reader?.Dispose(); }
             catch (Exception ex) { Log.Debug(ex, "Failed to dispose audio reader"); }
-        }
-    }
-
-    private async Task WaitForSegmentGenerationAsync(
-        TextSegment segment,
-        int segmentIndex,
-        AudioProcessingChannel? processingChannel,
-        CancellationToken cancellationToken)
-    {
-        if (segment.IsCached && segment.AudioData != null)
-        {
-            Log.Debug("セグメント {SegmentIndex} は既にキャッシュ済みです", segmentIndex + 1);
-            return;
-        }
-
-        if (processingChannel != null)
-        {
-            try
-            {
-                Log.Information("セグメント {SegmentIndex} の音声生成を開始します", segmentIndex + 1);
-
-                var segmentRequest = new VoiceRequest
-                {
-                    Text = segment.Text,
-                    SpeakerId = segment.SpeakerId ?? 1,
-                    Speed = 1.0,
-                    Pitch = 0.0,
-                    Volume = 1.0
-                };
-
-                var result = await processingChannel.ProcessAudioAsync(segmentRequest, cancellationToken);
-                if (result.Success && result.AudioData.Length > 0)
-                {
-                    segment.AudioData = result.AudioData;
-                    segment.IsCached = true;
-                    Log.Information("セグメント {SegmentIndex} の生成が完了しました (サイズ: {Size} bytes)",
-                        segmentIndex + 1, result.AudioData.Length);
-                }
-                else
-                {
-                    Log.Warning("セグメント {SegmentIndex} の生成に失敗しました: {Error}",
-                        segmentIndex + 1, result.ErrorMessage ?? "Unknown error");
-                    throw new InvalidOperationException($"Failed to generate audio for segment {segmentIndex + 1}: {result.ErrorMessage}");
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                Log.Information("セグメント {SegmentIndex} の生成がキャンセルされました", segmentIndex + 1);
-                throw;
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "セグメント {SegmentIndex} の生成に失敗しました", segmentIndex + 1);
-                throw new InvalidOperationException($"Failed to generate audio for segment {segmentIndex + 1}", ex);
-            }
-        }
-        else
-        {
-            // フォールバック処理
-            var waitStartTime = DateTime.UtcNow;
-            const int maxWaitTimeMs = 30000;
-
-            Log.Information("フォールバック処理: セグメント {SegmentIndex} の準備完了を待機中...", segmentIndex + 1);
-
-            while ((!segment.IsCached || segment.AudioData == null) &&
-                   (DateTime.UtcNow - waitStartTime).TotalMilliseconds < maxWaitTimeMs)
-            {
-                await Task.Delay(100, cancellationToken);
-                cancellationToken.ThrowIfCancellationRequested();
-            }
-
-            if ((DateTime.UtcNow - waitStartTime).TotalMilliseconds >= maxWaitTimeMs)
-            {
-                Log.Warning("セグメント {SegmentIndex} の待機がタイムアウトしました", segmentIndex + 1);
-                throw new TimeoutException($"Segment {segmentIndex + 1} generation timeout after {maxWaitTimeMs}ms");
-            }
-
-            if (segment.AudioData == null)
-            {
-                Log.Warning("セグメント {SegmentIndex} の生成に失敗しました", segmentIndex + 1);
-                throw new InvalidOperationException($"Segment {segmentIndex + 1} generation failed");
-            }
-
-            Log.Information("セグメント {SegmentIndex} の準備が完了しました (サイズ: {Size} bytes)",
-                segmentIndex + 1, segment.AudioData.Length);
         }
     }
 

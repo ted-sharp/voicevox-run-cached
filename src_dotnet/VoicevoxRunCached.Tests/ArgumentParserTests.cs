@@ -1,4 +1,4 @@
-using VoicevoxRunCached.Configuration;
+﻿using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Services;
 
 namespace VoicevoxRunCached.Tests;
@@ -115,5 +115,40 @@ public class ArgumentParserTests
         await Assert.That(options.Verbose).IsFalse();
         await Assert.That(options.NoPlay).IsFalse();
         await Assert.That(options.OutPath).IsNull();
+    }
+
+    [Test]
+    public async Task ParseTextToSpeechOptions_OutEqualsForm_Recognized()
+    {
+        var options = ArgumentParser.ParseTextToSpeechOptions(new[] { "text", "--out=C:/tmp/out.mp3" });
+        await Assert.That(options.OutPath).IsEqualTo("C:/tmp/out.mp3");
+    }
+
+    [Test]
+    public async Task GetBoolOption_DetectsPresence()
+    {
+        await Assert.That(ArgumentParser.GetBoolOption(new[] { "text", "--verbose" }, "--verbose")).IsTrue();
+        await Assert.That(ArgumentParser.GetBoolOption(new[] { "text" }, "--verbose")).IsFalse();
+    }
+
+    [Test]
+    public async Task GetStringOption_ReturnsValueOrNull()
+    {
+        await Assert.That(ArgumentParser.GetStringOption(new[] { "text", "--log-level", "debug" }, "--log-level"))
+            .IsEqualTo("debug");
+        await Assert.That(ArgumentParser.GetStringOption(new[] { "text" }, "--log-level"))
+            .IsNull();
+    }
+
+    [Test]
+    public async Task ParseArguments_LogLevelAndFormat_DoNotProduceWarning()
+    {
+        // --log-level / --log-format は ArgumentParser では skip されるが、未知扱いにはならない
+        var result = ArgumentParser.ParseArguments(
+            new[] { "text", "--log-level", "debug", "--log-format", "json" },
+            DefaultSettings());
+
+        await Assert.That(result).IsNotNull();
+        await Assert.That(result!.Text).IsEqualTo("text");
     }
 }

@@ -3,6 +3,7 @@ using Serilog;
 using Serilog.Events;
 using Serilog.Sinks.SystemConsole.Themes;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services;
 

@@ -90,7 +90,7 @@ public enum LogLevel
 // Logging settings
 public class LoggingSettings
 {
-    public string Level { get; set; } = "Information";
+    public string Level { get; set; } = "info";
     public string Format { get; set; } = "simple";
     public bool EnableFileLogging { get; set; } = false;
     public int MaxFileSizeMb { get; set; } = 10; // 10MB
