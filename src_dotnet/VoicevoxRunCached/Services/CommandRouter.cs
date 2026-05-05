@@ -66,11 +66,11 @@ public class CommandRouter
         catch (VoicevoxRunCachedException ex)
         {
             _logger.LogError(ex, "コマンド実行中にエラーが発生しました: {Command}, ErrorCode: {ErrorCode}", command, ex.ErrorCode);
-            ConsoleHelper.WriteError($"Error: {ex.UserMessage}", _logger);
+            ConsoleHelper.WriteError($"Error: {ex.UserMessage}");
 
             if (!String.IsNullOrEmpty(ex.SuggestedSolution))
             {
-                ConsoleHelper.WriteLine($"解決策: {ex.SuggestedSolution}", _logger);
+                ConsoleHelper.WriteLine($"解決策: {ex.SuggestedSolution}");
             }
 
             return ErrorHandlingUtility.GetExitCodeFromErrorCode(ex.ErrorCode);
@@ -78,7 +78,7 @@ public class CommandRouter
         catch (OperationCanceledException)
         {
             _logger.LogInformation("コマンド実行がキャンセルされました: {Command}", command);
-            ConsoleHelper.WriteLine("操作がキャンセルされました。", _logger);
+            ConsoleHelper.WriteLine("操作がキャンセルされました。");
             return 0;
         }
         catch (Exception ex)
@@ -92,26 +92,26 @@ public class CommandRouter
         var testMessage = _settings.Test.Message;
         if (String.IsNullOrWhiteSpace(testMessage))
         {
-            ConsoleHelper.WriteError("Error: Test.Message is empty in configuration", _logger);
+            ConsoleHelper.WriteError("Error: Test.Message is empty in configuration");
             return 1;
         }
 
         _logger.LogInformation("Test command executed with message: {TestMessage}", testMessage);
-        ConsoleHelper.WriteLine($"テストメッセージ: {testMessage}", _logger);
+        ConsoleHelper.WriteLine($"テストメッセージ: {testMessage}");
 
         // --test 自体は引数の先頭にテキストを取らないので、Test.Message を直接乗せて
         // 残りのオプション (--speed/--pitch/--out 等) を args そのまま再利用する。
-        var request = ArgumentParser.BuildRequestFromOptions(testMessage, args, _settings, _logger);
+        var request = ArgumentParser.BuildRequestFromOptions(testMessage, args, _settings);
         var options = ArgumentParser.ParseTextToSpeechOptions(args);
         return await RunTextToSpeechAsync(request, options, cancellationToken);
     }
 
     private async Task<int> ExecuteTextToSpeechCommandAsync(string[] args, CancellationToken cancellationToken)
     {
-        var request = ArgumentParser.ParseArguments(args, _settings, _logger);
+        var request = ArgumentParser.ParseArguments(args, _settings);
         if (request == null)
         {
-            ConsoleHelper.WriteError("Error: Invalid arguments", _logger);
+            ConsoleHelper.WriteError("Error: Invalid arguments");
             ArgumentParser.ShowUsage();
             return 1;
         }

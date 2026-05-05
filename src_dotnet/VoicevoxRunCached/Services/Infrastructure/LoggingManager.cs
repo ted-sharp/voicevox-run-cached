@@ -1,5 +1,4 @@
-﻿using Microsoft.Extensions.Configuration;
-using Serilog;
+﻿using Serilog;
 using Serilog.Events;
 using Serilog.Sinks.SystemConsole.Themes;
 using VoicevoxRunCached.Configuration;
@@ -7,17 +6,16 @@ using VoicevoxRunCached.Configuration;
 namespace VoicevoxRunCached.Services.Infrastructure;
 
 /// <summary>
-/// 構造化ログとパフォーマンスメトリクスを活用したログ管理サービス
+/// Serilog の初期化を担う。コンソール / ファイル出力の構成は LoggingSettings で制御する。
 /// </summary>
 public class LoggingManager
 {
     private readonly LoggingSettings _settings;
     private bool _isInitialized;
 
-    public LoggingManager(LoggingSettings settings, IConfiguration configuration)
+    public LoggingManager(LoggingSettings settings)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        ArgumentNullException.ThrowIfNull(configuration);
     }
 
     /// <summary>
@@ -35,7 +33,7 @@ public class LoggingManager
             .MinimumLevel.Is(GetLogLevel(_settings.Level))
             .Enrich.FromLogContext()
             .Enrich.WithProperty("Application", "VoicevoxRunCached")
-            .Enrich.WithProperty("Version", GetApplicationVersion())
+            .Enrich.WithProperty("Version", AssemblyVersion.Current)
             .Enrich.WithProperty("Environment", Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production");
 
         // コンソール出力の設定
@@ -115,23 +113,6 @@ public class LoggingManager
             "none" => LogEventLevel.Fatal,
             _ => LogEventLevel.Information
         };
-    }
-
-    /// <summary>
-    /// アプリケーションバージョンの取得
-    /// </summary>
-    private string GetApplicationVersion()
-    {
-        try
-        {
-            var assembly = System.Reflection.Assembly.GetExecutingAssembly();
-            var version = assembly.GetName().Version;
-            return version?.ToString() ?? "1.0.0.0";
-        }
-        catch
-        {
-            return "1.0.0.0";
-        }
     }
 
 }

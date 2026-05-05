@@ -25,20 +25,6 @@ public class VoiceRequest(string text = "", int speakerId = 0, double speed = 1.
     };
 }
 
-public class AudioQueryResponse
-{
-    public double AccentPhrases { get; set; }
-    public double SpeedScale { get; set; }
-    public double PitchScale { get; set; }
-    public double IntonationScale { get; set; }
-    public double VolumeScale { get; set; }
-    public double PrePhonemeLength { get; set; }
-    public double PostPhonemeLength { get; set; }
-    public int OutputSamplingRate { get; set; }
-    public bool OutputStereo { get; set; }
-    public string? Kana { get; set; }
-}
-
 // C# 13 Primary constructor for Speaker model
 public class Speaker(string name = "", string speakerUuid = "", string version = "")
 {

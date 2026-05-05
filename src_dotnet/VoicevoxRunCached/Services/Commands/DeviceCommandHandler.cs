@@ -1,6 +1,5 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
-using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using VoicevoxRunCached.Utilities;
 
@@ -27,42 +26,27 @@ internal sealed record AudioDeviceListPayload(
 /// </summary>
 public class DeviceCommandHandler
 {
-    private readonly ILogger _logger;
-
-    public DeviceCommandHandler(ILogger logger)
-    {
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
-
     public int HandleDevices(string[] args)
     {
-        try
+        bool outputJson = args.Contains("--json");
+        bool full = args.Contains("--full");
+
+        using var enumerator = new MMDeviceEnumerator();
+
+        var (defaultName, defaultId) = GetDefaultAudioEndpoint(enumerator);
+        var deviceList = full ? EnumerateDevices(enumerator) : new List<AudioDeviceInfo>();
+
+        if (outputJson)
         {
-            bool outputJson = args.Contains("--json");
-            bool full = args.Contains("--full");
-
-            using var enumerator = new MMDeviceEnumerator();
-
-            var (defaultName, defaultId) = GetDefaultAudioEndpoint(enumerator);
-            var deviceList = full ? EnumerateDevices(enumerator) : new List<AudioDeviceInfo>();
-
-            if (outputJson)
-            {
-                OutputJson(defaultName, defaultId, deviceList);
-                return 0;
-            }
-
-            OutputConsole(defaultName, defaultId, deviceList, full);
+            OutputJson(defaultName, defaultId, deviceList);
             return 0;
         }
-        catch (Exception ex)
-        {
-            ConsoleHelper.WriteError($"Error listing devices: {ex.Message}", _logger);
-            return 1;
-        }
+
+        OutputConsole(defaultName, defaultId, deviceList, full);
+        return 0;
     }
 
-    private (string? Name, string? Id) GetDefaultAudioEndpoint(MMDeviceEnumerator enumerator)
+    private static (string? Name, string? Id) GetDefaultAudioEndpoint(MMDeviceEnumerator enumerator)
     {
         try
         {
@@ -71,12 +55,12 @@ public class DeviceCommandHandler
         }
         catch (Exception ex)
         {
-            ConsoleHelper.WriteWarning($"Failed to get default audio endpoint: {ex.Message}", _logger);
+            ConsoleHelper.WriteWarning($"Failed to get default audio endpoint: {ex.Message}");
             return (null, null);
         }
     }
 
-    private List<AudioDeviceInfo> EnumerateDevices(MMDeviceEnumerator enumerator)
+    private static List<AudioDeviceInfo> EnumerateDevices(MMDeviceEnumerator enumerator)
     {
         var list = new List<AudioDeviceInfo>();
         try
@@ -90,13 +74,13 @@ public class DeviceCommandHandler
                 }
                 catch (Exception inner)
                 {
-                    ConsoleHelper.WriteWarning($"Failed to read device info: {inner.Message}", _logger);
+                    ConsoleHelper.WriteWarning($"Failed to read device info: {inner.Message}");
                 }
             }
         }
         catch (Exception ex)
         {
-            ConsoleHelper.WriteWarning($"Failed to enumerate audio endpoints: {ex.Message}", _logger);
+            ConsoleHelper.WriteWarning($"Failed to enumerate audio endpoints: {ex.Message}");
         }
         return list;
     }
@@ -110,17 +94,17 @@ public class DeviceCommandHandler
         Console.WriteLine(json);
     }
 
-    private void OutputConsole(string? defaultName, string? defaultId, IReadOnlyList<AudioDeviceInfo> deviceList, bool full)
+    private static void OutputConsole(string? defaultName, string? defaultId, IReadOnlyList<AudioDeviceInfo> deviceList, bool full)
     {
-        ConsoleHelper.WriteLine("Available output devices (WASAPI):", _logger);
+        ConsoleHelper.WriteLine("Available output devices (WASAPI):");
 
         if (!String.IsNullOrEmpty(defaultName))
         {
-            ConsoleHelper.WriteLine($"  Default: \"{defaultName}\" (ID: {defaultId})", _logger);
+            ConsoleHelper.WriteLine($"  Default: \"{defaultName}\" (ID: {defaultId})");
         }
         else
         {
-            ConsoleHelper.WriteLine("  Default: (unavailable)", _logger);
+            ConsoleHelper.WriteLine("  Default: (unavailable)");
         }
 
         if (full)
@@ -129,22 +113,22 @@ public class DeviceCommandHandler
         }
         else
         {
-            ConsoleHelper.WriteLine("  (use 'devices --full' for a detailed list)", _logger);
+            ConsoleHelper.WriteLine("  (use 'devices --full' for a detailed list)");
         }
     }
 
-    private void OutputDeviceList(IReadOnlyList<AudioDeviceInfo> deviceList)
+    private static void OutputDeviceList(IReadOnlyList<AudioDeviceInfo> deviceList)
     {
         if (deviceList.Count == 0)
         {
-            ConsoleHelper.WriteLine("  (no active render devices)", _logger);
+            ConsoleHelper.WriteLine("  (no active render devices)");
             return;
         }
 
         for (int idx = 0; idx < deviceList.Count; idx++)
         {
             var d = deviceList[idx];
-            ConsoleHelper.WriteLine($"  [{idx}] \"{d.Name}\" (ID: {d.Id}) State: {d.State}", _logger);
+            ConsoleHelper.WriteLine($"  [{idx}] \"{d.Name}\" (ID: {d.Id}) State: {d.State}");
         }
     }
 }

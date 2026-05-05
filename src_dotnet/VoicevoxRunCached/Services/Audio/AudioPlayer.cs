@@ -1,7 +1,6 @@
 ﻿using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using NAudio.Wave;
-using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
@@ -19,26 +18,20 @@ public class AudioPlayer : IDisposable
 {
     private readonly AudioDeviceManager _deviceManager;
     private readonly AudioFormatDetector _formatDetector;
-    private readonly AudioSettings _settings;
     private readonly WavePlayerManager _wavePlayerManager;
     private readonly ILogger _logger;
     private bool _disposed;
 
     public AudioPlayer(
-        AudioSettings settings,
         AudioDeviceManager deviceManager,
         AudioFormatDetector formatDetector,
         WavePlayerManager wavePlayerManager,
         ILogger logger)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _deviceManager = deviceManager ?? throw new ArgumentNullException(nameof(deviceManager));
         _formatDetector = formatDetector ?? throw new ArgumentNullException(nameof(formatDetector));
         _wavePlayerManager = wavePlayerManager ?? throw new ArgumentNullException(nameof(wavePlayerManager));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-
-        _logger.LogDebug("AudioPlayer を初期化しました - 音量: {Volume}, デバイス: {Device}",
-            settings.Volume, settings.OutputDevice);
     }
 
     public void Dispose()

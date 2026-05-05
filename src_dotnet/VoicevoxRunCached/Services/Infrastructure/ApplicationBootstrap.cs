@@ -29,10 +29,10 @@ public static class ApplicationBootstrap
         var settings = BuildAppSettings(configuration);
 
         // 設定を検証
-        await ValidateConfigurationAsync(settings);
+        ValidateConfiguration(settings);
 
         // ログを設定
-        var loggingManager = new LoggingManager(settings.Logging, configuration);
+        var loggingManager = new LoggingManager(settings.Logging);
         loggingManager.ConfigureSerilog();
 
         // ロガーファクトリを作成
@@ -47,7 +47,7 @@ public static class ApplicationBootstrap
         MediaFoundationManager.Acquire(logger);
 
         // アプリケーション開始をログ出力
-        logger.LogInformation("VoicevoxRunCached アプリケーションを開始します - バージョン {Version}", GetVersion());
+        logger.LogInformation("VoicevoxRunCached アプリケーションを開始します - バージョン {Version}", AssemblyVersion.Current);
 
         return (settings, logger);
     }
@@ -95,12 +95,11 @@ public static class ApplicationBootstrap
     /// <summary>
     /// 設定を検証します
     /// </summary>
-    private static Task ValidateConfigurationAsync(AppSettings settings)
+    private static void ValidateConfiguration(AppSettings settings)
     {
         var validationService = new ConfigurationValidationService();
         validationService.ValidateConfiguration(settings);
         ConsoleHelper.WriteValidationSuccess("設定の検証が完了しました");
-        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -117,14 +116,6 @@ public static class ApplicationBootstrap
                 SetConsoleMode(handle, mode);
             }
         }
-    }
-
-    /// <summary>
-    /// バージョンを取得します
-    /// </summary>
-    private static string GetVersion()
-    {
-        return typeof(ApplicationBootstrap).Assembly.GetName().Version?.ToString() ?? "Unknown";
     }
 
     // P/Invoke declarations

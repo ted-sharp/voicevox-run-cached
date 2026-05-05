@@ -10,51 +10,11 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// </summary>
 public class AudioExportService
 {
-    private readonly VoiceVoxApiClient _apiClient;
     private readonly ILogger _logger;
 
-    public AudioExportService(VoiceVoxApiClient apiClient, ILogger logger)
+    public AudioExportService(ILogger logger)
     {
-        _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-    }
-
-    public async Task ExportAudioAsync(VoiceRequest request, string outPath, CancellationToken cancellationToken = default)
-    {
-        try
-        {
-            _logger.LogInformation("音声ファイルの出力を開始します: {OutPath}", outPath);
-
-            await _apiClient.InitializeSpeakerAsync(request.SpeakerId, cancellationToken);
-
-            var audioQuery = await _apiClient.GenerateAudioQueryAsync(request, cancellationToken);
-            var wavData = await _apiClient.SynthesizeAudioAsync(audioQuery, request.SpeakerId, cancellationToken);
-            await WriteOutputFileAsync(wavData, outPath, cancellationToken);
-
-            ConsoleHelper.WriteSuccess($"Saved output to: {outPath}", _logger);
-            _logger.LogInformation("音声ファイルの出力が完了しました: {OutPath}", outPath);
-        }
-        catch (OperationCanceledException)
-        {
-            ConsoleHelper.WriteLine("Output export was cancelled", _logger);
-            throw;
-        }
-        catch (VoicevoxRunCachedException)
-        {
-            // 既にドメイン例外化済み (API クライアント等) はそのまま伝播させる
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "音声ファイルの出力に失敗しました: {OutPath}", outPath);
-            ConsoleHelper.WriteWarning($"Failed to save output to '{outPath}': {ex.Message}", _logger);
-            throw new AudioProcessingException(
-                ErrorCodes.Audio.AudioFileExportFailed,
-                $"Failed to export audio file: {outPath}",
-                $"音声ファイルの出力に失敗しました: {outPath}",
-                ex,
-                "出力先ディレクトリの権限と空き容量を確認してください。");
-        }
     }
 
     public async Task ExportSegmentsAsync(List<TextSegment> segments, string outPath, CancellationToken cancellationToken = default)
@@ -82,12 +42,12 @@ public class AudioExportService
 
             await WriteOutputFileAsync(finalAudioData, outPath, cancellationToken);
 
-            ConsoleHelper.WriteSuccess($"Saved output to: {outPath}", _logger);
+            ConsoleHelper.WriteSuccess($"Saved output to: {outPath}");
             _logger.LogInformation("セグメント音声ファイルの出力が完了しました: {OutPath}", outPath);
         }
         catch (OperationCanceledException)
         {
-            ConsoleHelper.WriteLine("Output export was cancelled", _logger);
+            ConsoleHelper.WriteLine("Output export was cancelled");
             throw;
         }
         catch (VoicevoxRunCachedException)
@@ -97,7 +57,7 @@ public class AudioExportService
         catch (Exception ex)
         {
             _logger.LogError(ex, "セグメント音声ファイルの出力に失敗しました: {OutPath}", outPath);
-            ConsoleHelper.WriteWarning($"Failed to save output to '{outPath}': {ex.Message}", _logger);
+            ConsoleHelper.WriteWarning($"Failed to save output to '{outPath}': {ex.Message}");
             throw new AudioProcessingException(
                 ErrorCodes.Audio.AudioFileExportFailed,
                 $"Failed to export combined segments: {outPath}",

@@ -48,7 +48,6 @@ public class AudioSettings
     public bool PrepareDevice { get; set; } = false;
     public int PreparationDurationMs { get; set; } = 200;
     public double PreparationVolume { get; set; } = 0.01;
-    public string OutputDeviceId { get; set; } = "";
     public int DesiredLatency { get; set; } = 100; // 100ms
     public int NumberOfBuffers { get; set; } = 3;
 }
@@ -70,7 +69,6 @@ public class FillerSettings
     ];
 
     public bool UseExecutableBaseDirectory { get; set; } = false;
-    public int MaxCacheSizeMb { get; set; } = 100; // 100MB
 }
 
 // Log level enum for configuration

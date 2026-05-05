@@ -134,8 +134,8 @@ public static class ErrorHandlingUtility
                 operation, ctx.Code, context ?? "なし");
         }
 
-        ConsoleHelper.WriteError($"Error: {ctx.UserMessage} - {ex.Message}", logger);
-        ConsoleHelper.WriteLine($"解決策: {ctx.Solution}", logger);
+        ConsoleHelper.WriteError($"Error: {ctx.UserMessage} - {ex.Message}");
+        ConsoleHelper.WriteLine($"解決策: {ctx.Solution}");
 
         return GetExitCodeFromErrorCode(ctx.Code);
     }

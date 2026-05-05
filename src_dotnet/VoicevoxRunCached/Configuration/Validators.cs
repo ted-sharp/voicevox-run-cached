@@ -118,10 +118,6 @@ public class FillerSettingsValidator : AbstractValidator<FillerSettings>
             .NotEmpty().When(x => x.Enabled).WithMessage("FillerTextsは空であってはいけません（フィラーが有効な場合）")
             .Must(texts => texts?.All(t => !String.IsNullOrWhiteSpace(t)) ?? true)
             .When(x => x.Enabled).WithMessage("FillerTextsの各要素は空文字列であってはいけません");
-
-        // 新しい検証ルール
-        RuleFor(x => x.MaxCacheSizeMb)
-            .InclusiveBetween(1, 10000).When(x => x.Enabled).WithMessage("MaxCacheSizeMbは1-10000MBの範囲である必要があります");
     }
 }
 

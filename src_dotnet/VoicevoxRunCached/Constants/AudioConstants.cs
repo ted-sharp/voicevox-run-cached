@@ -66,14 +66,14 @@ public static class AudioConstants
     public const int DefaultBitsPerSample = 16;
 
     /// <summary>
-    /// フィラー音声生成用の周波数（Hz）
+    /// デバイス warm-up 用の sine wave 周波数（Hz）
     /// </summary>
-    public const double FillerFrequencyHz = 440.0;
+    public const double WarmupFrequencyHz = 440.0;
 
     /// <summary>
-    /// フィラー音声生成用の低音量レベル
+    /// デバイス warm-up 用 sine wave の低音量レベル
     /// </summary>
-    public const short FillerAmplitude = 32;
+    public const short WarmupAmplitude = 32;
 
     /// <summary>
     /// VOICEVOX エンジンプロセス停止時の待機時間（ミリ秒）

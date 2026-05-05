@@ -1,8 +1,8 @@
-﻿using Microsoft.Extensions.Logging;
-using VoicevoxRunCached.Exceptions;
+﻿namespace VoicevoxRunCached.Services.Infrastructure;
 
-namespace VoicevoxRunCached.Services.Infrastructure;
-
+/// <summary>
+/// 色付きコンソール出力。ログ書き込みは行わないため、ログに残したい情報は呼び出し側で ILogger を別途呼ぶこと。
+/// </summary>
 public static class ConsoleHelper
 {
     private const string Reset = "\e[0m";
@@ -17,61 +17,12 @@ public static class ConsoleHelper
         Console.WriteLine($"{color}{message}{Reset}");
     }
 
-    public static void WriteSuccess(string message, ILogger? logger = null)
-    {
-        WriteColored(Green, message);
-        logger?.LogInformation(message);
-    }
-
-    public static void WriteError(string message, ILogger? logger = null)
-    {
-        WriteColored(Red, message);
-        logger?.LogError(message);
-    }
-
-    public static void WriteError(string message, Exception ex, ILogger? logger = null)
-    {
-        var errorMessage = ex is VoicevoxRunCachedException vrcEx
-            ? $"{message} [{vrcEx.ErrorCode}] - {ErrorCodes.GetDescription(vrcEx.ErrorCode)}"
-            : $"{message} - {ex.Message}";
-
-        WriteColored(Red, errorMessage);
-        logger?.LogError(ex, message);
-    }
-
-    public static void WriteWarning(string message, ILogger? logger = null)
-    {
-        WriteColored(Yellow, message);
-        logger?.LogWarning(message);
-    }
-
-    public static void WriteInfo(string message, ILogger? logger = null)
-    {
-        WriteColored(Cyan, message);
-        logger?.LogInformation(message);
-    }
-
-    public static void WriteDebug(string message, ILogger? logger = null)
-    {
-        WriteColored(Gray, message);
-        logger?.LogDebug(message);
-    }
-
-    public static void WriteLine(string message, ILogger? logger = null)
-    {
-        Console.WriteLine(message);
-        logger?.LogInformation(message);
-    }
-
-    public static void WriteValidationSuccess(string message, ILogger? logger = null)
-    {
-        WriteColored(Green, $"✓ {message}");
-        logger?.LogInformation(message);
-    }
-
-    public static void WriteValidationError(string message, ILogger? logger = null)
-    {
-        WriteColored(Red, $"✗ {message}");
-        logger?.LogError(message);
-    }
+    public static void WriteSuccess(string message) => WriteColored(Green, message);
+    public static void WriteError(string message) => WriteColored(Red, message);
+    public static void WriteWarning(string message) => WriteColored(Yellow, message);
+    public static void WriteInfo(string message) => WriteColored(Cyan, message);
+    public static void WriteDebug(string message) => WriteColored(Gray, message);
+    public static void WriteLine(string message) => Console.WriteLine(message);
+    public static void WriteValidationSuccess(string message) => WriteColored(Green, $"✓ {message}");
+    public static void WriteValidationError(string message) => WriteColored(Red, $"✗ {message}");
 }

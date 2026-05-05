@@ -125,7 +125,8 @@ public static class ArgumentParser
                     i += 2;
                     break;
                 default:
-                    ConsoleHelper.WriteWarning($"Warning: Unknown option '{processedArgs[i]}'", logger);
+                    ConsoleHelper.WriteWarning($"Warning: Unknown option '{processedArgs[i]}'");
+                    logger?.LogWarning("Unknown option: {Option}", processedArgs[i]);
                     i++;
                     break;
             }

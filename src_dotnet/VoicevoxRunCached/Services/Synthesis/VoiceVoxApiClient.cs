@@ -1,4 +1,5 @@
-﻿using System.Net;
+﻿using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -36,9 +37,6 @@ public class VoiceVoxApiClient : IDisposable
         _logger.LogDebug("VoiceVoxApiClient を初期化しました - BaseUrl: {BaseUrl}, Timeout: {Timeout}s",
             _settings.BaseUrl, _settings.ConnectionTimeout);
     }
-
-    public string BaseUrl => _settings.BaseUrl;
-    public int ConnectionTimeout => _settings.ConnectionTimeout;
 
     public void Dispose()
     {
@@ -81,19 +79,26 @@ public class VoiceVoxApiClient : IDisposable
     {
         return ExecuteApiAsync("generate audio query", async ct =>
         {
+            // CacheKeyGenerator が F2 (小数 2 桁) で正規化するので、API 送信値も同じ粒度に揃える。
+            // これでキャッシュキーと API パラメータが必ず一致する。
+            // フォーマットは InvariantCulture を強制 (CurrentCulture が de-DE 等だと "1,5" と出て API が弾く)。
+            var speed = Math.Round(request.Speed, 2);
+            var pitch = Math.Round(request.Pitch, 2);
+            var volume = Math.Round(request.Volume, 2);
+
             _logger.LogDebug("Audio query を生成 - Text='{Text}', SpeakerId={SpeakerId}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
-                request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
+                request.Text, request.SpeakerId, speed, pitch, volume);
 
             var encodedText = Uri.EscapeDataString(request.Text);
             var queryString = $"text={encodedText}&speaker={request.SpeakerId}";
 
-            // 浮動小数点の誤差を考慮し、デフォルトに近い値はクエリに含めない
-            if (Math.Abs(request.Speed - 1.0) > AudioConstants.FloatingPointEpsilon)
-                queryString += $"&speed_scale={request.Speed}";
-            if (Math.Abs(request.Pitch - 0.0) > AudioConstants.FloatingPointEpsilon)
-                queryString += $"&pitch_scale={request.Pitch}";
-            if (Math.Abs(request.Volume - 1.0) > AudioConstants.FloatingPointEpsilon)
-                queryString += $"&volume_scale={request.Volume}";
+            // 丸め後の値がデフォルトと異なる場合だけクエリに乗せる
+            if (Math.Abs(speed - 1.0) > AudioConstants.FloatingPointEpsilon)
+                queryString += $"&speed_scale={speed.ToString(CultureInfo.InvariantCulture)}";
+            if (Math.Abs(pitch - 0.0) > AudioConstants.FloatingPointEpsilon)
+                queryString += $"&pitch_scale={pitch.ToString(CultureInfo.InvariantCulture)}";
+            if (Math.Abs(volume - 1.0) > AudioConstants.FloatingPointEpsilon)
+                queryString += $"&volume_scale={volume.ToString(CultureInfo.InvariantCulture)}";
 
             var url = $"{_settings.BaseUrl}/audio_query?{queryString}";
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);

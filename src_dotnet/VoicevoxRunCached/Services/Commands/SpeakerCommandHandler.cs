@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -9,47 +9,42 @@ public class SpeakerCommandHandler
 {
     private readonly VoiceVoxApiClient _apiClient;
     private readonly VoiceVoxEngineManager _engineManager;
-    private readonly ILogger _logger;
 
-    public SpeakerCommandHandler(VoiceVoxEngineManager engineManager, VoiceVoxApiClient apiClient, ILogger logger)
+    public SpeakerCommandHandler(VoiceVoxEngineManager engineManager, VoiceVoxApiClient apiClient)
     {
         _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <summary>
-    /// 利用可能なスピーカーの一覧を取得・表示します
-    /// </summary>
-    /// <returns>処理結果の終了コード</returns>
     public async Task<int> HandleSpeakersAsync(CancellationToken cancellationToken = default)
     {
-        try
+        await EnsureEngineOrThrowAsync(cancellationToken);
+
+        var speakers = await _apiClient.GetSpeakersAsync(cancellationToken);
+
+        ConsoleHelper.WriteLine("Available speakers:");
+        foreach (var speaker in speakers)
         {
-            if (!await _engineManager.EnsureEngineRunningAsync(cancellationToken))
+            ConsoleHelper.WriteLine($"  {speaker.Name} (v{speaker.Version})");
+            foreach (var style in speaker.Styles)
             {
-                ConsoleHelper.WriteError("Error: VOICEVOX engine is not available", _logger);
-                return 1;
+                ConsoleHelper.WriteLine($"    ID: {style.Id} - {style.Name}");
             }
-
-            var speakers = await _apiClient.GetSpeakersAsync(cancellationToken);
-
-            ConsoleHelper.WriteLine("Available speakers:", _logger);
-            foreach (var speaker in speakers)
-            {
-                ConsoleHelper.WriteLine($"  {speaker.Name} (v{speaker.Version})", _logger);
-                foreach (var style in speaker.Styles)
-                {
-                    ConsoleHelper.WriteLine($"    ID: {style.Id} - {style.Name}", _logger);
-                }
-                ConsoleHelper.WriteLine("", _logger);
-            }
-            return 0;
+            ConsoleHelper.WriteLine("");
         }
-        catch (Exception ex)
+        return 0;
+    }
+
+    private async Task EnsureEngineOrThrowAsync(CancellationToken cancellationToken)
+    {
+        if (!await _engineManager.EnsureEngineRunningAsync(cancellationToken))
         {
-            ConsoleHelper.WriteError($"Error: {ex.Message}", _logger);
-            return 1;
+            throw new VoicevoxRunCachedException(
+                ErrorCodes.Engine.EngineNotAvailable,
+                "VOICEVOX engine is not available",
+                "VOICEVOXエンジンが利用できません。",
+                null,
+                "VOICEVOXエンジンが起動しているか確認してください。");
         }
     }
 }

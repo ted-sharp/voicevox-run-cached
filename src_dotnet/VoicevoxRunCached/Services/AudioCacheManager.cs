@@ -147,12 +147,6 @@ public class AudioCacheManager : IDisposable
         }, TaskScheduler.Default);
     }
 
-    public Task CleanupExpiredCacheAsync(CancellationToken cancellationToken = default)
-        => _eviction.CleanupExpiredAsync(cancellationToken);
-
-    public Task CleanupByMaxSizeAsync(CancellationToken cancellationToken = default)
-        => _eviction.CleanupByMaxSizeAsync(cancellationToken);
-
     public Task ClearAllCacheAsync(CancellationToken cancellationToken = default)
     {
         return WithCacheErrorHandling<object?>(CacheErrorMapper.OperationKind.Clear, "キャッシュのクリア", null, () =>

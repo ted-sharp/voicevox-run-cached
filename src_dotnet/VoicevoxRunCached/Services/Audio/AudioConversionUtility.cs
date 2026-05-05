@@ -81,8 +81,8 @@ public static class AudioConversionUtility
         else
         {
             // Very low amplitude sine wave for device warming
-            const double frequency = AudioConstants.FillerFrequencyHz; // A4 note
-            const short amplitude = AudioConstants.FillerAmplitude; // Very low amplitude
+            const double frequency = AudioConstants.WarmupFrequencyHz; // A4 note
+            const short amplitude = AudioConstants.WarmupAmplitude; // Very low amplitude
 
             for (int i = 0; i < samplesCount; i++)
             {

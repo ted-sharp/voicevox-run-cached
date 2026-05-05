@@ -35,7 +35,7 @@ static class Program
                 { MediaFoundationManager.Release(logger); }
                 catch (Exception cleanupEx) { logger.LogDebug(cleanupEx, "MediaFoundation shutdown中の警告"); }
 
-                ProgramExtensions.CleanupSerilog();
+                CleanupSerilog();
             }
         }
         catch (VoicevoxRunCachedException ex)
@@ -65,11 +65,8 @@ static class Program
             return ErrorHandlingUtility.HandleExceptionAndGetExitCode(ex);
         }
     }
-}
 
-public static class ProgramExtensions
-{
-    public static void CleanupSerilog()
+    private static void CleanupSerilog()
     {
         try
         {

@@ -101,8 +101,7 @@ public class TextToSpeechProcessor
         if (hasPartialFailure)
         {
             ConsoleHelper.WriteWarning(
-                $"Warning: {synthesisResult.FailureCount}/{synthesisResult.AttemptedCount} segments failed to synthesize",
-                _logger);
+                $"Warning: {synthesisResult.FailureCount}/{synthesisResult.AttemptedCount} segments failed to synthesize");
         }
 
         if (!String.IsNullOrWhiteSpace(options.OutPath))
@@ -112,7 +111,7 @@ public class TextToSpeechProcessor
 
         if (options.NoPlay)
         {
-            ConsoleHelper.WriteSuccess("Done (no-play mode)!", _logger);
+            ConsoleHelper.WriteSuccess("Done (no-play mode)!");
         }
 
         LogElapsedIfVerbose(options.Verbose, totalStartTime);
@@ -121,7 +120,7 @@ public class TextToSpeechProcessor
 
     private async Task<List<TextSegment>> LoadSegmentsAsync(VoiceRequest request, bool noCache, CancellationToken cancellationToken)
     {
-        ConsoleHelper.WriteLine("Processing segments...", _logger);
+        ConsoleHelper.WriteLine("Processing segments...");
 
         var segments = await _textProcessor.ProcessTextAsync(request.Text, request.SpeakerId, cancellationToken);
         if (segments.Count == 0)
@@ -202,7 +201,7 @@ public class TextToSpeechProcessor
         if (verbose)
         {
             var elapsed = (DateTime.UtcNow - playbackStartTime).TotalMilliseconds;
-            ConsoleHelper.WriteLine($"Audio playback completed in {elapsed:F1}ms", _logger);
+            ConsoleHelper.WriteLine($"Audio playback completed in {elapsed:F1}ms");
         }
     }
 
@@ -327,7 +326,7 @@ public class TextToSpeechProcessor
         {
             return;
         }
-        ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - startedAt).TotalMilliseconds:F1}ms", _logger);
+        ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - startedAt).TotalMilliseconds:F1}ms");
     }
 
     private readonly record struct SynthesisResult(int AttemptedCount, int SuccessCount, int FailureCount);
