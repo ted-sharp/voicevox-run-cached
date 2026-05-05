@@ -39,7 +39,7 @@ public class InitCommandHandler
             }
 
             ConsoleHelper.WriteLine("Initializing filler cache...", _logger);
-            await _fillerManager.InitializeFillerCacheAsync(_apiClient);
+            await _fillerManager.InitializeFillerCacheAsync(_apiClient, cancellationToken);
             ConsoleHelper.WriteSuccess("Filler cache initialized", _logger);
             return 0;
         }

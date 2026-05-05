@@ -207,8 +207,8 @@ public class TextToSpeechProcessor
     }
 
     /// <summary>
-    /// セグメントを順次合成して channel に流す。キャッシュ済みは即座に流すだけ。
-    /// 各 API 呼び出しは直列。channel への書き込み後にキャッシュ保存を fire-and-forget して、次の API 呼び出しを遅らせない。
+    /// セグメントを順次処理して channel に流す producer。キャッシュ済みは即座に流すだけ、
+    /// 未キャッシュは <see cref="SynthesizeOneAsync"/> に委譲して合成 → channel write → cache save の順で進める。
     /// </summary>
     /// <remarks>
     /// 順序契約 (フィラー誤発火を避けるため厳守):
@@ -223,9 +223,7 @@ public class TextToSpeechProcessor
         bool noCache,
         CancellationToken cancellationToken)
     {
-        int attempted = 0;
-        int successCount = 0;
-        int failureCount = 0;
+        var stats = new SegmentStats();
         var pendingCacheSaves = new List<Task>();
 
         try
@@ -240,37 +238,14 @@ public class TextToSpeechProcessor
                     continue;
                 }
 
-                attempted++;
-                VoiceRequest? segmentRequest = null;
-                byte[]? wavData = null;
-
-                try
-                {
-                    segmentRequest = BuildSegmentRequest(segment.Text, originalRequest);
-                    var audioQuery = await _apiClient.GenerateAudioQueryAsync(segmentRequest, cancellationToken);
-                    wavData = await _apiClient.SynthesizeAudioAsync(audioQuery, originalRequest.SpeakerId, cancellationToken);
-
-                    segment.AudioData = wavData;
-                    segment.IsCached = true; // 再生側がスキップ判定に利用 (合成成功フラグを兼用)
-                    successCount++;
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to synthesize segment: {Text}", segment.Text);
-                    failureCount++;
-                    // segment.AudioData は null のまま — 再生側で skip される
-                }
+                var synth = await SynthesizeOneAsync(segment, originalRequest, stats, cancellationToken);
 
                 // 合成失敗 (AudioData == null) でも channel には流す。再生側で skip ログを出す
                 await writer.WriteAsync(segment, cancellationToken);
 
-                if (!noCache && wavData != null && segmentRequest != null)
+                if (!noCache && synth.WavData != null && synth.Request != null)
                 {
-                    pendingCacheSaves.Add(SaveCacheBestEffortAsync(segmentRequest, wavData));
+                    pendingCacheSaves.Add(SaveCacheBestEffortAsync(synth.Request, synth.WavData));
                 }
             }
         }
@@ -291,7 +266,45 @@ public class TextToSpeechProcessor
             }
         }
 
-        return new SynthesisResult(attempted, successCount, failureCount);
+        return new SynthesisResult(stats.Attempted, stats.Success, stats.Failure);
+    }
+
+    /// <summary>
+    /// 1 セグメント分の合成だけを担う。成功時は <see cref="TextSegment.AudioData"/> を埋めて
+    /// 後段でキャッシュ保存できるよう <see cref="VoiceRequest"/> と WAV を返す。
+    /// 例外は <see cref="OperationCanceledException"/> 以外を握り、失敗カウントを増やして null を返す。
+    /// </summary>
+    private async Task<SegmentSynthesis> SynthesizeOneAsync(
+        TextSegment segment,
+        VoiceRequest originalRequest,
+        SegmentStats stats,
+        CancellationToken cancellationToken)
+    {
+        stats.Attempted++;
+
+        var segmentRequest = BuildSegmentRequest(segment.Text, originalRequest);
+
+        try
+        {
+            var audioQuery = await _apiClient.GenerateAudioQueryAsync(segmentRequest, cancellationToken);
+            var wavData = await _apiClient.SynthesizeAudioAsync(audioQuery, originalRequest.SpeakerId, cancellationToken);
+
+            segment.AudioData = wavData;
+            segment.IsCached = true; // 再生側がスキップ判定に利用 (合成成功フラグを兼用)
+            stats.Success++;
+            return new SegmentSynthesis(segmentRequest, wavData);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to synthesize segment: {Text}", segment.Text);
+            stats.Failure++;
+            // segment.AudioData は null のまま — 再生側で skip される
+            return new SegmentSynthesis(null, null);
+        }
     }
 
     private async Task SaveCacheBestEffortAsync(VoiceRequest request, byte[] wavData)
@@ -325,4 +338,19 @@ public class TextToSpeechProcessor
     }
 
     private readonly record struct SynthesisResult(int AttemptedCount, int SuccessCount, int FailureCount);
+
+    /// <summary>
+    /// 1 セグメントの合成結果。成功時は cache save 用に Request と WAV を持ち、失敗時は両方 null。
+    /// </summary>
+    private readonly record struct SegmentSynthesis(VoiceRequest? Request, byte[]? WavData);
+
+    /// <summary>
+    /// producer ループ全体の合成統計。可変なので class。
+    /// </summary>
+    private sealed class SegmentStats
+    {
+        public int Attempted;
+        public int Success;
+        public int Failure;
+    }
 }

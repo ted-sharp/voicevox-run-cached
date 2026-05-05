@@ -158,34 +158,36 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// メタデータを読む。失敗時 null。
+    /// cacheKey 指定でメタデータを読む。失敗時 null。
     /// </summary>
     public async Task<CacheMetadata?> ReadMetadataAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
+        var (_, metaPath) = ResolvePaths(cacheKey);
+        if (!File.Exists(metaPath))
+            return null;
+
         try
         {
-            var (_, metaPath) = ResolvePaths(cacheKey);
-            if (!File.Exists(metaPath))
-                return null;
-
             var json = await File.ReadAllTextAsync(metaPath, cancellationToken);
             return JsonSerializer.Deserialize<CacheMetadata>(json);
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogDebug(ex, "Failed to read metadata file: {Path}", metaPath);
             return null;
         }
     }
 
     /// <summary>
-    /// 同期版のメタデータ読み込み (eviction 内のループから利用)。
+    /// 同期版のメタデータ読み込み (eviction の同期ループから利用)。引数は metaFilePath そのもの。
     /// </summary>
     public CacheMetadata? ReadMetadata(string metaFilePath)
     {
+        if (!File.Exists(metaFilePath))
+            return null;
+
         try
         {
-            if (!File.Exists(metaFilePath))
-                return null;
             var json = File.ReadAllText(metaFilePath);
             return JsonSerializer.Deserialize<CacheMetadata>(json);
         }

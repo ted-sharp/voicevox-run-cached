@@ -78,6 +78,11 @@ public class CacheEvictionPolicy
                 "操作を再実行してください。"
             );
         }
+        catch (VoicevoxRunCachedException)
+        {
+            // 既にドメイン例外に整形済みのものは二重 wrap せず素通し
+            throw;
+        }
         catch (UnauthorizedAccessException ex)
         {
             _logger.LogError(ex, "キャッシュクリーンアップ中にアクセス権限エラーが発生しました");

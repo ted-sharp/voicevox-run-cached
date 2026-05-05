@@ -127,35 +127,18 @@ public class AudioCacheManager : IDisposable
 
     public void ClearAllCache()
     {
-        try
+        // WithCacheErrorHandling と同形の例外整形を共有する。Clear は同期処理だが、
+        // ラッパは Task<T> ベースなのでここから .GetAwaiter().GetResult() で同期実行する。
+        WithCacheErrorHandling<object?>(CacheOperationKind.Clear, "キャッシュのクリア", null, () =>
         {
             _memory.Clear();
-
             foreach (var file in _disk.GetAudioFiles())
             {
                 _disk.Delete(Path.GetFileNameWithoutExtension(file));
             }
-
             _logger.LogInformation("すべてのキャッシュをクリアしました - メモリ・ディスク共にクリア済み");
-        }
-        catch (UnauthorizedAccessException ex)
-        {
-            throw CreateCacheException(ErrorCodes.Cache.CachePermissionDenied,
-                "Access denied while clearing cache", "キャッシュのクリア中にアクセス権限エラーが発生しました。",
-                "キャッシュディレクトリのアクセス権限を確認してください。", null, ex);
-        }
-        catch (IOException ex)
-        {
-            throw CreateCacheException(ErrorCodes.Cache.CacheReadError,
-                "I/O error while clearing cache", "キャッシュのクリア中にI/Oエラーが発生しました。",
-                "ディスクの状態とキャッシュディレクトリの権限を確認してください。", null, ex);
-        }
-        catch (Exception ex)
-        {
-            throw CreateCacheException(ErrorCodes.General.UnknownError,
-                "Failed to clear cache", "キャッシュのクリアに失敗しました。",
-                "アプリケーションを再起動し、問題が続く場合はログを確認してください。", null, ex);
-        }
+            return Task.FromResult<object?>(null);
+        }).GetAwaiter().GetResult();
     }
 
     /// <summary>
@@ -209,8 +192,9 @@ public class AudioCacheManager : IDisposable
 
     /// <summary>
     /// 同一形のキャッシュ I/O 例外ハンドリング (UnauthorizedAccessException / IOException / その他)。
+    /// 既に <see cref="CacheException"/> 化されたものは素通し (二重 wrap 防止)。
     /// </summary>
-    private async Task<T> WithCacheErrorHandling<T>(CacheOperationKind kind, string operation, string cacheKey, Func<Task<T>> action)
+    private async Task<T> WithCacheErrorHandling<T>(CacheOperationKind kind, string operation, string? cacheKey, Func<Task<T>> action)
     {
         try
         {

@@ -129,4 +129,9 @@ public static class AudioConstants
     /// API リトライのバックオフ上限（ミリ秒）
     /// </summary>
     public const int RetryMaxDelayMs = 30000;
+
+    /// <summary>
+    /// 浮動小数点比較の許容誤差。Speed/Pitch/Volume などの「デフォルト値との実質一致」判定に使う。
+    /// </summary>
+    public const double FloatingPointEpsilon = 0.0001;
 }

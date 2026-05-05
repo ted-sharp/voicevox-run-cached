@@ -22,8 +22,6 @@ public class VoiceVoxSettings
     public string EngineArguments { get; set; } = "";
     public EngineType EngineType { get; set; } = EngineType.Voicevox;
     public bool KeepEngineRunning { get; set; } = true;
-    public int TimeoutMs { get; set; } = 30000; // 30秒
-    public bool ValidateConnection { get; set; } = false;
 }
 
 public enum EngineType

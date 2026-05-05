@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
@@ -87,11 +88,11 @@ public class VoiceVoxApiClient : IDisposable
             var queryString = $"text={encodedText}&speaker={request.SpeakerId}";
 
             // 浮動小数点の誤差を考慮し、デフォルトに近い値はクエリに含めない
-            if (Math.Abs(request.Speed - 1.0) > 0.0001)
+            if (Math.Abs(request.Speed - 1.0) > AudioConstants.FloatingPointEpsilon)
                 queryString += $"&speed_scale={request.Speed}";
-            if (Math.Abs(request.Pitch - 0.0) > 0.0001)
+            if (Math.Abs(request.Pitch - 0.0) > AudioConstants.FloatingPointEpsilon)
                 queryString += $"&pitch_scale={request.Pitch}";
-            if (Math.Abs(request.Volume - 1.0) > 0.0001)
+            if (Math.Abs(request.Volume - 1.0) > AudioConstants.FloatingPointEpsilon)
                 queryString += $"&volume_scale={request.Volume}";
 
             var url = $"{_settings.BaseUrl}/audio_query?{queryString}";
@@ -123,9 +124,12 @@ public class VoiceVoxApiClient : IDisposable
     /// API 呼び出しの共通ラッパ: リトライ + エラーハンドリング + 例外変換。
     /// </summary>
     /// <remarks>
-    /// ユーザーキャンセル (cancellationToken.IsCancellationRequested) は素のまま再 throw して
-    /// CommandRouter 側で exit code 0 として処理させる。HTTP 由来のタイムアウト (TaskCanceledException
-    /// で IsCancellationRequested = false) は MapToApiException で API timeout に変換する。
+    /// 例外の流れ:
+    ///   1. <see cref="VoicevoxRunCachedException"/> およびその派生 (<see cref="VoiceVoxApiException"/> 等) は素通し。
+    ///      二重 wrap を防ぐ — 既にドメイン例外なら呼び出し元はそれを期待してハンドルする。
+    ///   2. ユーザーキャンセル (<see cref="CancellationToken.IsCancellationRequested"/> = true) も素通し。
+    ///      <see cref="CommandRouter"/> 側で exit code 0 として処理する。
+    ///   3. その他 (HTTP/JSON/タイムアウト等) は <see cref="MapToApiException"/> で <see cref="VoiceVoxApiException"/> に変換。
     /// </remarks>
     private async Task<T> ExecuteApiAsync<T>(string operationName, Func<CancellationToken, Task<T>> apiCall, CancellationToken cancellationToken)
     {

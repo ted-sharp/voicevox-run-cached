@@ -110,29 +110,18 @@ public class AudioPlayer : IDisposable
                     continue;
                 }
 
-                // 次のセグメントが未到着 — フィラー閾値だけ待機
-                var waitTask = reader.WaitToReadAsync(cancellationToken).AsTask();
-                var fillerTask = Task.Delay(AudioConstants.FillerStartDelayMs, cancellationToken);
-                var done = await Task.WhenAny(waitTask, fillerTask);
-
-                if (done == fillerTask)
-                {
-                    var fillerAudio = fillerManager != null
-                        ? await fillerManager.GetRandomFillerAudioAsync()
-                        : null;
-                    if (fillerAudio != null && fillerAudio.Length > 0)
-                    {
-                        _logger.LogDebug("フィラー音声を挿入 (size: {Size} bytes)", fillerAudio.Length);
-                        await PlaySharedSegmentAsync(fillerAudio, isFirstPlayback, cancellationToken);
-                        isFirstPlayback = false;
-                    }
-                    continue;
-                }
-
-                if (!await waitTask)
+                // 次のセグメントが未到着 — フィラー閾値内に届かなければフィラーを挿入する
+                var waitOutcome = await WaitForNextSegmentOrFillerTimeoutAsync(reader, cancellationToken);
+                if (waitOutcome == NextSegmentWait.NoMore)
                 {
                     break;
                 }
+                if (waitOutcome == NextSegmentWait.FillerTimeout
+                    && await TryPlayFillerAsync(fillerManager, isFirstPlayback, cancellationToken))
+                {
+                    isFirstPlayback = false;
+                }
+                // Ready の場合は次ループの TryRead で拾う
             }
 
             _logger.LogDebug("ストリーミング再生が完了しました - 再生数: {Count}", playedCount);
@@ -173,6 +162,52 @@ public class AudioPlayer : IDisposable
         {
             _logger.LogWarning(ex, "音声停止中にエラーが発生しました");
         }
+    }
+
+    private enum NextSegmentWait
+    {
+        /// <summary>次のセグメントが Channel に届いた</summary>
+        Ready,
+        /// <summary>FillerStartDelayMs を超過しても届かなかった</summary>
+        FillerTimeout,
+        /// <summary>writer が complete し、これ以上セグメントは来ない</summary>
+        NoMore,
+    }
+
+    /// <summary>
+    /// 次のセグメント到着を待つ。<see cref="AudioConstants.FillerStartDelayMs"/> を超えても届かなければ
+    /// <see cref="NextSegmentWait.FillerTimeout"/> を返してフィラー挿入を促す。
+    /// </summary>
+    private static async Task<NextSegmentWait> WaitForNextSegmentOrFillerTimeoutAsync(
+        ChannelReader<TextSegment> reader,
+        CancellationToken cancellationToken)
+    {
+        var waitTask = reader.WaitToReadAsync(cancellationToken).AsTask();
+        var fillerTask = Task.Delay(AudioConstants.FillerStartDelayMs, cancellationToken);
+        var done = await Task.WhenAny(waitTask, fillerTask);
+
+        if (done == fillerTask)
+        {
+            return NextSegmentWait.FillerTimeout;
+        }
+        return await waitTask ? NextSegmentWait.Ready : NextSegmentWait.NoMore;
+    }
+
+    /// <summary>
+    /// フィラー音声を再生する。フィラーが無効/未取得時は何もせず false を返す。
+    /// </summary>
+    private async Task<bool> TryPlayFillerAsync(FillerManager? fillerManager, bool isFirstPlayback, CancellationToken cancellationToken)
+    {
+        var fillerAudio = fillerManager != null
+            ? await fillerManager.GetRandomFillerAudioAsync(cancellationToken)
+            : null;
+        if (fillerAudio == null || fillerAudio.Length == 0)
+        {
+            return false;
+        }
+        _logger.LogDebug("フィラー音声を挿入 (size: {Size} bytes)", fillerAudio.Length);
+        await PlaySharedSegmentAsync(fillerAudio, isFirstPlayback, cancellationToken);
+        return true;
     }
 
     private Task PlaySharedSegmentAsync(byte[] audioData, bool isFirstSegment, CancellationToken cancellationToken)

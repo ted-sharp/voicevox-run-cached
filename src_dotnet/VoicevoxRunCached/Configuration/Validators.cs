@@ -23,10 +23,6 @@ public class VoiceVoxSettingsValidator : AbstractValidator<VoiceVoxSettings>
         RuleFor(x => x.EnginePath)
             .Must((_, path) => String.IsNullOrEmpty(path) || File.Exists(path))
             .WithMessage("EnginePathが指定されている場合、ファイルが存在する必要があります");
-
-        // 新しい検証ルール
-        RuleFor(x => x.TimeoutMs)
-            .InclusiveBetween(1000, 300000).WithMessage("TimeoutMsは1000-300000ミリ秒（5分）の範囲である必要があります");
     }
 
     private static bool BeValidUrl(string url)

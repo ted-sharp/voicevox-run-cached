@@ -23,7 +23,7 @@ public class FillerManager
             _settings.Enabled, _settings.Directory);
     }
 
-    public async Task InitializeFillerCacheAsync(VoiceVoxApiClient apiClient)
+    public async Task InitializeFillerCacheAsync(VoiceVoxApiClient apiClient, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(apiClient);
 
@@ -38,22 +38,20 @@ public class FillerManager
 
         using var spinner = new ProgressSpinner("Initializing filler cache...");
 
-        await apiClient.InitializeSpeakerAsync(_defaultSpeaker);
+        await apiClient.InitializeSpeakerAsync(_defaultSpeaker, cancellationToken);
 
         int processed = 0;
         int total = _settings.FillerTexts.Length;
 
         foreach (var fillerText in _settings.FillerTexts)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             processed++;
             spinner.UpdateMessage($"Generating filler {processed}/{total}: \"{fillerText}\"");
             _logger.LogDebug("フィラー音声を生成中 {Processed}/{Total}: \"{Text}\"", processed, total, fillerText);
 
             var fillerRequest = BuildFillerRequest(fillerText);
-
-            var cacheKey = CacheKeyGenerator.Compute(fillerRequest);
-            var fillerCacheMp3 = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
-            var fillerCacheWav = Path.Combine(_settings.Directory, $"{cacheKey}.wav");
+            var (fillerCacheMp3, fillerCacheWav) = ResolveFillerCachePaths(fillerRequest);
 
             if (File.Exists(fillerCacheMp3) || File.Exists(fillerCacheWav))
             {
@@ -63,11 +61,15 @@ public class FillerManager
 
             try
             {
-                var audioQuery = await apiClient.GenerateAudioQueryAsync(fillerRequest);
-                var audioData = await apiClient.SynthesizeAudioAsync(audioQuery, fillerRequest.SpeakerId);
+                var audioQuery = await apiClient.GenerateAudioQueryAsync(fillerRequest, cancellationToken);
+                var audioData = await apiClient.SynthesizeAudioAsync(audioQuery, fillerRequest.SpeakerId, cancellationToken);
 
-                await SaveFillerAudioAsync(fillerCacheMp3, audioData);
+                await SaveFillerAudioAsync(fillerCacheMp3, audioData, cancellationToken);
                 _logger.LogDebug("フィラー音声を生成・保存しました: \"{Text}\"", fillerText);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -78,7 +80,7 @@ public class FillerManager
         _logger.LogInformation("フィラーキャッシュの初期化が完了しました - 項目数: {Count}", _settings.FillerTexts.Length);
     }
 
-    public async Task<byte[]?> GetRandomFillerAudioAsync()
+    public async Task<byte[]?> GetRandomFillerAudioAsync(CancellationToken cancellationToken = default)
     {
         if (!_settings.Enabled || _settings.FillerTexts.Length == 0)
         {
@@ -91,11 +93,10 @@ public class FillerManager
         _logger.LogDebug("ランダムフィラー音声を選択: \"{Text}\"", selectedFiller);
 
         var fillerRequest = BuildFillerRequest(selectedFiller);
-        var cacheKey = CacheKeyGenerator.Compute(fillerRequest);
-        var fillerCacheMp3 = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
-        var fillerCacheWav = Path.Combine(_settings.Directory, $"{cacheKey}.wav");
+        var (fillerCacheMp3, fillerCacheWav) = ResolveFillerCachePaths(fillerRequest);
 
-        var data = await TryReadAsync(fillerCacheMp3) ?? await TryReadAsync(fillerCacheWav);
+        var data = await TryReadAsync(fillerCacheMp3, cancellationToken)
+            ?? await TryReadAsync(fillerCacheWav, cancellationToken);
         if (data == null)
         {
             _logger.LogWarning("フィラーキャッシュファイルが見つかりませんでした - text=\"{Text}\"", selectedFiller);
@@ -103,7 +104,7 @@ public class FillerManager
         return data;
     }
 
-    private async Task<byte[]?> TryReadAsync(string path)
+    private async Task<byte[]?> TryReadAsync(string path, CancellationToken cancellationToken)
     {
         if (!File.Exists(path))
         {
@@ -112,10 +113,14 @@ public class FillerManager
 
         try
         {
-            var data = await File.ReadAllBytesAsync(path);
+            var data = await File.ReadAllBytesAsync(path, cancellationToken);
             _logger.LogDebug("フィラーキャッシュファイルを読み込みました: {Path} (サイズ: {Size} bytes)",
                 Path.GetFileName(path), data.Length);
             return data;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -152,12 +157,27 @@ public class FillerManager
         Volume = 1.0
     };
 
-    private async Task SaveFillerAudioAsync(string filePath, byte[] audioData)
+    /// <summary>
+    /// フィラーキャッシュ用の MP3/WAV パスを返す。MP3 が標準で、変換失敗時のみ WAV が存在する。
+    /// </summary>
+    private (string Mp3Path, string WavPath) ResolveFillerCachePaths(VoiceRequest fillerRequest)
+    {
+        var cacheKey = CacheKeyGenerator.Compute(fillerRequest);
+        var mp3 = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
+        var wav = Path.Combine(_settings.Directory, $"{cacheKey}.wav");
+        return (mp3, wav);
+    }
+
+    private async Task SaveFillerAudioAsync(string filePath, byte[] audioData, CancellationToken cancellationToken)
     {
         try
         {
-            var mp3 = await Task.Run(() => AudioConversionUtility.ConvertWavToMp3(audioData));
-            await File.WriteAllBytesAsync(filePath, mp3);
+            var mp3 = await Task.Run(() => AudioConversionUtility.ConvertWavToMp3(audioData), cancellationToken);
+            await File.WriteAllBytesAsync(filePath, mp3, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -165,7 +185,7 @@ public class FillerManager
             // 旧実装は silent fallback だったが観測性のため Warning で必ず残す。
             _logger.LogWarning(ex, "フィラー音声の MP3 変換に失敗。WAV 形式で保存します");
             var wavPath = Path.ChangeExtension(filePath, ".wav");
-            await File.WriteAllBytesAsync(wavPath, audioData);
+            await File.WriteAllBytesAsync(wavPath, audioData, cancellationToken);
         }
     }
 
