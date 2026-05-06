@@ -46,7 +46,6 @@ public class AudioProcessingBenchmarks
     [GlobalCleanup]
     public void Cleanup()
     {
-        _cacheManager.Dispose();
         (_memoryCache as MemoryCache)?.Dispose();
         MediaFoundationManager.Release();
     }

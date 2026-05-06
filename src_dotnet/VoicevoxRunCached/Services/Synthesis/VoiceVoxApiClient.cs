@@ -40,16 +40,7 @@ public class VoiceVoxApiClient : IDisposable
 
     public void Dispose()
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (disposing)
-        {
-            _httpClient.Dispose();
-        }
+        _httpClient.Dispose();
     }
 
     public Task<List<Speaker>> GetSpeakersAsync(CancellationToken cancellationToken = default)

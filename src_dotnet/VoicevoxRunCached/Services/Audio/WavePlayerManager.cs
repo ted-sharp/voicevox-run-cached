@@ -22,21 +22,18 @@ public class WavePlayerManager : IDisposable
 
     public void Dispose()
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
         if (_disposed)
         {
             return;
         }
-        if (disposing)
+        try
         {
-            try
-            { DisposeSharedWavePlayer(); }
-            catch (Exception ex) { _logger.LogError(ex, "WavePlayerManagerの破棄中にエラーが発生しました"); }
+            _wavePlayer?.Dispose();
+            _wavePlayer = null;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "共有 WavePlayer の破棄中にエラーが発生しました");
         }
         _disposed = true;
     }
@@ -46,12 +43,7 @@ public class WavePlayerManager : IDisposable
         if (_disposed)
             throw new ObjectDisposedException(nameof(WavePlayerManager));
 
-        if (_wavePlayer == null)
-        {
-            _wavePlayer = CreateWavePlayer();
-            _logger.LogDebug("共有WavePlayerインスタンスを作成しました");
-        }
-
+        _wavePlayer ??= CreateWavePlayer();
         return _wavePlayer;
     }
 
@@ -59,15 +51,11 @@ public class WavePlayerManager : IDisposable
     {
         try
         {
-            if (_wavePlayer != null)
-            {
-                _wavePlayer.Stop();
-                _logger.LogDebug("共有WavePlayerインスタンスを停止しました");
-            }
+            _wavePlayer?.Stop();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "共有WavePlayerインスタンスの停止中にエラーが発生しました");
+            _logger.LogWarning(ex, "共有 WavePlayer の停止中にエラーが発生しました");
         }
     }
 
@@ -90,22 +78,5 @@ public class WavePlayerManager : IDisposable
             _settings.OutputDevice, _settings.Volume);
 
         return waveOut;
-    }
-
-    private void DisposeSharedWavePlayer()
-    {
-        try
-        {
-            if (_wavePlayer != null)
-            {
-                _wavePlayer.Dispose();
-                _wavePlayer = null;
-                _logger.LogDebug("共有WavePlayerインスタンスを破棄しました");
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "共有WavePlayerインスタンスの破棄中にエラーが発生しました");
-        }
     }
 }

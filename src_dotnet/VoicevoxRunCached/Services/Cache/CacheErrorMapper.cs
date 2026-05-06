@@ -39,12 +39,6 @@ internal static class CacheErrorMapper
                 $"Access denied during {operation}: {ex.Message}",
                 cacheKey, cacheDirectory);
         }
-        catch (IOException ex) when (ex.Message.Contains("There is not enough space"))
-        {
-            throw Map(logger, ex, ErrorCodes.Cache.CacheFull,
-                $"Cache directory is full during {operation}: {ex.Message}",
-                cacheKey, cacheDirectory);
-        }
         catch (IOException ex)
         {
             throw Map(logger, ex, ErrorCodes.Cache.CacheReadError,

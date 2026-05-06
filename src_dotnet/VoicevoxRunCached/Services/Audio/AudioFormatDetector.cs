@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using NAudio.Wave;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Audio;
@@ -37,7 +38,11 @@ public class AudioFormatDetector
         {
             AudioFormat.Wav => new WaveFileReader(audioStream),
             AudioFormat.Mp3 => new Mp3FileReader(audioStream),
-            _ => CreateFallbackWaveStream(audioStream)
+            _ => throw new AudioProcessingException(
+                ErrorCodes.Audio.AudioFormatError,
+                $"Unknown audio format (size: {audioData.Length} bytes)",
+                "音声フォーマットを判定できませんでした。",
+                "VOICEVOX エンジンの応答または cache ファイルが破損している可能性があります。"),
         };
     }
 
@@ -74,23 +79,5 @@ public class AudioFormatDetector
     {
         return headerBuffer.Length >= 2 &&
                headerBuffer[0] == 0xFF && (headerBuffer[1] & 0xE0) == 0xE0;
-    }
-
-    private WaveStream CreateFallbackWaveStream(MemoryStream audioStream)
-    {
-        try
-        {
-            audioStream.Position = 0;
-            var stream = new Mp3FileReader(audioStream);
-            _logger.LogDebug("MP3 フォールバックで Mp3FileReader を作成しました");
-            return stream;
-        }
-        catch
-        {
-            audioStream.Position = 0;
-            var stream = new WaveFileReader(audioStream);
-            _logger.LogDebug("WAV フォールバックで WaveFileReader を作成しました");
-            return stream;
-        }
     }
 }

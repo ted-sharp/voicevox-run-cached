@@ -33,7 +33,7 @@ public class AudioCacheManagerIntegrationTests
             var data = await mgr.GetCachedAudioAsync(request);
             await Assert.That(data).IsNull();
         }
-        finally { Directory.Delete(dir, true); mgr.Dispose(); }
+        finally { Directory.Delete(dir, true); }
     }
 
     [Test]
@@ -62,7 +62,7 @@ public class AudioCacheManagerIntegrationTests
             // どれもキャッシュに無いので IsCached=false が並ぶ
             await Assert.That(result.All(s => !s.IsCached)).IsTrue();
         }
-        finally { Directory.Delete(dir, true); mgr.Dispose(); }
+        finally { Directory.Delete(dir, true); }
     }
 
     [Test]
@@ -81,7 +81,7 @@ public class AudioCacheManagerIntegrationTests
                 await mgr.GetCachedAudioAsync(request, cts.Token);
             });
         }
-        finally { Directory.Delete(dir, true); mgr.Dispose(); }
+        finally { Directory.Delete(dir, true); }
     }
 
     [Test]
@@ -104,6 +104,6 @@ public class AudioCacheManagerIntegrationTests
                 await mgr.ProcessTextSegmentsAsync(segments, request, cts.Token);
             });
         }
-        finally { Directory.Delete(dir, true); mgr.Dispose(); }
+        finally { Directory.Delete(dir, true); }
     }
 }

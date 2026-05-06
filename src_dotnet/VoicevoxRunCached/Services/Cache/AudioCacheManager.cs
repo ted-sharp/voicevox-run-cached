@@ -8,7 +8,7 @@ namespace VoicevoxRunCached.Services.Cache;
 /// <summary>
 /// 音声キャッシュの統合ファサード。メモリ・ディスクストア、eviction、統計収集を組み合わせて公開 API を提供する。
 /// </summary>
-public class AudioCacheManager : IDisposable
+public class AudioCacheManager
 {
     private readonly MemoryCacheStore _memory;
     private readonly DiskCacheStore _disk;
@@ -28,13 +28,6 @@ public class AudioCacheManager : IDisposable
 
         _logger.LogInformation("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}, メモリキャッシュ: 有効, 最大サイズ: {MaxSizeMB}MB",
             _disk.Directory, settings.MemoryCacheSizeMb);
-    }
-
-    public void Dispose()
-    {
-        // IMemoryCache は DI コンテナが管理する singleton なので、ここでは触らない。
-        // SaveAudioCacheAsync が同期的に eviction まで完了するため走行中タスクの追跡も不要。
-        // 互換のため IDisposable は残すが本体は no-op。
     }
 
     /// <summary>

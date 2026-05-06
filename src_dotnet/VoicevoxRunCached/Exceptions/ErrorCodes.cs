@@ -50,7 +50,6 @@ public static class ErrorCodes
             // Cache
             Cache.CacheReadError => "キャッシュの読み込みに失敗しました",
             Cache.CacheCorrupted => "キャッシュが破損しています",
-            Cache.CacheFull => "キャッシュが満杯です",
             Cache.CachePermissionDenied => "キャッシュへのアクセス権限がありません",
 
             // Audio
@@ -108,7 +107,6 @@ public static class ErrorCodes
     {
         public const string CacheReadError = "CACHE_001";
         public const string CacheCorrupted = "CACHE_003";
-        public const string CacheFull = "CACHE_004";
         public const string CachePermissionDenied = "CACHE_005";
     }
 

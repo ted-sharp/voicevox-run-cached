@@ -126,11 +126,7 @@ public class RetryPolicyService
 
     private static bool ShouldRetryException(Exception ex)
     {
-        return ex is IOException
-            || ex is SocketException
-            || ex is WebException
-            || ex.Message.Contains("connection", StringComparison.OrdinalIgnoreCase)
-            || ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase);
+        return ex is IOException or SocketException or WebException;
     }
 
     private int CalculateDelay(int retryCount, HttpStatusCode? statusCode)

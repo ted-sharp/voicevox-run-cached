@@ -157,25 +157,6 @@ public class RetryPolicyServiceTests
     }
 
     [Test]
-    public async Task ExceptionMessageMatchingConnection_IsRetried()
-    {
-        var policy = Create();
-        var calls = 0;
-
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
-        {
-            await policy.ExecuteWithRetryAsync<int>(() =>
-            {
-                calls++;
-                throw new InvalidOperationException("Connection refused");
-            }, "op");
-        });
-
-        // "connection" を含むので ShouldRetryException で true
-        await Assert.That(calls).IsEqualTo(3);
-    }
-
-    [Test]
     public async Task TaskCanceledException_AfterUserCancel_RethrowsAsOperationCancelled()
     {
         var policy = Create();
