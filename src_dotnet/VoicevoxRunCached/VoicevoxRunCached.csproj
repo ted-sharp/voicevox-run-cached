@@ -24,7 +24,6 @@
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="NAudio.Lame" Version="2.1.0" />
 
-    <!-- Phase 1: FluentValidation + Serilog -->
     <PackageReference Include="FluentValidation" Version="12.1.1" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageReference Include="Serilog" Version="4.3.0" />
@@ -36,17 +35,10 @@
     <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
 
-    <!-- Phase 2: メモリキャッシュ -->
     <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.2" />
 
-    <!-- Phase 3: BenchmarkDotNet + Channels -->
-    <PackageReference Include="BenchmarkDotNet" Version="0.15.8" />
-    <PackageReference Include="BenchmarkDotNet.Diagnostics.Windows" Version="0.15.8" />
-
-    <!-- Phase 4: Aloe.Utils.CommandLine for improved command-line argument processing -->
     <PackageReference Include="Aloe.Utils.CommandLine" Version="2.0.0" />
 
-    <!-- Phase 5: DryIoc for dependency injection -->
     <PackageReference Include="DryIoc.dll" Version="5.4.3" />
   </ItemGroup>
 
