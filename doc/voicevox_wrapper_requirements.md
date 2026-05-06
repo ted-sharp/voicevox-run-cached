@@ -7,22 +7,25 @@
 
 ## 実装サマリ
 
-- **キャッシュ**: 文単位セグメント化 + MP3保存 + 期限/容量管理
-- **再生**: NAudioベース、デバイス暖気運転（オプション）
-- **エンジン管理**: 自動起動、起動完了待機、永続化（任意）
+- **キャッシュ**: 文単位セグメント化 + MP3保存 + 期限/容量管理 + メモリキャッシュ層
+- **再生**: NAudio (`WaveOutEvent`) ベース、`Channel<TextSegment>` による producer/consumer ストリーミング、デバイス暖気運転（オプション）
+- **エンジン管理**: 自動起動、起動完了待機、永続化（任意）、子プロセス kill による確実な停止
 - **フィラー**: 生成待機時の自然な間つなぎ音声（任意）
-- **CLI**: `speakers`/`devices`/`--init`/`--clear`、各種オプション
+- **CLI**: `speakers`/`devices`/`--init`/`--clear`/`--benchmark`/`--test`、各種オプション
 - **出力**: `--out` で WAV/MP3 保存、`--no-play` で再生抑止
-- **ログ**: レベル/フォーマット切替、`--verbose` で詳細タイミング
+- **ログ**: レベル/フォーマット切替、ファイル出力 + ローテーション、`--verbose` で詳細タイミング
+- **エラー処理**: `VoicevoxRunCachedException` + `ErrorCode` で集約、終了コードへマッピング
 
 ## コマンド/オプション仕様
 
 ```bash
 VoicevoxRunCached <text> [options]
+VoicevoxRunCached --test [options]            # appsettings.json の Test.Message で実行
 VoicevoxRunCached speakers
 VoicevoxRunCached devices [--full] [--json]
 VoicevoxRunCached --init
 VoicevoxRunCached --clear
+VoicevoxRunCached --benchmark                 # BenchmarkDotNet によるパフォーマンス計測 (Release ビルド推奨)
 
 Options:
   --speaker, -s <id>       話者ID (default: 1)
@@ -58,7 +61,8 @@ Options:
     "Directory": "./cache/audio/",
     "UseExecutableBaseDirectory": true,
     "ExpirationDays": 30,
-    "MaxSizeGB": 1.0
+    "MaxSizeGB": 1.0,
+    "MemoryCacheSizeMb": 100
   },
   "Audio": {
     "OutputDevice": -1,
@@ -66,10 +70,11 @@ Options:
     "PrepareDevice": false,
     "PreparationDurationMs": 200,
     "PreparationVolume": 0.01,
-    "OutputDeviceId": ""
+    "DesiredLatency": 100,
+    "NumberOfBuffers": 3
   },
   "Filler": {
-    "Enabled": true,
+    "Enabled": false,
     "Directory": "./cache/filler/",
     "UseExecutableBaseDirectory": true,
     "FillerTexts": [
@@ -82,8 +87,14 @@ Options:
     ]
   },
   "Logging": {
-    "Level": "Information",
-    "Format": "simple"
+    "Level": "info",
+    "Format": "simple",
+    "EnableFileLogging": false,
+    "MaxFileSizeMb": 10,
+    "MaxFileCount": 5
+  },
+  "Test": {
+    "Message": "テストメッセージ"
   }
 }
 ```
@@ -99,8 +110,17 @@ Options:
 
 ## 依存関係
 
-- `NAudio`, `NAudio.Lame`
-- `Microsoft.Extensions.Configuration`
+- `NAudio`, `NAudio.Lame` — 音声再生・MP3 エンコード
+- `Microsoft.Extensions.Configuration` — `appsettings.json` バインド
+- `Microsoft.Extensions.Caching.Memory` — メモリキャッシュ
+- `Microsoft.Extensions.Logging` — DI 経由のロギング抽象
+- `Serilog` (Console / File sink) — 構造化ロギング
+- `FluentValidation` — `AppSettings` の検証
+- `Polly` — HTTP / ファイル I/O のリトライ
+- `DryIoc` — DI コンテナ
+- `Aloe.Utils.CommandLine` — CLI 引数処理
+- `BenchmarkDotNet` — `--benchmark` 用パフォーマンス計測
+- `TUnit` (テストプロジェクト) — Microsoft.Testing.Platform ベースのテストランナー
 - `System.Text.Json`
 
 ## 簡易フロー
@@ -129,7 +149,10 @@ flowchart TD
 
 ## 移行メモ（初期仕様との差分）
 
-- キャッシュ形式: WAV→MP3
-- 追加コマンド: `devices`, `--init`, `--clear`
+- キャッシュ形式: WAV → MP3 + `.meta.json` ペア
+- キャッシュ層: 単純ディスク → メモリキャッシュ + ディスク二層構成 (`AudioCacheManager` ファサード経由)
+- 追加コマンド: `devices`, `--init`, `--clear`, `--benchmark`, `--test`
 - 新オプション: `--out`, `--no-play`, `--log-level`, `--log-format`
-- 新設定: `UseExecutableBaseDirectory`, `OutputDeviceId`, `Logging`, `EngineType`, `KeepEngineRunning`
+- 新設定: `UseExecutableBaseDirectory`, `EngineType`, `KeepEngineRunning`, `MemoryCacheSizeMb`, `DesiredLatency`, `NumberOfBuffers`, `EnableFileLogging` / `MaxFileSizeMb` / `MaxFileCount`
+- 削除: `Audio.OutputDeviceId` (再生本体は `WaveOutEvent` 一本化のため、index 指定のみ)
+- アーキテクチャ: DryIoc による DI 化、`SegmentProducer` 切り出し、`Channel<TextSegment>` による producer/consumer 並走

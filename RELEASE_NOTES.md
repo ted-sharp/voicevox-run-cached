@@ -1,5 +1,21 @@
 # VoicevoxRunCached リリースノート
 
+## Unreleased
+
+- アーキテクチャ/リファクタリング:
+  - `SegmentProducer` を `TextToSpeechProcessor` から切り出し、合成 producer の責務を分離
+  - `IClock` 抽象を導入し、時刻取得のテスト容易性を向上
+  - キャッシュ層に `CacheErrorMapper` を集約し、I/O 例外 → `VoicevoxRunCachedException` への変換を一元化
+  - `AudioCacheManager` を `Services/Cache/` 配下に移動
+  - エンジン子プロセスを kill によって確実に停止
+  - 例外ハンドリング (`ErrorHandlingUtility`) と Async 呼び出しの統一
+- 改善/修正:
+  - キャッシュ I/O エラー時に API へ fallback する経路を追加
+  - 浮動小数粒度バグ修正 (キャッシュキーの揺らぎ防止)
+  - `ConsoleHelper` のログ二重出力を解消
+  - MediaFoundation API 呼び出しを統一、`WavePlayer` の状態二重持ちを解消
+  - 不要なフォールバック・防御コード・死コードを一掃
+
 ## v2.0.0 - 2026-01-17
 
 - プラットフォーム/フレームワーク:

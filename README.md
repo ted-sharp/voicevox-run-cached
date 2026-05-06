@@ -112,7 +112,8 @@ VoicevoxRunCached --benchmark           # パフォーマンスベンチマー�
     "Directory": "./cache/audio/",
     "UseExecutableBaseDirectory": true,  // 相対パスを exe 基準で解決
     "ExpirationDays": 30,
-    "MaxSizeGB": 1.0              // 上限超過時に古い順に eviction
+    "MaxSizeGB": 1.0,             // 上限超過時に古い順に eviction
+    "MemoryCacheSizeMb": 100      // メモリキャッシュ上限 (MB)
   },
   "Audio": {
     "OutputDevice": -1,           // -1 = OS デフォルト, 0+ = WaveOut index
@@ -120,17 +121,21 @@ VoicevoxRunCached --benchmark           # パフォーマンスベンチマー�
     "PrepareDevice": false,       // true で起動時に無音再生してデバイスを温める
     "PreparationDurationMs": 200,
     "PreparationVolume": 0.01,
-    "OutputDeviceId": ""          // 設定時は OutputDevice より優先 (WASAPI endpoint)
+    "DesiredLatency": 100,        // WaveOutEvent の希望レイテンシ (ms)
+    "NumberOfBuffers": 3          // WaveOutEvent のバッファ数
   },
   "Filler": {
-    "Enabled": true,              // 生成待機中に相槌音声を再生して無音を回避
+    "Enabled": false,             // true で生成待機中に相槌音声を再生して無音を回避 (初回は --init で事前生成)
     "Directory": "./cache/filler/",
     "UseExecutableBaseDirectory": true,
     "FillerTexts": ["えーっと、", "あのー、", "あのう、", "ええと、", "ええっと、", "えとえと、"]
   },
   "Logging": {
     "Level": "info",              // trace|debug|info|warn|error|crit|none
-    "Format": "simple"            // simple | json
+    "Format": "simple",           // simple | json
+    "EnableFileLogging": false,   // true でファイル出力を有効化
+    "MaxFileSizeMb": 10,          // ログファイル単体の最大サイズ (MB)
+    "MaxFileCount": 5             // ローテーションで保持するファイル数
   },
   "Test": { "Message": "..." }    // --test で読み上げる文
 }
@@ -184,7 +189,7 @@ Total execution time: 2445.4ms
 → エンジンが起動しているか、`appsettings.json` の `BaseUrl` が正しいか確認。`AutoStartEngine: true` の場合は `EnginePath` 自動検出が失敗していないかも確認。
 
 **音声が再生されない**
-→ `VoicevoxRunCached.exe devices --full` で出力デバイス一覧を確認。`Audio.OutputDevice = -1` (OS デフォルト) を試す。
+→ `VoicevoxRunCached.exe devices --full` で出力デバイス一覧を確認。`Audio.OutputDevice = -1` (OS デフォルト) を試す。`devices` コマンドは WASAPI endpoint を列挙するが、再生本体は `WaveOutEvent` ベースで `OutputDevice` (WaveOut index) のみで選択する。
 
 **音声の冒頭が途切れる (USB / Bluetooth デバイスで多発)**
 → `Audio.PrepareDevice: true` にして `PreparationDurationMs` を 300–500 に増やす。

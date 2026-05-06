@@ -41,11 +41,11 @@ _fix-all.ps1          # 上記 + tests + SonarQube + ReSharper
 
 ### Critical Implementation Details
 
-**Serial API Calls**: VOICEVOX API は producer 側 (`TextToSpeechProcessor.ProduceSegmentsAsync`) が `foreach` で 1 件ずつ処理することで直列性を担保している。`VoiceVoxApiClient` 自身に明示的なロックは無いので、もし複数スレッドから同時に呼び出すコードを足す場合は呼び出し元で直列化すること。各 speaker は session 内で初回のみ `/initialize_speaker` する。
+**Serial API Calls**: VOICEVOX API は producer 側 (`SegmentProducer.ProduceAsync`) が `foreach` で 1 件ずつ処理することで直列性を担保している。`VoiceVoxApiClient` 自身に明示的なロックは無いので、もし複数スレッドから同時に呼び出すコードを足す場合は呼び出し元で直列化すること。各 speaker は session 内で初回のみ `/initialize_speaker` する (`TextToSpeechProcessor.SynthesizeAndPlayAsync` 側で 1 回だけ呼ぶ)。
 
 **Cache Keys**: `SHA256(speaker_id + raw_text + speed + pitch + volume)` を 16 進文字列化したものをファイル名として使用。`{CacheDirectory}/{SHA256_HEX}.mp3` と `{SHA256_HEX}.meta.json` (speaker_id, parameters, text hash) のペアで保存。**SHA256 生成ロジックを変えると既存キャッシュが全て無効化されるため変更禁止**。
 
-**Streaming Playback**: `TextToSpeechProcessor.SynthesizeAndPlayAsync` で `Channel<TextSegment>` を介した producer (合成) / consumer (再生) を並走させる。キャッシュ済みセグメントは即座に channel に流して再生開始、未キャッシュ分は producer が直列に API を叩きながら順次 channel に流す。consumer 側 (`AudioPlayer.PlayStreamingAsync`) が `AudioConstants.FillerStartDelayMs` 以内に次セグメントを取れない場合は `FillerManager.GetRandomFillerAudioAsync` で相槌音声を挿入して無音を回避する。片側の例外は linked CTS で双方を停止する。キャッシュ書き込みは channel 書き込みの後で fire-and-forget して producer の次の API 呼び出しを遅らせない (producer 終了時に `Task.WhenAll` で待機)。
+**Streaming Playback**: `TextToSpeechProcessor.SynthesizeAndPlayAsync` で `Channel<TextSegment>` を介した producer (`SegmentProducer.ProduceAsync`) / consumer (`AudioPlayer.PlayStreamingAsync`) を並走させる。キャッシュ済みセグメントは即座に channel に流して再生開始、未キャッシュ分は producer が直列に API を叩きながら順次 channel に流す。consumer 側が `AudioConstants.FillerStartDelayMs` 以内に次セグメントを取れない場合は `FillerManager.GetRandomFillerAudioAsync` で相槌音声を挿入して無音を回避する。片側の例外は linked CTS で双方を停止する。キャッシュ書き込みは channel 書き込みの後で fire-and-forget して producer の次の API 呼び出しを遅らせない (producer 終了時に `finally` 内で `Task.WhenAll` 待機、例外パスでも保証)。`writer.TryComplete()` は `pendingCacheSaves` の `WhenAll` より**前**に呼ぶこと — 順序を逆にすると最終セグメント再生後の `WaitToReadAsync` が `FillerStartDelayMs` を超え、フィラーを誤発火する。
 
 **Audio Format Chain**: API (WAV) → NAudio で変換 → NAudio.Lame で MP3 化 → `.mp3` + `.meta.json` でキャッシュ。
 
@@ -65,7 +65,6 @@ src_dotnet/
 │   │   ├── CommandRouter.cs                # コマンドルーティング
 │   │   ├── ArgumentParser.cs               # CLI 引数解析
 │   │   ├── ServiceRegistration.cs          # DryIoc コンテナ構築
-│   │   ├── AudioCacheManager.cs            # キャッシュ統合ファサード
 │   │   ├── Audio/                          # 音声再生・デバイス・フォーマット
 │   │   │   ├── AudioPlayer.cs              # ストリーミング再生
 │   │   │   ├── AudioDeviceManager.cs       # デバイス事前準備 (warm-up)
@@ -73,13 +72,16 @@ src_dotnet/
 │   │   │   ├── AudioConversionUtility.cs   # WAV→MP3 変換
 │   │   │   ├── MediaFoundationManager.cs   # MediaFoundation 初期化
 │   │   │   └── WavePlayerManager.cs        # 共有 IWavePlayer ライフサイクル
-│   │   ├── Cache/                          # AudioCacheManager の構成要素
+│   │   ├── Cache/                          # キャッシュ層
+│   │   │   ├── AudioCacheManager.cs        # キャッシュ統合ファサード
 │   │   │   ├── CacheKeyGenerator.cs        # SHA256 キー生成 (変更禁止)
 │   │   │   ├── MemoryCacheStore.cs         # IMemoryCache ラッパ
 │   │   │   ├── DiskCacheStore.cs           # mp3 + meta の永続化
-│   │   │   └── CacheEvictionPolicy.cs      # 期限切れ・サイズ超過の eviction
+│   │   │   ├── CacheEvictionPolicy.cs      # 期限切れ・サイズ超過の eviction
+│   │   │   └── CacheErrorMapper.cs         # I/O 例外 → VoicevoxRunCachedException 変換
 │   │   ├── Synthesis/                      # 合成・再生パイプライン
 │   │   │   ├── TextToSpeechProcessor.cs    # メインパイプライン (CommandRouter から呼ばれる)
+│   │   │   ├── SegmentProducer.cs          # Channel<TextSegment> へ流す producer (直列 API 呼び出し)
 │   │   │   ├── AudioExportService.cs       # --out 用の保存処理
 │   │   │   ├── VoiceVoxApiClient.cs        # REST API クライアント
 │   │   │   ├── VoiceVoxEngineManager.cs    # エンジン起動・死活
@@ -99,7 +101,9 @@ src_dotnet/
 │   │       ├── CancellationManager.cs      # Ctrl+C 協調キャンセル
 │   │       ├── ConsoleHelper.cs            # 色付き出力
 │   │       ├── ErrorHandlingUtility.cs     # 例外 → ErrorCode → ExitCode
-│   │       └── ProgressSpinner.cs          # 進捗表示
+│   │       ├── ProgressSpinner.cs          # 進捗表示
+│   │       ├── IClock.cs                   # 時刻抽象 (テスト用に差し替え可)
+│   │       └── AssemblyVersion.cs          # アセンブリバージョン参照
 │   ├── Benchmarks/                    # AudioProcessingBenchmarks (BenchmarkDotNet)
 │   ├── Exceptions/                    # VoicevoxRunCachedException, ErrorCodes
 │   └── appsettings.json
@@ -129,6 +133,7 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 - **`CancellationManager`**: Ctrl+C の協調キャンセル
 - **`MediaFoundationManager`** (`Services/Audio/`): NAudio の MediaFoundation 初期化を一元管理
 - **`ConfigurationManager` / `ConfigurationValidationService`**: AppSettings 読込と FluentValidation による検証
+- **`IClock`**: 時刻抽象。`DateTime.UtcNow` を直接呼ばず、テスト容易性のためこのインターフェース経由で取得する
 
 ### Modifying Cache Behavior
 
@@ -151,9 +156,9 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 
 `VoiceVoxApiClient` は VOICEVOX エンジンの制約上、呼び出し元側で直列実行されることを前提としている。
 
-- 現状 `TextToSpeechProcessor.ProduceSegmentsAsync` の `foreach` で 1 件ずつ処理されているため OK
+- 現状 `SegmentProducer.ProduceAsync` の `foreach` で 1 件ずつ処理されているため OK
 - 並列化を試みる場合は VOICEVOX エンジン側の制約を実機で確認してから、クライアント内に lock を入れること
-- speaker 初期化 (`/initialize_speaker`) は `TextToSpeechProcessor` 側からセッション内 1 回だけ呼ぶ
+- speaker 初期化 (`/initialize_speaker`) は `TextToSpeechProcessor.SynthesizeAndPlayAsync` 側からセッション内 1 回だけ呼ぶ
 - リトライ・エラー変換は `VoiceVoxApiClient.ExecuteApiAsync` の単一 catch ブロック (`MapToApiException` ヘルパ) でまとめて適用 (各メソッドは生の HTTP 呼び出しだけ書く)
 
 ### Logging Conventions
