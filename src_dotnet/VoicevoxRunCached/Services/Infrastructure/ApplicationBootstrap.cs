@@ -80,16 +80,9 @@ public static class ApplicationBootstrap
             return path;
         }
 
-        try
-        {
-            var executablePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
-            var executableDirectory = Path.GetDirectoryName(executablePath) ?? Directory.GetCurrentDirectory();
-            return Path.GetFullPath(Path.Combine(executableDirectory, path));
-        }
-        catch
-        {
-            return path;
-        }
+        var executablePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
+        var executableDirectory = Path.GetDirectoryName(executablePath) ?? Directory.GetCurrentDirectory();
+        return Path.GetFullPath(Path.Combine(executableDirectory, path));
     }
 
     /// <summary>
@@ -99,7 +92,7 @@ public static class ApplicationBootstrap
     {
         var validationService = new ConfigurationValidationService();
         validationService.ValidateConfiguration(settings);
-        ConsoleHelper.WriteValidationSuccess("設定の検証が完了しました");
+        ConsoleHelper.WriteSuccess("✓ 設定の検証が完了しました");
     }
 
     /// <summary>

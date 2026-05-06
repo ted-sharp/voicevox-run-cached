@@ -22,29 +22,19 @@ public class ProgressSpinner : IDisposable
 
     public void Dispose()
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (!_isDisposed)
+        if (_isDisposed)
+            return;
+        _cancellationTokenSource.Cancel();
+        try
         {
-            if (disposing)
-            {
-                _cancellationTokenSource.Cancel();
-                try
-                {
-                    _animationTask.Wait(AudioConstants.ProgressSpinnerStopWaitTimeoutMs);
-                }
-                catch (AggregateException)
-                {
-                    // Ignore cleanup timeout
-                }
-                _cancellationTokenSource.Dispose();
-            }
-            _isDisposed = true;
+            _animationTask.Wait(AudioConstants.ProgressSpinnerStopWaitTimeoutMs);
         }
+        catch (AggregateException)
+        {
+            // アニメーションループの OperationCanceledException を握る (cancel 時の既知例外)
+        }
+        _cancellationTokenSource.Dispose();
+        _isDisposed = true;
     }
 
     public void UpdateMessage(string message)

@@ -1,4 +1,4 @@
-﻿using VoicevoxRunCached.Exceptions;
+﻿using Microsoft.Extensions.Logging;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -9,18 +9,21 @@ public class SpeakerCommandHandler
 {
     private readonly VoiceVoxApiClient _apiClient;
     private readonly VoiceVoxEngineManager _engineManager;
+    private readonly ILogger _logger;
 
-    public SpeakerCommandHandler(VoiceVoxEngineManager engineManager, VoiceVoxApiClient apiClient)
+    public SpeakerCommandHandler(VoiceVoxEngineManager engineManager, VoiceVoxApiClient apiClient, ILogger logger)
     {
         _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<int> HandleSpeakersAsync(CancellationToken cancellationToken = default)
     {
-        await EnsureEngineOrThrowAsync(cancellationToken);
+        await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
 
         var speakers = await _apiClient.GetSpeakersAsync(cancellationToken);
+        _logger.LogInformation("スピーカー一覧を取得しました - 件数: {Count}", speakers.Count);
 
         ConsoleHelper.WriteLine("Available speakers:");
         foreach (var speaker in speakers)
@@ -33,18 +36,5 @@ public class SpeakerCommandHandler
             ConsoleHelper.WriteLine("");
         }
         return 0;
-    }
-
-    private async Task EnsureEngineOrThrowAsync(CancellationToken cancellationToken)
-    {
-        if (!await _engineManager.EnsureEngineRunningAsync(cancellationToken))
-        {
-            throw new VoicevoxRunCachedException(
-                ErrorCodes.Engine.EngineNotAvailable,
-                "VOICEVOX engine is not available",
-                "VOICEVOXエンジンが利用できません。",
-                null,
-                "VOICEVOXエンジンが起動しているか確認してください。");
-        }
     }
 }

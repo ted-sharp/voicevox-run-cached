@@ -23,6 +23,4 @@ public static class ConsoleHelper
     public static void WriteInfo(string message) => WriteColored(Cyan, message);
     public static void WriteDebug(string message) => WriteColored(Gray, message);
     public static void WriteLine(string message) => Console.WriteLine(message);
-    public static void WriteValidationSuccess(string message) => WriteColored(Green, $"✓ {message}");
-    public static void WriteValidationError(string message) => WriteColored(Red, $"✗ {message}");
 }

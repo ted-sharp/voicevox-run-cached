@@ -28,32 +28,12 @@ public class CancellationManager : IDisposable
     /// </summary>
     public bool IsCancellationRequested => _cancellationTokenSource.IsCancellationRequested;
 
-    /// <summary>
-    /// リソースを破棄します
-    /// </summary>
     public void Dispose()
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (!_disposed)
-        {
-            if (disposing)
-            {
-                try
-                {
-                    _cancellationTokenSource.Dispose();
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "CancellationManagerの破棄中にエラーが発生しました");
-                }
-            }
-            _disposed = true;
-        }
+        if (_disposed)
+            return;
+        _cancellationTokenSource.Dispose();
+        _disposed = true;
     }
 
     /// <summary>

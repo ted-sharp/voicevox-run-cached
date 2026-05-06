@@ -1,6 +1,4 @@
-﻿using System.Net;
-
-namespace VoicevoxRunCached.Exceptions;
+﻿namespace VoicevoxRunCached.Exceptions;
 
 /// <summary>
 /// VoicevoxRunCachedアプリケーションの基本例外クラス
@@ -32,26 +30,14 @@ public class VoicevoxRunCachedException : Exception
 }
 
 /// <summary>
-/// VoiceVox API関連の例外
+/// VoiceVox API 関連の例外。catch (VoiceVoxApiException) で API 系エラーを横断的に拾うために残す。
 /// </summary>
 public class VoiceVoxApiException : VoicevoxRunCachedException
 {
-    public VoiceVoxApiException(string errorCode, string message, string userMessage, HttpStatusCode? statusCode = null, string? apiResponse = null, string? suggestedSolution = null)
-        : base(errorCode, message, userMessage, suggestedSolution, "VoiceVox API")
-    {
-        StatusCode = statusCode;
-        ApiResponse = apiResponse;
-    }
-
-    public VoiceVoxApiException(string errorCode, string message, string userMessage, Exception innerException, HttpStatusCode? statusCode = null, string? apiResponse = null, string? suggestedSolution = null)
+    public VoiceVoxApiException(string errorCode, string message, string userMessage, Exception innerException, string? suggestedSolution = null)
         : base(errorCode, message, userMessage, innerException, suggestedSolution, "VoiceVox API")
     {
-        StatusCode = statusCode;
-        ApiResponse = apiResponse;
     }
-
-    public HttpStatusCode? StatusCode { get; }
-    public string? ApiResponse { get; }
 }
 
 /// <summary>
@@ -59,19 +45,10 @@ public class VoiceVoxApiException : VoicevoxRunCachedException
 /// </summary>
 public class ConfigurationException : VoicevoxRunCachedException
 {
-    public ConfigurationException(string errorCode, string message, string userMessage, string? settingPath = null, string? suggestedSolution = null)
+    public ConfigurationException(string errorCode, string message, string userMessage, string? suggestedSolution = null)
         : base(errorCode, message, userMessage, suggestedSolution, "Configuration")
     {
-        SettingPath = settingPath;
     }
-
-    public ConfigurationException(string errorCode, string message, string userMessage, Exception innerException, string? settingPath = null, string? suggestedSolution = null)
-        : base(errorCode, message, userMessage, innerException, suggestedSolution, "Configuration")
-    {
-        SettingPath = settingPath;
-    }
-
-    public string? SettingPath { get; }
 }
 
 /// <summary>
@@ -79,22 +56,10 @@ public class ConfigurationException : VoicevoxRunCachedException
 /// </summary>
 public class CacheException : VoicevoxRunCachedException
 {
-    public CacheException(string errorCode, string message, string userMessage, string? cacheKey = null, string? cachePath = null, string? suggestedSolution = null)
-        : base(errorCode, message, userMessage, suggestedSolution, "Cache")
-    {
-        CacheKey = cacheKey;
-        CachePath = cachePath;
-    }
-
-    public CacheException(string errorCode, string message, string userMessage, Exception innerException, string? cacheKey = null, string? cachePath = null, string? suggestedSolution = null)
+    public CacheException(string errorCode, string message, string userMessage, Exception innerException, string? suggestedSolution = null)
         : base(errorCode, message, userMessage, innerException, suggestedSolution, "Cache")
     {
-        CacheKey = cacheKey;
-        CachePath = cachePath;
     }
-
-    public string? CacheKey { get; }
-    public string? CachePath { get; }
 }
 
 /// <summary>

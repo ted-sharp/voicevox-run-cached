@@ -51,7 +51,7 @@ static class Program
             }
 
             ConsoleHelper.WriteDebug($"エラーコード: {ex.ErrorCode}");
-            return ErrorHandlingUtility.GetExitCodeFromErrorCode(ex.ErrorCode);
+            return ErrorCodes.GetExitCode(ex.ErrorCode);
         }
         catch (OperationCanceledException)
         {

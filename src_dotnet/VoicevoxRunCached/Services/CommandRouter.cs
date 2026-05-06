@@ -73,7 +73,7 @@ public class CommandRouter
                 ConsoleHelper.WriteLine($"解決策: {ex.SuggestedSolution}");
             }
 
-            return ErrorHandlingUtility.GetExitCodeFromErrorCode(ex.ErrorCode);
+            return ErrorCodes.GetExitCode(ex.ErrorCode);
         }
         catch (OperationCanceledException)
         {

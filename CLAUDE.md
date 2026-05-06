@@ -163,8 +163,15 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 
 ### Logging Conventions
 
-DI で注入された `Microsoft.Extensions.Logging.ILogger` 経由で書くのが基本。インスタンスクラスはコンストラクタで `ILogger` を受け取り `_logger.LogXxx(...)` で書く。`Serilog.Log` の static 呼び出しは Serilog 設定そのもの (`LoggingManager`)、ブートストラップ (`Program` / `ApplicationBootstrap`)、static utility (`AudioConversionUtility`, `MediaFoundationManager`) など、DI が使えない箇所のみに残す。
+**インスタンスクラスは必ずコンストラクタで `Microsoft.Extensions.Logging.ILogger` を受け取り `_logger.LogXxx(...)` で書く** (CommandHandler 系も例外なし)。`Serilog.Log` の static 呼び出しは Serilog 設定そのもの (`LoggingManager`)、ブートストラップ (`Program` / `ApplicationBootstrap`)、static utility (`AudioConversionUtility`, `MediaFoundationManager`) など、DI が使えない箇所のみに残す。
 
+`ILogger` と `ConsoleHelper` の使い分け:
+- **`ILogger`** = ログ用途。Serilog の構造化ログ・ファイル/JSON sink に流れる。内部エラー・警告・運用追跡情報はこちらに書く
+- **`ConsoleHelper`** = ユーザー向け UI 出力。色付き、TTY のみ。コマンド成功/失敗の人向けメッセージはこちら
+- 両方残したい場合 (例: `Cache cleared!`) は `_logger.LogInformation` + `ConsoleHelper.WriteSuccess` を併記
+- **内部エラーを `ConsoleHelper.WriteWarning` に流すのは誤用** — JSON ログに残らないので運用追跡が壊れる
+
+レベル指針:
 - Error: ユーザー対応が必要な復旧可能エラー
 - Warning: 想定外だが処理継続できる状態
 - Information: 主要マイルストーン (engine 起動, cache clear, セグメント分割完了 等)

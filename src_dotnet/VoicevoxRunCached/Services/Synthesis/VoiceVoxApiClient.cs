@@ -185,8 +185,7 @@ public class VoiceVoxApiClient : IDisposable
             code,
             $"{operationName} failed: {ex.Message}",
             $"{operationName} に失敗しました: {ex.Message}",
-            ex,
-            statusCode);
+            ex);
     }
 
     private static string MapHttpStatusToErrorCode(HttpStatusCode statusCode) => statusCode switch

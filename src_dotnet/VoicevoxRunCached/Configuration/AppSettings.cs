@@ -71,18 +71,6 @@ public class FillerSettings
     public bool UseExecutableBaseDirectory { get; set; } = false;
 }
 
-// Log level enum for configuration
-public enum LogLevel
-{
-    Trace,
-    Debug,
-    Information,
-    Warning,
-    Error,
-    Critical,
-    None
-}
-
 // Logging settings
 public class LoggingSettings
 {

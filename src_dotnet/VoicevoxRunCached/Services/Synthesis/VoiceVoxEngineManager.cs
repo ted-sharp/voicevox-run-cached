@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
+using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Services.Synthesis;
 
@@ -10,15 +11,17 @@ public class VoiceVoxEngineManager : IDisposable
     private readonly VoiceVoxSettings _settings;
     private readonly HttpClient _httpClient;
     private readonly ILogger _logger;
+    private readonly IClock _clock;
     // 自プロセスから起動したエンジンプロセス。外部で既に動いていたエンジンを発見した場合は null。
     // この区別は Dispose 時の停止対象を「自分が起こしたものだけ」に絞るために必要。
     private Process? _engineProcess;
     private bool _disposed;
 
-    public VoiceVoxEngineManager(VoiceVoxSettings settings, ILogger logger)
+    public VoiceVoxEngineManager(VoiceVoxSettings settings, ILogger logger, IClock? clock = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _clock = clock ?? SystemClock.Instance;
         _httpClient = new HttpClient
         {
             Timeout = TimeSpan.FromSeconds(AudioConstants.EngineHealthCheckTimeoutSeconds)
@@ -57,6 +60,23 @@ public class VoiceVoxEngineManager : IDisposable
 
         _logger.LogInformation("VOICEVOXエンジンが検出されていません。起動を試行します...");
         return await StartEngineAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// エンジン起動を確認し、失敗時は <see cref="VoicevoxRunCachedException"/> を投げる。
+    /// 各コマンドハンドラの定型例外スローを統合するためのエントリポイント。
+    /// </summary>
+    public async Task EnsureRunningOrThrowAsync(CancellationToken cancellationToken = default)
+    {
+        if (!await EnsureEngineRunningAsync(cancellationToken))
+        {
+            throw new VoicevoxRunCachedException(
+                ErrorCodes.Engine.EngineNotAvailable,
+                "VOICEVOX engine is not available",
+                "VOICEVOXエンジンが利用できません。",
+                null,
+                "VOICEVOXエンジンが起動しているか、appsettings.json の EnginePath が正しいか確認してください。");
+        }
     }
 
     private async Task<bool> IsEngineRunningAsync(CancellationToken cancellationToken)
@@ -119,9 +139,9 @@ public class VoiceVoxEngineManager : IDisposable
             }
 
             var timeout = TimeSpan.FromSeconds(_settings.StartupTimeoutSeconds);
-            var startTime = DateTime.UtcNow;
+            var startTime = _clock.UtcNow;
 
-            while (DateTime.UtcNow - startTime < timeout)
+            while (_clock.UtcNow - startTime < timeout)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 

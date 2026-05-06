@@ -1,5 +1,6 @@
 ﻿using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using VoicevoxRunCached.Utilities;
 
@@ -26,6 +27,13 @@ internal sealed record AudioDeviceListPayload(
 /// </summary>
 public class DeviceCommandHandler
 {
+    private readonly ILogger _logger;
+
+    public DeviceCommandHandler(ILogger logger)
+    {
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
     public int HandleDevices(string[] args)
     {
         bool outputJson = args.Contains("--json");
@@ -46,7 +54,7 @@ public class DeviceCommandHandler
         return 0;
     }
 
-    private static (string? Name, string? Id) GetDefaultAudioEndpoint(MMDeviceEnumerator enumerator)
+    private (string? Name, string? Id) GetDefaultAudioEndpoint(MMDeviceEnumerator enumerator)
     {
         try
         {
@@ -55,12 +63,12 @@ public class DeviceCommandHandler
         }
         catch (Exception ex)
         {
-            ConsoleHelper.WriteWarning($"Failed to get default audio endpoint: {ex.Message}");
+            _logger.LogWarning(ex, "デフォルトオーディオデバイスの取得に失敗しました");
             return (null, null);
         }
     }
 
-    private static List<AudioDeviceInfo> EnumerateDevices(MMDeviceEnumerator enumerator)
+    private List<AudioDeviceInfo> EnumerateDevices(MMDeviceEnumerator enumerator)
     {
         var list = new List<AudioDeviceInfo>();
         try
@@ -74,13 +82,13 @@ public class DeviceCommandHandler
                 }
                 catch (Exception inner)
                 {
-                    ConsoleHelper.WriteWarning($"Failed to read device info: {inner.Message}");
+                    _logger.LogWarning(inner, "デバイス情報の読み取りに失敗しました");
                 }
             }
         }
         catch (Exception ex)
         {
-            ConsoleHelper.WriteWarning($"Failed to enumerate audio endpoints: {ex.Message}");
+            _logger.LogWarning(ex, "オーディオデバイスの列挙に失敗しました");
         }
         return list;
     }

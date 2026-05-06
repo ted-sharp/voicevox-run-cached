@@ -6,23 +6,22 @@
 public static class ErrorCodes
 {
     /// <summary>
-    /// エラーコードからカテゴリを取得
+    /// エラーコードに対応するプロセス終了コードを返す。カテゴリ (prefix) ごとに値を割り当てる。
     /// </summary>
-    public static string GetCategory(string errorCode)
+    public static int GetExitCode(string? errorCode)
     {
         if (String.IsNullOrEmpty(errorCode))
-            return "UNKNOWN";
+            return 1;
 
         var prefix = errorCode.Split('_')[0];
         return prefix switch
         {
-            "CONFIG" => "Configuration",
-            "ENGINE" => "Engine",
-            "CACHE" => "Cache",
-            "AUDIO" => "Audio",
-            "API" => "API",
-            "GEN" => "General",
-            _ => "Unknown"
+            "CONFIG" => 2,
+            "ENGINE" => 3,
+            "CACHE" => 4,
+            "AUDIO" => 5,
+            "API" => 6,
+            _ => 1,
         };
     }
 

@@ -61,7 +61,8 @@ internal static class CacheErrorMapper
         string? cacheKey,
         string cacheDirectory)
     {
-        logger.LogError(inner, "{Message}: {CacheKey}", message, cacheKey ?? "-");
-        return new CacheException(errorCode, message, message, inner, cacheKey, cacheDirectory);
+        logger.LogError(inner, "{Message} (Key: {CacheKey}, Dir: {CacheDirectory})",
+            message, cacheKey ?? "-", cacheDirectory);
+        return new CacheException(errorCode, message, message, inner);
     }
 }
