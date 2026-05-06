@@ -125,22 +125,6 @@ public class ArgumentParserTests
     }
 
     [Test]
-    public async Task GetBoolOption_DetectsPresence()
-    {
-        await Assert.That(ArgumentParser.GetBoolOption(new[] { "text", "--verbose" }, "--verbose")).IsTrue();
-        await Assert.That(ArgumentParser.GetBoolOption(new[] { "text" }, "--verbose")).IsFalse();
-    }
-
-    [Test]
-    public async Task GetStringOption_ReturnsValueOrNull()
-    {
-        await Assert.That(ArgumentParser.GetStringOption(new[] { "text", "--log-level", "debug" }, "--log-level"))
-            .IsEqualTo("debug");
-        await Assert.That(ArgumentParser.GetStringOption(new[] { "text" }, "--log-level"))
-            .IsNull();
-    }
-
-    [Test]
     public async Task ParseArguments_LogLevelAndFormat_DoNotProduceWarning()
     {
         // --log-level / --log-format は ArgumentParser では skip されるが、未知扱いにはならない

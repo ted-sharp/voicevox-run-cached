@@ -11,7 +11,7 @@
 - **再生**: NAudio (`WaveOutEvent`) ベース、`Channel<TextSegment>` による producer/consumer ストリーミング、デバイス暖気運転（オプション）
 - **エンジン管理**: 自動起動、起動完了待機、永続化（任意）、子プロセス kill による確実な停止
 - **フィラー**: 生成待機時の自然な間つなぎ音声（任意）
-- **CLI**: `speakers`/`devices`/`--init`/`--clear`/`--benchmark`/`--test`、各種オプション
+- **CLI**: `speakers`/`devices`/`--init`/`--clear`/`--test`、各種オプション
 - **出力**: `--out` で WAV/MP3 保存、`--no-play` で再生抑止
 - **ログ**: レベル/フォーマット切替、ファイル出力 + ローテーション、`--verbose` で詳細タイミング
 - **エラー処理**: `VoicevoxRunCachedException` + `ErrorCode` で集約、終了コードへマッピング
@@ -25,7 +25,6 @@ VoicevoxRunCached speakers
 VoicevoxRunCached devices [--full] [--json]
 VoicevoxRunCached --init
 VoicevoxRunCached --clear
-VoicevoxRunCached --benchmark                 # BenchmarkDotNet によるパフォーマンス計測 (Release ビルド推奨)
 
 Options:
   --speaker, -s <id>       話者ID (default: 1)
@@ -119,7 +118,7 @@ Options:
 - `Polly` — HTTP / ファイル I/O のリトライ
 - `DryIoc` — DI コンテナ
 - `Aloe.Utils.CommandLine` — CLI 引数処理
-- `BenchmarkDotNet` — `--benchmark` 用パフォーマンス計測
+- `BenchmarkDotNet` — `Benchmarks/AudioProcessingBenchmarks` のマイクロベンチマーク
 - `TUnit` (テストプロジェクト) — Microsoft.Testing.Platform ベースのテストランナー
 - `System.Text.Json`
 
@@ -151,7 +150,7 @@ flowchart TD
 
 - キャッシュ形式: WAV → MP3 + `.meta.json` ペア
 - キャッシュ層: 単純ディスク → メモリキャッシュ + ディスク二層構成 (`AudioCacheManager` ファサード経由)
-- 追加コマンド: `devices`, `--init`, `--clear`, `--benchmark`, `--test`
+- 追加コマンド: `devices`, `--init`, `--clear`, `--test`
 - 新オプション: `--out`, `--no-play`, `--log-level`, `--log-format`
 - 新設定: `UseExecutableBaseDirectory`, `EngineType`, `KeepEngineRunning`, `MemoryCacheSizeMb`, `DesiredLatency`, `NumberOfBuffers`, `EnableFileLogging` / `MaxFileSizeMb` / `MaxFileCount`
 - 削除: `Audio.OutputDeviceId` (再生本体は `WaveOutEvent` 一本化のため、index 指定のみ)

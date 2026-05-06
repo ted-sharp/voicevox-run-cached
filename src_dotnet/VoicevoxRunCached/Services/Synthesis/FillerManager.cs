@@ -13,10 +13,11 @@ public class FillerManager
     private readonly ILogger _logger;
     private string? _lastUsedFiller;
 
-    public FillerManager(FillerSettings settings, int defaultSpeakerId, ILogger? logger = null)
+    public FillerManager(FillerSettings settings, VoiceVoxSettings voiceVoxSettings, ILogger? logger = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _defaultSpeaker = defaultSpeakerId;
+        ArgumentNullException.ThrowIfNull(voiceVoxSettings);
+        _defaultSpeaker = voiceVoxSettings.DefaultSpeaker;
         _logger = logger ?? NullLogger.Instance;
 
         _logger.LogInformation("FillerManager を初期化しました - 有効: {Enabled}, ディレクトリ: {Directory}",
@@ -142,10 +143,10 @@ public class FillerManager
         return Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
     }
 
-    public Task ClearFillerCacheAsync()
+    public void ClearFillerCache()
     {
         if (!Directory.Exists(_settings.Directory))
-            return Task.CompletedTask;
+            return;
 
         foreach (var file in Directory.GetFiles(_settings.Directory, "*.mp3"))
         {
@@ -153,6 +154,5 @@ public class FillerManager
             { File.Delete(file); }
             catch (Exception ex) { _logger.LogDebug(ex, "Failed to delete file: {File}", file); }
         }
-        return Task.CompletedTask;
     }
 }

@@ -16,7 +16,7 @@ public class AudioCacheManager
     private readonly CacheSettings _settings;
     private readonly ILogger _logger;
 
-    public AudioCacheManager(CacheSettings settings, IMemoryCache memoryCache, ILogger? logger = null)
+    public AudioCacheManager(CacheSettings settings, MemoryCache memoryCache, ILogger? logger = null)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         ArgumentNullException.ThrowIfNull(memoryCache);

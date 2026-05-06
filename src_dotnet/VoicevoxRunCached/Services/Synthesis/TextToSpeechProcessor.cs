@@ -56,11 +56,10 @@ public class TextToSpeechProcessor
         if (segments.Count == 0)
         {
             throw new VoicevoxRunCachedException(
-                ErrorCodes.General.InvalidArguments,
-                "No segments to process",
-                "処理対象のセグメントがありません。",
-                null,
-                "テキストが空でないか確認してください。");
+                errorCode: ErrorCodes.General.InvalidArguments,
+                message: "No segments to process",
+                userMessage: "処理対象のセグメントがありません。",
+                suggestedSolution: "テキストが空でないか確認してください。");
         }
 
         if (options.CacheOnly)
@@ -69,11 +68,10 @@ public class TextToSpeechProcessor
             if (uncachedCount > 0)
             {
                 throw new VoicevoxRunCachedException(
-                    ErrorCodes.Cache.CacheReadError,
-                    $"{uncachedCount} segments are not cached",
-                    $"{uncachedCount} 個のセグメントがキャッシュに存在しません。",
-                    null,
-                    "--cache-only を外すか、事前に該当テキストを合成してキャッシュを作成してください。");
+                    errorCode: ErrorCodes.Cache.CacheReadError,
+                    message: $"{uncachedCount} segments are not cached",
+                    userMessage: $"{uncachedCount} 個のセグメントがキャッシュに存在しません。",
+                    suggestedSolution: "--cache-only を外すか、事前に該当テキストを合成してキャッシュを作成してください。");
             }
         }
 
@@ -82,12 +80,10 @@ public class TextToSpeechProcessor
         if (synthesisResult.AttemptedCount > 0 && synthesisResult.SuccessCount == 0)
         {
             throw new VoicevoxRunCachedException(
-                ErrorCodes.Audio.AudioGenerationFailed,
-                $"All {synthesisResult.AttemptedCount} segments failed to synthesize",
-                "全てのセグメントの音声合成に失敗しました。",
-                null,
-                "VOICEVOXエンジンの状態とログを確認してください。"
-            );
+                errorCode: ErrorCodes.Audio.AudioGenerationFailed,
+                message: $"All {synthesisResult.AttemptedCount} segments failed to synthesize",
+                userMessage: "全てのセグメントの音声合成に失敗しました。",
+                suggestedSolution: "VOICEVOXエンジンの状態とログを確認してください。");
         }
 
         bool hasPartialFailure = synthesisResult.FailureCount > 0;

@@ -38,7 +38,6 @@ public partial class TextSegmentProcessor
             .Select(t => new TextSegment
             {
                 Text = t,
-                Length = t.Length,
                 SpeakerId = speakerId,
                 IsCached = false
             })

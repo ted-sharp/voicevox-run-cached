@@ -12,7 +12,7 @@ namespace VoicevoxRunCached.Benchmarks;
 public class AudioProcessingBenchmarks
 {
     private AudioCacheManager _cacheManager = null!;
-    private IMemoryCache _memoryCache = null!;
+    private MemoryCache _memoryCache = null!;
     private byte[] _sampleWavData = null!;
     private VoiceRequest _testRequest = null!;
 
@@ -46,7 +46,7 @@ public class AudioProcessingBenchmarks
     [GlobalCleanup]
     public void Cleanup()
     {
-        (_memoryCache as MemoryCache)?.Dispose();
+        _memoryCache.Dispose();
         MediaFoundationManager.Release();
     }
 

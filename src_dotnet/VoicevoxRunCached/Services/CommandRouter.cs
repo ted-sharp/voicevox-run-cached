@@ -10,7 +10,6 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 public class CommandRouter
 {
-    private readonly BenchmarkCommandHandler _benchmarkHandler;
     private readonly CacheCommandHandler _cacheHandler;
     private readonly DeviceCommandHandler _deviceHandler;
     private readonly InitCommandHandler _initHandler;
@@ -24,7 +23,6 @@ public class CommandRouter
         DeviceCommandHandler deviceHandler,
         InitCommandHandler initHandler,
         CacheCommandHandler cacheHandler,
-        BenchmarkCommandHandler benchmarkHandler,
         TextToSpeechProcessor ttsProcessor,
         AppSettings settings,
         ILogger logger)
@@ -33,7 +31,6 @@ public class CommandRouter
         _deviceHandler = deviceHandler ?? throw new ArgumentNullException(nameof(deviceHandler));
         _initHandler = initHandler ?? throw new ArgumentNullException(nameof(initHandler));
         _cacheHandler = cacheHandler ?? throw new ArgumentNullException(nameof(cacheHandler));
-        _benchmarkHandler = benchmarkHandler ?? throw new ArgumentNullException(nameof(benchmarkHandler));
         _ttsProcessor = ttsProcessor ?? throw new ArgumentNullException(nameof(ttsProcessor));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -58,7 +55,6 @@ public class CommandRouter
                 "devices" => _deviceHandler.HandleDevices(subArgs),
                 "--init" => await _initHandler.HandleInitAsync(cancellationToken),
                 "--clear" => await _cacheHandler.HandleClearCacheAsync(),
-                "--benchmark" => await _benchmarkHandler.HandleBenchmarkAsync(cancellationToken),
                 "--test" => await HandleTestCommandAsync(subArgs, cancellationToken),
                 _ => await ExecuteTextToSpeechCommandAsync(args, cancellationToken)
             };
@@ -89,13 +85,20 @@ public class CommandRouter
 
     private async Task<int> HandleTestCommandAsync(string[] args, CancellationToken cancellationToken)
     {
-        var testMessage = _settings.Test.Message;
-        if (String.IsNullOrWhiteSpace(testMessage))
+        // Test セクションの検証は AppSettingsValidator から外しているので、ここで実行する
+        // (--test を使わないユーザーには Test.Message の必須チェックを走らせない)
+        var testValidation = new TestSettingsValidator().Validate(_settings.Test);
+        if (!testValidation.IsValid)
         {
-            ConsoleHelper.WriteError("Error: Test.Message is empty in configuration");
-            return 1;
+            var errors = String.Join("; ", testValidation.Errors.Select(e => e.ErrorMessage));
+            throw new ConfigurationException(
+                errorCode: ErrorCodes.Configuration.InvalidSettings,
+                message: $"Test settings invalid: {errors}",
+                userMessage: $"Test 設定が無効です: {errors}",
+                suggestedSolution: "appsettings.json の Test.Message を確認してください。");
         }
 
+        var testMessage = _settings.Test.Message;
         _logger.LogInformation("Test command executed with message: {TestMessage}", testMessage);
         ConsoleHelper.WriteLine($"テストメッセージ: {testMessage}");
 

@@ -83,61 +83,32 @@ public class AudioExportService
             return wavDataList[0];
         }
 
-        try
-        {
-            using var firstStream = new MemoryStream(wavDataList[0]);
-            using var firstReader = new WaveFileReader(firstStream);
-            var waveFormat = firstReader.WaveFormat;
+        // 最初のセグメントのフォーマットで Writer を作る。VOICEVOX が同一エンジンで返すので
+        // 全セグメントのフォーマットは揃っている前提 (異なる場合は WaveFileWriter 側でエラー)。
+        using var firstStream = new MemoryStream(wavDataList[0]);
+        using var firstReader = new WaveFileReader(firstStream);
+        var waveFormat = firstReader.WaveFormat;
 
-            foreach (var wavData in wavDataList.Skip(1))
+        using var outputStream = new MemoryStream();
+        using var writer = new WaveFileWriter(outputStream, waveFormat);
+
+        foreach (var wavData in wavDataList)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            using var inputStream = new MemoryStream(wavData);
+            using var reader = new WaveFileReader(inputStream);
+
+            var buffer = new byte[waveFormat.AverageBytesPerSecond * 4];
+            int bytesRead;
+            while ((bytesRead = await reader.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
             {
-                using var stream = new MemoryStream(wavData);
-                using var reader = new WaveFileReader(stream);
-                if (!reader.WaveFormat.Equals(waveFormat))
-                {
-                    _logger.LogWarning("WAVファイルのフォーマットが異なります。最初のフォーマット ({Format}) を使用します", waveFormat);
-                }
+                await writer.WriteAsync(buffer, 0, bytesRead, cancellationToken);
             }
-
-            using var outputStream = new MemoryStream();
-            using var writer = new WaveFileWriter(outputStream, waveFormat);
-
-            foreach (var wavData in wavDataList)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                using var inputStream = new MemoryStream(wavData);
-                using var reader = new WaveFileReader(inputStream);
-
-                var buffer = new byte[waveFormat.AverageBytesPerSecond * 4];
-                int bytesRead;
-                while ((bytesRead = await reader.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
-                {
-                    await writer.WriteAsync(buffer, 0, bytesRead, cancellationToken);
-                }
-            }
-
-            writer.Flush();
-            return outputStream.ToArray();
         }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (VoicevoxRunCachedException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "WAVデータの結合中にエラーが発生しました");
-            throw new AudioProcessingException(
-                ErrorCodes.Audio.AudioFormatError,
-                $"Failed to combine WAV segments: {ex.Message}",
-                "WAVデータの結合に失敗しました。",
-                ex,
-                "セグメントのフォーマットが揃っているか確認してください。");
-        }
+
+        writer.Flush();
+        return outputStream.ToArray();
     }
 
     private async Task WriteOutputFileAsync(byte[] audioData, string outPath, CancellationToken cancellationToken)

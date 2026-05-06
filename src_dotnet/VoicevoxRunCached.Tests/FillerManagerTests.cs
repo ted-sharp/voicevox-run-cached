@@ -14,7 +14,7 @@ public class FillerManagerTests
             Directory = Path.GetTempPath(),
             FillerTexts = ["a", "b"]
         };
-        var mgr = new FillerManager(settings, defaultSpeakerId: 1);
+        var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 });
 
         var data = await mgr.GetRandomFillerAudioAsync();
 
@@ -30,7 +30,7 @@ public class FillerManagerTests
             Directory = Path.GetTempPath(),
             FillerTexts = []
         };
-        var mgr = new FillerManager(settings, defaultSpeakerId: 1);
+        var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 });
 
         var data = await mgr.GetRandomFillerAudioAsync();
 
@@ -51,7 +51,7 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["えーっと、"]
             };
-            var mgr = new FillerManager(settings, defaultSpeakerId: 1);
+            var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 });
 
             var data = await mgr.GetRandomFillerAudioAsync();
 
@@ -79,9 +79,9 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["a"]
             };
-            var mgr = new FillerManager(settings, defaultSpeakerId: 1);
+            var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 });
 
-            await mgr.ClearFillerCacheAsync();
+            mgr.ClearFillerCache();
 
             await Assert.That(File.Exists(Path.Combine(dir, "x.mp3"))).IsFalse();
             await Assert.That(File.Exists(Path.Combine(dir, "keep.txt"))).IsTrue();
@@ -102,9 +102,9 @@ public class FillerManagerTests
             Directory = dir,
             FillerTexts = ["a"]
         };
-        var mgr = new FillerManager(settings, defaultSpeakerId: 1);
+        var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 });
 
-        await mgr.ClearFillerCacheAsync();
+        mgr.ClearFillerCache();
         // 例外を投げない (no-op で完了)
     }
 }

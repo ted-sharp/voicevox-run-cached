@@ -3,14 +3,15 @@
 namespace VoicevoxRunCached.Services.Cache;
 
 /// <summary>
-/// IMemoryCache のラッパ。SetSize/Expiration を一元管理する。
+/// MemoryCache のラッパ。SetSize/Expiration を一元管理する。
+/// Clear() で MemoryCache.Compact(1.0) を呼ぶ必要があるので具象 MemoryCache を直接持つ。
 /// </summary>
 public class MemoryCacheStore
 {
-    private readonly IMemoryCache _memoryCache;
+    private readonly MemoryCache _memoryCache;
     private readonly TimeSpan _expiration;
 
-    public MemoryCacheStore(IMemoryCache memoryCache, TimeSpan expiration)
+    public MemoryCacheStore(MemoryCache memoryCache, TimeSpan expiration)
     {
         _memoryCache = memoryCache ?? throw new ArgumentNullException(nameof(memoryCache));
         _expiration = expiration;
@@ -44,13 +45,7 @@ public class MemoryCacheStore
     }
 
     /// <summary>
-    /// 全エントリを退避 (MemoryCache 限定)
+    /// 全エントリを退避。
     /// </summary>
-    public void Clear()
-    {
-        if (_memoryCache is MemoryCache mc)
-        {
-            mc.Compact(1.0);
-        }
-    }
+    public void Clear() => _memoryCache.Compact(1.0);
 }

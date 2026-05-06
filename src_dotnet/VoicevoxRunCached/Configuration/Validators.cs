@@ -151,7 +151,8 @@ public class LoggingSettingsValidator : AbstractValidator<LoggingSettings>
     }
 }
 
-// TestSettings のバリデーター
+// TestSettings のバリデーター。--test 実行時のみ CommandRouter から手動で適用する
+// (起動時の AppSettingsValidator から外しているのは、--test を使わないユーザーに不要な検証を強要しないため)
 public class TestSettingsValidator : AbstractValidator<TestSettings>
 {
     public TestSettingsValidator()
@@ -172,6 +173,5 @@ public class AppSettingsValidator : AbstractValidator<AppSettings>
         RuleFor(x => x.Audio).SetValidator(new AudioSettingsValidator());
         RuleFor(x => x.Filler).SetValidator(new FillerSettingsValidator());
         RuleFor(x => x.Logging).SetValidator(new LoggingSettingsValidator());
-        RuleFor(x => x.Test).SetValidator(new TestSettingsValidator());
     }
 }

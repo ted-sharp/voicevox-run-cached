@@ -11,7 +11,6 @@ namespace VoicevoxRunCached.Services.Infrastructure;
 public class LoggingManager
 {
     private readonly LoggingSettings _settings;
-    private bool _isInitialized;
 
     public LoggingManager(LoggingSettings settings)
     {
@@ -23,12 +22,6 @@ public class LoggingManager
     /// </summary>
     public void ConfigureSerilog()
     {
-        if (_isInitialized)
-        {
-            Log.Warning("Serilogは既に初期化されています");
-            return;
-        }
-
         var loggerConfiguration = new LoggerConfiguration()
             .MinimumLevel.Is(GetLogLevel(_settings.Level))
             .Enrich.FromLogContext()
@@ -51,8 +44,6 @@ public class LoggingManager
         // アプリケーション開始ログ
         Log.Information("VoicevoxRunCached アプリケーションが開始されました - ログレベル: {LogLevel}, ファイル出力: {FileLogging}",
             _settings.Level, _settings.EnableFileLogging);
-
-        _isInitialized = true;
     }
 
     /// <summary>

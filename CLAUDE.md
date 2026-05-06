@@ -13,7 +13,7 @@ VOICEVOX REST API のラッパー C# Console アプリ。テキストを文単�
 ```bash
 # 基本
 dotnet build                          # Debug build
-dotnet build -c Release               # Release build (benchmark に必要)
+dotnet build -c Release               # Release build (BenchmarkDotNet に必要)
 dotnet format                         # コード整形 (pre-commit でも実行)
 dotnet run "こんにちは、世界！"        # サンプル実行
 dotnet run -- --test                  # appsettings.json の Test.Message で実行
@@ -91,8 +91,7 @@ src_dotnet/
 │   │   │   ├── SpeakerCommandHandler.cs        # speakers
 │   │   │   ├── DeviceCommandHandler.cs         # devices
 │   │   │   ├── InitCommandHandler.cs           # --init
-│   │   │   ├── CacheCommandHandler.cs          # --clear
-│   │   │   └── BenchmarkCommandHandler.cs      # --benchmark
+│   │   │   └── CacheCommandHandler.cs          # --clear
 │   │   └── Infrastructure/                 # 横断的ユーティリティ
 │   │       ├── ApplicationBootstrap.cs     # 設定 + Serilog + MF 初期化
 │   │       ├── ConfigurationManager.cs / ConfigurationValidationService.cs
@@ -100,7 +99,7 @@ src_dotnet/
 │   │       ├── RetryPolicyService.cs       # Polly リトライ
 │   │       ├── CancellationManager.cs      # Ctrl+C 協調キャンセル
 │   │       ├── ConsoleHelper.cs            # 色付き出力
-│   │       ├── ErrorHandlingUtility.cs     # 例外 → ErrorCode → ExitCode
+│   │       ├── ErrorHandlingUtility.cs     # 未知例外の表示
 │   │       ├── ProgressSpinner.cs          # 進捗表示
 │   │       ├── IClock.cs                   # 時刻抽象 (テスト用に差し替え可)
 │   │       └── AssemblyVersion.cs          # アセンブリバージョン参照
@@ -201,7 +200,6 @@ VoicevoxRunCached speakers
 VoicevoxRunCached devices [--full] [--json]
 VoicevoxRunCached --init
 VoicevoxRunCached --clear
-VoicevoxRunCached --benchmark
 VoicevoxRunCached --test
 
 Options:

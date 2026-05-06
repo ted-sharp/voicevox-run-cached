@@ -100,8 +100,9 @@ public class SegmentProducer
             var audioQuery = await _apiClient.GenerateAudioQueryAsync(segmentRequest, cancellationToken);
             var wavData = await _apiClient.SynthesizeAudioAsync(audioQuery, originalRequest.SpeakerId, cancellationToken);
 
+            // IsCached はキャッシュヒット判定に絞り、合成成功は AudioData != null で表す。
+            // 再生側 (AudioPlayer) は AudioData を直接見ているのでフラグ更新は不要。
             segment.AudioData = wavData;
-            segment.IsCached = true; // 再生側がスキップ判定に利用 (合成成功フラグを兼用)
             stats.Success++;
             return new SegmentSynthesis(segmentRequest, wavData);
         }

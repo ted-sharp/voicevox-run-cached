@@ -34,12 +34,12 @@ public static class ServiceRegistration
         // 時刻プロバイダ (テストで mock 可能にするため抽象化)
         container.RegisterInstance<IClock>(SystemClock.Instance);
 
-        // MemoryCache は IMemoryCache として登録 (CacheSettings.MemoryCacheSizeMb をサイズ上限に)
+        // MemoryCache 具象を登録 (Compact() を呼ぶため IMemoryCache 抽象では足りない)
         var memoryCacheOptions = new MemoryCacheOptions
         {
             SizeLimit = settings.Cache.MemoryCacheSizeMb * 1024L * 1024L
         };
-        container.RegisterInstance<IMemoryCache>(new MemoryCache(memoryCacheOptions));
+        container.RegisterInstance(new MemoryCache(memoryCacheOptions));
 
         // 基盤サービス (singleton)
         container.Register<RetryPolicyService>(Reuse.Singleton);
@@ -54,10 +54,7 @@ public static class ServiceRegistration
         container.Register<WavePlayerManager>(Reuse.Singleton);
         container.Register<AudioPlayer>(Reuse.Singleton);
 
-        // FillerManager は (FillerSettings, int defaultSpeakerId, ILogger) を取るので明示的にファクトリ登録
-        container.RegisterDelegate<FillerManager>(
-            r => new FillerManager(r.Resolve<FillerSettings>(), settings.VoiceVox.DefaultSpeaker, r.Resolve<Microsoft.Extensions.Logging.ILogger>()),
-            Reuse.Singleton);
+        container.Register<FillerManager>(Reuse.Singleton);
 
         // コマンド処理ヘルパ (singleton)
         container.Register<AudioExportService>(Reuse.Singleton);
@@ -69,7 +66,6 @@ public static class ServiceRegistration
         container.Register<DeviceCommandHandler>(Reuse.Singleton);
         container.Register<InitCommandHandler>(Reuse.Singleton);
         container.Register<CacheCommandHandler>(Reuse.Singleton);
-        container.Register<BenchmarkCommandHandler>(Reuse.Singleton);
 
         // ルーター (singleton)
         container.Register<CommandRouter>(Reuse.Singleton);

@@ -46,12 +46,11 @@ public static class MediaFoundationManager
                 _referenceCount--;
                 logger?.LogError(ex, "MediaFoundation の初期化に失敗しました");
                 throw new VoicevoxRunCachedException(
-                    ErrorCodes.Audio.MediaFoundationInitFailed,
-                    "MediaFoundation initialization failed",
-                    "音声システムの初期化に失敗しました",
-                    "NAudioライブラリが正常にインストールされているか確認してください",
-                    "MediaFoundation initialization"
-                );
+                    errorCode: ErrorCodes.Audio.MediaFoundationInitFailed,
+                    message: "MediaFoundation initialization failed",
+                    userMessage: "音声システムの初期化に失敗しました",
+                    suggestedSolution: "NAudio ライブラリが正常にインストールされているか確認してください",
+                    context: "MediaFoundation initialization");
             }
         }
     }

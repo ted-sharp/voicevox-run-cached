@@ -22,7 +22,7 @@ public class CacheCommandHandler
     {
         using var spinner = new ProgressSpinner("Clearing audio cache...");
         await _cacheManager.ClearAllCacheAsync();
-        await _fillerManager.ClearFillerCacheAsync();
+        _fillerManager.ClearFillerCache();
 
         _logger.LogInformation("キャッシュをクリアしました");
         ConsoleHelper.WriteSuccess("Cache cleared successfully!");

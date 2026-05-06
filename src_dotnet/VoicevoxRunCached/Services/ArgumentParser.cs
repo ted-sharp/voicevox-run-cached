@@ -118,10 +118,9 @@ public static class ArgumentParser
                 case "--out" or "-o" when i + 1 < processedArgs.Length:
                     i += 2;
                     break;
-                case "--log-level" when i + 1 < processedArgs.Length:
-                    i += 2;
-                    break;
-                case "--log-format" when i + 1 < processedArgs.Length:
+                case "--log-level" or "--log-format" when i + 1 < processedArgs.Length:
+                    // ConfigurationManager.AddCommandLine 経由で LoggingSettings にバインドされる。
+                    // ここでは Unknown 警告を出さないために値を読み飛ばすだけ。
                     i += 2;
                     break;
                 default:
@@ -134,20 +133,10 @@ public static class ArgumentParser
     }
 
     /// <summary>
-    /// 前処理された引数からブール値を取得
+    /// 前処理済み引数から指定オプションの直後の値を取得 (-o foo / --out foo の形式)。
     /// </summary>
-    public static bool GetBoolOption(string[] args, string option)
+    private static string? GetStringOption(string[] processedArgs, string option)
     {
-        var processedArgs = PreprocessArgs(args);
-        return processedArgs.Contains(option);
-    }
-
-    /// <summary>
-    /// 前処理された引数から文字列値を取得
-    /// </summary>
-    public static string? GetStringOption(string[] args, string option)
-    {
-        var processedArgs = PreprocessArgs(args);
         for (int i = 0; i < processedArgs.Length - 1; i++)
         {
             if (processedArgs[i] == option)
@@ -165,23 +154,20 @@ public static class ArgumentParser
     /// <returns>解析されたオプション</returns>
     public static TextToSpeechOptions ParseTextToSpeechOptions(string[] args)
     {
+        // PreprocessArgs は flag → "--flag true" 等の正規化を行う重い処理なので 1 回だけ走らせる
         var processedArgs = PreprocessArgs(args);
-        var noCache = processedArgs.Contains("--no-cache");
-        var cacheOnly = processedArgs.Contains("--cache-only");
-        var verbose = processedArgs.Contains("--verbose");
-        var noPlay = processedArgs.Contains("--no-play");
 
-        // --out=形式と--out/-o形式の両方をサポート
+        // --out=foo の形式と --out foo / -o foo の形式の両方をサポート
         var outPath = processedArgs.FirstOrDefault(arg => arg.StartsWith("--out="))?.Substring("--out=".Length)
-            ?? GetStringOption(args, "--out")
-            ?? GetStringOption(args, "-o");
+            ?? GetStringOption(processedArgs, "--out")
+            ?? GetStringOption(processedArgs, "-o");
 
         return new TextToSpeechOptions(
-            NoCache: noCache,
-            CacheOnly: cacheOnly,
-            Verbose: verbose,
+            NoCache: processedArgs.Contains("--no-cache"),
+            CacheOnly: processedArgs.Contains("--cache-only"),
+            Verbose: processedArgs.Contains("--verbose"),
             OutPath: outPath,
-            NoPlay: noPlay
+            NoPlay: processedArgs.Contains("--no-play")
         );
     }
 
@@ -223,7 +209,6 @@ Commands:
   --test                   Play the configured test message (Test.Message)
   --init                   Initialize filler audio cache
   --clear                  Clear all audio cache files
-  --benchmark              Run performance benchmarks
 
 Enhanced Features:
   • Standalone flags: --verbose → --verbose true

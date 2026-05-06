@@ -71,11 +71,10 @@ public class VoiceVoxEngineManager : IDisposable
         if (!await EnsureEngineRunningAsync(cancellationToken))
         {
             throw new VoicevoxRunCachedException(
-                ErrorCodes.Engine.EngineNotAvailable,
-                "VOICEVOX engine is not available",
-                "VOICEVOXエンジンが利用できません。",
-                null,
-                "VOICEVOXエンジンが起動しているか、appsettings.json の EnginePath が正しいか確認してください。");
+                errorCode: ErrorCodes.Engine.EngineNotAvailable,
+                message: "VOICEVOX engine is not available",
+                userMessage: "VOICEVOXエンジンが利用できません。",
+                suggestedSolution: "VOICEVOXエンジンが起動しているか、appsettings.json の EnginePath が正しいか確認してください。");
         }
     }
 

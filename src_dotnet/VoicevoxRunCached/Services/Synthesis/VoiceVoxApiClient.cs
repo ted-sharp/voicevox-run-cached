@@ -181,9 +181,10 @@ public class VoiceVoxApiClient : IDisposable
 
         _logger.LogError(ex, "{OperationName} に失敗しました (StatusCode: {StatusCode})", operationName, statusCode);
 
+        // message は内部 (Exception.Message / ログ) 用、userMessage は CLI 表示用
         return new VoiceVoxApiException(
             code,
-            $"{operationName} failed: {ex.Message}",
+            ex.Message,
             $"{operationName} に失敗しました: {ex.Message}",
             ex);
     }

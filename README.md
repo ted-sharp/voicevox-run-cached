@@ -73,7 +73,6 @@ VoicevoxRunCached speakers              # スピーカー一覧
 VoicevoxRunCached devices [--full] [--json]  # オーディオデバイス一覧
 VoicevoxRunCached --init                # フィラー音声キャッシュを初期化
 VoicevoxRunCached --clear               # キャッシュ全削除
-VoicevoxRunCached --benchmark           # パフォーマンスベンチマーク (Release ビルド推奨)
 ```
 
 | Option | 説明 | デフォルト |
@@ -180,8 +179,6 @@ Generating 1 segments in background...
 Audio playback completed in 2376.1ms
 Total execution time: 2445.4ms
 ```
-
-`--benchmark` で BenchmarkDotNet ベースの計測も実行可能 (Release ビルド推奨)。
 
 ## トラブルシューティング
 
