@@ -11,72 +11,72 @@ public class ArgumentParserTests
     };
 
     [Test]
-    public async Task ParseArguments_EmptyArgs_ReturnsNull()
+    public async Task Parse_EmptyArgs_RequestIsNull()
     {
-        var result = ArgumentParser.ParseArguments(Array.Empty<string>(), DefaultSettings());
+        var (request, _) = ArgumentParser.Parse(Array.Empty<string>(), DefaultSettings());
 
-        await Assert.That(result).IsNull();
+        await Assert.That(request).IsNull();
     }
 
     [Test]
-    public async Task ParseArguments_TextOnly_UsesDefaultSpeaker()
+    public async Task Parse_TextOnly_UsesDefaultSpeaker()
     {
         var settings = DefaultSettings();
         settings.VoiceVox.DefaultSpeaker = 7;
 
-        var result = ArgumentParser.ParseArguments(new[] { "こんにちは" }, settings);
+        var (request, _) = ArgumentParser.Parse(new[] { "こんにちは" }, settings);
 
-        await Assert.That(result).IsNotNull();
-        await Assert.That(result!.Text).IsEqualTo("こんにちは");
-        await Assert.That(result.SpeakerId).IsEqualTo(7);
+        await Assert.That(request).IsNotNull();
+        await Assert.That(request!.Text).IsEqualTo("こんにちは");
+        await Assert.That(request.SpeakerId).IsEqualTo(7);
     }
 
     [Test]
-    public async Task ParseArguments_LongSpeakerOption()
+    public async Task Parse_LongSpeakerOption()
     {
-        var result = ArgumentParser.ParseArguments(new[] { "text", "--speaker", "3" }, DefaultSettings());
+        var (request, _) = ArgumentParser.Parse(new[] { "text", "--speaker", "3" }, DefaultSettings());
 
-        await Assert.That(result!.SpeakerId).IsEqualTo(3);
+        await Assert.That(request!.SpeakerId).IsEqualTo(3);
     }
 
     [Test]
-    public async Task ParseArguments_ShortSpeakerOption()
+    public async Task Parse_ShortSpeakerOption()
     {
-        var result = ArgumentParser.ParseArguments(new[] { "text", "-s", "5" }, DefaultSettings());
+        var (request, _) = ArgumentParser.Parse(new[] { "text", "-s", "5" }, DefaultSettings());
 
-        await Assert.That(result!.SpeakerId).IsEqualTo(5);
+        await Assert.That(request!.SpeakerId).IsEqualTo(5);
     }
 
     [Test]
-    public async Task ParseArguments_ConcatenatedShortSpeaker()
+    public async Task Parse_ConcatenatedShortSpeaker()
     {
-        var result = ArgumentParser.ParseArguments(new[] { "text", "-s9" }, DefaultSettings());
+        var (request, _) = ArgumentParser.Parse(new[] { "text", "-s9" }, DefaultSettings());
 
-        await Assert.That(result!.SpeakerId).IsEqualTo(9);
+        await Assert.That(request!.SpeakerId).IsEqualTo(9);
     }
 
     [Test]
-    public async Task ParseArguments_SpeedPitchVolume()
+    public async Task Parse_SpeedPitchVolume()
     {
-        var result = ArgumentParser.ParseArguments(
+        var (request, _) = ArgumentParser.Parse(
             new[] { "text", "--speed", "1.5", "--pitch", "0.1", "--volume", "0.8" },
             DefaultSettings());
 
-        await Assert.That(result!.Speed).IsEqualTo(1.5);
-        await Assert.That(result.Pitch).IsEqualTo(0.1);
-        await Assert.That(result.Volume).IsEqualTo(0.8);
+        await Assert.That(request!.Speed).IsEqualTo(1.5);
+        await Assert.That(request.Pitch).IsEqualTo(0.1);
+        await Assert.That(request.Volume).IsEqualTo(0.8);
     }
 
     [Test]
-    public async Task ParseArguments_ParsesFloatsAsInvariantCulture()
+    public async Task Parse_FloatsAreInvariantCulture()
     {
         var original = System.Threading.Thread.CurrentThread.CurrentCulture;
         try
         {
             System.Threading.Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
-            var result = ArgumentParser.ParseArguments(new[] { "text", "--speed", "1.25" }, DefaultSettings());
+            var (request, _) = ArgumentParser.Parse(new[] { "text", "--speed", "1.25" }, DefaultSettings());
 
-            await Assert.That(result!.Speed).IsEqualTo(1.25);
+            await Assert.That(request!.Speed).IsEqualTo(1.25);
         }
         finally
         {
@@ -85,10 +85,11 @@ public class ArgumentParserTests
     }
 
     [Test]
-    public async Task ParseTextToSpeechOptions_DetectsAllFlags()
+    public async Task Parse_DetectsAllFlags()
     {
-        var options = ArgumentParser.ParseTextToSpeechOptions(
-            new[] { "text", "--no-cache", "--cache-only", "--verbose", "--no-play", "--out", "/tmp/out.mp3" });
+        var (_, options) = ArgumentParser.Parse(
+            new[] { "text", "--no-cache", "--cache-only", "--verbose", "--no-play", "--out", "/tmp/out.mp3" },
+            DefaultSettings());
 
         await Assert.That(options.NoCache).IsTrue();
         await Assert.That(options.CacheOnly).IsTrue();
@@ -98,17 +99,17 @@ public class ArgumentParserTests
     }
 
     [Test]
-    public async Task ParseTextToSpeechOptions_ShortOutOption()
+    public async Task Parse_ShortOutOption()
     {
-        var options = ArgumentParser.ParseTextToSpeechOptions(new[] { "text", "-o", "out.wav" });
+        var (_, options) = ArgumentParser.Parse(new[] { "text", "-o", "out.wav" }, DefaultSettings());
 
         await Assert.That(options.OutPath).IsEqualTo("out.wav");
     }
 
     [Test]
-    public async Task ParseTextToSpeechOptions_DefaultsAllFalse()
+    public async Task Parse_DefaultsAllFalse()
     {
-        var options = ArgumentParser.ParseTextToSpeechOptions(new[] { "text" });
+        var (_, options) = ArgumentParser.Parse(new[] { "text" }, DefaultSettings());
 
         await Assert.That(options.NoCache).IsFalse();
         await Assert.That(options.CacheOnly).IsFalse();
@@ -118,51 +119,53 @@ public class ArgumentParserTests
     }
 
     [Test]
-    public async Task ParseTextToSpeechOptions_OutEqualsForm_Recognized()
+    public async Task Parse_OutEqualsForm_Recognized()
     {
-        var options = ArgumentParser.ParseTextToSpeechOptions(new[] { "text", "--out=C:/tmp/out.mp3" });
+        var (_, options) = ArgumentParser.Parse(new[] { "text", "--out=C:/tmp/out.mp3" }, DefaultSettings());
         await Assert.That(options.OutPath).IsEqualTo("C:/tmp/out.mp3");
     }
 
     [Test]
-    public async Task ParseArguments_LogLevelAndFormat_DoNotProduceWarning()
+    public async Task Parse_LogLevelAndFormat_DoNotProduceWarning()
     {
         // --log-level / --log-format は ArgumentParser では skip されるが、未知扱いにはならない
-        var result = ArgumentParser.ParseArguments(
+        var (request, _) = ArgumentParser.Parse(
             new[] { "text", "--log-level", "debug", "--log-format", "json" },
             DefaultSettings());
 
-        await Assert.That(result).IsNotNull();
-        await Assert.That(result!.Text).IsEqualTo("text");
+        await Assert.That(request).IsNotNull();
+        await Assert.That(request!.Text).IsEqualTo("text");
     }
 
     [Test]
-    public async Task BuildRequestFromOptions_AppliesOptionsWithoutTextArg()
+    public async Task ParseTestCommand_AppliesOptionsWithoutTextArg()
     {
         // --test 由来のフローでは args の先頭がテキストではなくオプション扱い
         var settings = DefaultSettings();
         settings.VoiceVox.DefaultSpeaker = 1;
 
-        var request = ArgumentParser.BuildRequestFromOptions(
+        var (request, options) = ArgumentParser.ParseTestCommand(
             "テストメッセージ",
-            new[] { "--speaker", "3", "--speed", "1.25" },
+            new[] { "--speaker", "3", "--speed", "1.25", "--out", "test.mp3" },
             settings);
 
         await Assert.That(request.Text).IsEqualTo("テストメッセージ");
         await Assert.That(request.SpeakerId).IsEqualTo(3);
         await Assert.That(request.Speed).IsEqualTo(1.25);
+        await Assert.That(options.OutPath).IsEqualTo("test.mp3");
     }
 
     [Test]
-    public async Task BuildRequestFromOptions_EmptyOptions_UsesDefaults()
+    public async Task ParseTestCommand_EmptyOptions_UsesDefaults()
     {
         var settings = DefaultSettings();
         settings.VoiceVox.DefaultSpeaker = 5;
 
-        var request = ArgumentParser.BuildRequestFromOptions("hello", Array.Empty<string>(), settings);
+        var (request, options) = ArgumentParser.ParseTestCommand("hello", Array.Empty<string>(), settings);
 
         await Assert.That(request.Text).IsEqualTo("hello");
         await Assert.That(request.SpeakerId).IsEqualTo(5);
         await Assert.That(request.Speed).IsEqualTo(1.0);
+        await Assert.That(options.OutPath).IsNull();
     }
 }

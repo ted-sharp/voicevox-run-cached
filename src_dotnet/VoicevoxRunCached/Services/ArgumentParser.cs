@@ -48,32 +48,43 @@ public static class ArgumentParser
         => ArgsHelper.PreprocessArgs(args, FlagArgs, ShortArgs);
 
     /// <summary>
-    /// 引数の先頭をテキスト、残りを音声オプションとして解析する。
+    /// 通常のテキスト読み上げコマンドの引数を解析する。
+    /// 先頭引数をテキストとして扱い、残りをオプションとして処理する。
     /// </summary>
-    public static VoiceRequest? ParseArguments(string[] args, AppSettings settings, ILogger? logger = null)
+    /// <returns>引数が空の場合は <c>Request</c> が <c>null</c>。呼び出し側は usage 表示で対応する。</returns>
+    public static (VoiceRequest? Request, TextToSpeechOptions Options) Parse(
+        string[] args, AppSettings settings, ILogger? logger = null)
     {
         if (args.Length == 0)
-            return null;
+        {
+            return (null, EmptyOptions);
+        }
 
+        var processedArgs = PreprocessArgs(args);
         var request = CreateDefaultRequest(args[0], settings);
-        ApplyVoiceOptions(args, optionsStartIndex: 1, request, logger);
+        var options = ApplyOptions(processedArgs, optionsStartIndex: 1, request, logger);
 
         logger?.LogDebug("引数解析結果 - Text='{Text}', SpeakerId={SpeakerId}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
             request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
 
-        return request;
+        return (request, options);
     }
 
     /// <summary>
-    /// 既知のテキストと残りのオプション引数から VoiceRequest を構築する。
-    /// --test のように先頭引数がテキストでないコマンドから使用する。
+    /// --test コマンドの引数を解析する。
+    /// テキストは事前に決まっているため呼び出し側から渡し、args は全てオプションとして処理する。
     /// </summary>
-    public static VoiceRequest BuildRequestFromOptions(string text, string[] optionArgs, AppSettings settings, ILogger? logger = null)
+    public static (VoiceRequest Request, TextToSpeechOptions Options) ParseTestCommand(
+        string text, string[] args, AppSettings settings, ILogger? logger = null)
     {
+        var processedArgs = PreprocessArgs(args);
         var request = CreateDefaultRequest(text, settings);
-        ApplyVoiceOptions(optionArgs, optionsStartIndex: 0, request, logger);
-        return request;
+        var options = ApplyOptions(processedArgs, optionsStartIndex: 0, request, logger);
+        return (request, options);
     }
+
+    private static readonly TextToSpeechOptions EmptyOptions = new(
+        NoCache: false, CacheOnly: false, Verbose: false, OutPath: null, NoPlay: false);
 
     private static VoiceRequest CreateDefaultRequest(string text, AppSettings settings) => new()
     {
@@ -85,16 +96,20 @@ public static class ArgumentParser
     };
 
     /// <summary>
-    /// --speaker/--speed/--pitch/--volume を VoiceRequest に反映する。それ以外のフラグは読み飛ばす。
+    /// 前処理済み引数列から音声パラメータを <see cref="VoiceRequest"/> に反映しつつ、
+    /// 動作フラグを <see cref="TextToSpeechOptions"/> として返す。
     /// </summary>
-    private static void ApplyVoiceOptions(string[] args, int optionsStartIndex, VoiceRequest request, ILogger? logger)
+    private static TextToSpeechOptions ApplyOptions(
+        string[] processedArgs, int optionsStartIndex, VoiceRequest request, ILogger? logger)
     {
-        var processedArgs = PreprocessArgs(args);
+        bool noCache = false, cacheOnly = false, verbose = false, noPlay = false;
+        string? outPath = null;
 
         int i = optionsStartIndex;
         while (i < processedArgs.Length)
         {
-            switch (processedArgs[i])
+            var arg = processedArgs[i];
+            switch (arg)
             {
                 case "--speaker" or "-s" when i + 1 < processedArgs.Length && Int32.TryParse(processedArgs[i + 1], out int speaker):
                     request.SpeakerId = speaker;
@@ -112,63 +127,49 @@ public static class ArgumentParser
                     request.Volume = volume;
                     i += 2;
                     break;
-                case "--no-cache" or "--cache-only" or "--verbose" or "--help" or "-h" or "--no-play":
+                case "--no-cache":
+                    noCache = true;
+                    i++;
+                    break;
+                case "--cache-only":
+                    cacheOnly = true;
+                    i++;
+                    break;
+                case "--verbose":
+                    verbose = true;
+                    i++;
+                    break;
+                case "--no-play":
+                    noPlay = true;
                     i++;
                     break;
                 case "--out" or "-o" when i + 1 < processedArgs.Length:
+                    outPath = processedArgs[i + 1];
                     i += 2;
+                    break;
+                case "--help" or "-h":
+                    i++;
                     break;
                 case "--log-level" or "--log-format" when i + 1 < processedArgs.Length:
                     // ConfigurationManager.AddCommandLine 経由で LoggingSettings にバインドされる。
-                    // ここでは Unknown 警告を出さないために値を読み飛ばすだけ。
+                    // ここでは Unknown 警告を出さないために値を読み飛ばす。
                     i += 2;
                     break;
                 default:
-                    ConsoleHelper.WriteWarning($"Warning: Unknown option '{processedArgs[i]}'");
-                    logger?.LogWarning("Unknown option: {Option}", processedArgs[i]);
+                    if (arg.StartsWith("--out=", StringComparison.Ordinal))
+                    {
+                        outPath = arg["--out=".Length..];
+                        i++;
+                        break;
+                    }
+                    ConsoleHelper.WriteWarning($"Warning: Unknown option '{arg}'");
+                    logger?.LogWarning("Unknown option: {Option}", arg);
                     i++;
                     break;
             }
         }
-    }
 
-    /// <summary>
-    /// 前処理済み引数から指定オプションの直後の値を取得 (-o foo / --out foo の形式)。
-    /// </summary>
-    private static string? GetStringOption(string[] processedArgs, string option)
-    {
-        for (int i = 0; i < processedArgs.Length - 1; i++)
-        {
-            if (processedArgs[i] == option)
-            {
-                return processedArgs[i + 1];
-            }
-        }
-        return null;
-    }
-
-    /// <summary>
-    /// テキスト読み上げコマンドのオプションを解析します
-    /// </summary>
-    /// <param name="args">コマンドライン引数</param>
-    /// <returns>解析されたオプション</returns>
-    public static TextToSpeechOptions ParseTextToSpeechOptions(string[] args)
-    {
-        // PreprocessArgs は flag → "--flag true" 等の正規化を行う重い処理なので 1 回だけ走らせる
-        var processedArgs = PreprocessArgs(args);
-
-        // --out=foo の形式と --out foo / -o foo の形式の両方をサポート
-        var outPath = processedArgs.FirstOrDefault(arg => arg.StartsWith("--out="))?.Substring("--out=".Length)
-            ?? GetStringOption(processedArgs, "--out")
-            ?? GetStringOption(processedArgs, "-o");
-
-        return new TextToSpeechOptions(
-            NoCache: processedArgs.Contains("--no-cache"),
-            CacheOnly: processedArgs.Contains("--cache-only"),
-            Verbose: processedArgs.Contains("--verbose"),
-            OutPath: outPath,
-            NoPlay: processedArgs.Contains("--no-play")
-        );
+        return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay);
     }
 
     public static void ShowUsage()

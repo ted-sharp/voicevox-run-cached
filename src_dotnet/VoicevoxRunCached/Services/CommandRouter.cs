@@ -104,14 +104,13 @@ public class CommandRouter
 
         // --test 自体は引数の先頭にテキストを取らないので、Test.Message を直接乗せて
         // 残りのオプション (--speed/--pitch/--out 等) を args そのまま再利用する。
-        var request = ArgumentParser.BuildRequestFromOptions(testMessage, args, _settings);
-        var options = ArgumentParser.ParseTextToSpeechOptions(args);
-        return await RunTextToSpeechAsync(request, options, cancellationToken);
+        var (request, options) = ArgumentParser.ParseTestCommand(testMessage, args, _settings, _logger);
+        return await _ttsProcessor.ProcessTextToSpeechAsync(request, options, cancellationToken);
     }
 
     private async Task<int> ExecuteTextToSpeechCommandAsync(string[] args, CancellationToken cancellationToken)
     {
-        var request = ArgumentParser.ParseArguments(args, _settings);
+        var (request, options) = ArgumentParser.Parse(args, _settings, _logger);
         if (request == null)
         {
             ConsoleHelper.WriteError("Error: Invalid arguments");
@@ -119,12 +118,6 @@ public class CommandRouter
             return 1;
         }
 
-        var options = ArgumentParser.ParseTextToSpeechOptions(args);
-        return await RunTextToSpeechAsync(request, options, cancellationToken);
-    }
-
-    private Task<int> RunTextToSpeechAsync(Models.VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken)
-    {
-        return _ttsProcessor.ProcessTextToSpeechAsync(request, options, cancellationToken);
+        return await _ttsProcessor.ProcessTextToSpeechAsync(request, options, cancellationToken);
     }
 }

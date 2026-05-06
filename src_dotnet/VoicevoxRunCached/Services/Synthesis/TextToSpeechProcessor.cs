@@ -23,6 +23,7 @@ public class TextToSpeechProcessor
     private readonly TextSegmentProcessor _textProcessor;
     private readonly VoiceVoxApiClient _apiClient;
     private readonly SegmentProducer _producer;
+    private readonly IClock _clock;
 
     public TextToSpeechProcessor(
         VoiceVoxEngineManager engineManager,
@@ -33,6 +34,7 @@ public class TextToSpeechProcessor
         VoiceVoxApiClient apiClient,
         FillerManager fillerManager,
         SegmentProducer producer,
+        IClock clock,
         ILogger logger)
     {
         _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
@@ -43,12 +45,13 @@ public class TextToSpeechProcessor
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _fillerManager = fillerManager ?? throw new ArgumentNullException(nameof(fillerManager));
         _producer = producer ?? throw new ArgumentNullException(nameof(producer));
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     public async Task<int> ProcessTextToSpeechAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken = default)
     {
-        var totalStartTime = DateTime.UtcNow;
+        var totalStartTime = _clock.UtcNow;
 
         await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
 
@@ -89,6 +92,9 @@ public class TextToSpeechProcessor
         bool hasPartialFailure = synthesisResult.FailureCount > 0;
         if (hasPartialFailure)
         {
+            _logger.LogWarning(
+                "セグメント合成が部分的に失敗しました: {FailureCount}/{AttemptedCount}",
+                synthesisResult.FailureCount, synthesisResult.AttemptedCount);
             ConsoleHelper.WriteWarning(
                 $"Warning: {synthesisResult.FailureCount}/{synthesisResult.AttemptedCount} segments failed to synthesize");
         }
@@ -184,22 +190,22 @@ public class TextToSpeechProcessor
 
     private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, bool verbose, CancellationToken cancellationToken)
     {
-        var playbackStartTime = DateTime.UtcNow;
+        var playbackStartTime = _clock.UtcNow;
         await _audioPlayer.PlayStreamingAsync(reader, _fillerManager, cancellationToken);
 
         if (verbose)
         {
-            var elapsed = (DateTime.UtcNow - playbackStartTime).TotalMilliseconds;
+            var elapsed = (_clock.UtcNow - playbackStartTime).TotalMilliseconds;
             ConsoleHelper.WriteLine($"Audio playback completed in {elapsed:F1}ms");
         }
     }
 
-    private static void LogElapsedIfVerbose(bool verbose, DateTime startedAt)
+    private void LogElapsedIfVerbose(bool verbose, DateTime startedAt)
     {
         if (!verbose)
         {
             return;
         }
-        ConsoleHelper.WriteLine($"Total execution time: {(DateTime.UtcNow - startedAt).TotalMilliseconds:F1}ms");
+        ConsoleHelper.WriteLine($"Total execution time: {(_clock.UtcNow - startedAt).TotalMilliseconds:F1}ms");
     }
 }
