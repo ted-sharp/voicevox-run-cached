@@ -37,7 +37,6 @@ public class CacheSettings
     public int ExpirationDays { get; set; } = 30;
     public double MaxSizeGb { get; set; } = 1.0;
     public bool UseExecutableBaseDirectory { get; set; }
-    public int MemoryCacheSizeMb { get; set; } = 100; // 100MB
 }
 
 // Audio output settings

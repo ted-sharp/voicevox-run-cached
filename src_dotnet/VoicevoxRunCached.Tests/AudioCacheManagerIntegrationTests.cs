@@ -1,5 +1,4 @@
-﻿using Microsoft.Extensions.Caching.Memory;
-using VoicevoxRunCached.Configuration;
+﻿using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Audio;
 using VoicevoxRunCached.Services.Cache;
@@ -17,11 +16,9 @@ public class AudioCacheManagerIntegrationTests
             Directory = dir,
             ExpirationDays = 30,
             MaxSizeGb = maxSizeGb,
-            MemoryCacheSizeMb = 100,
             UseExecutableBaseDirectory = false
         };
-        var memCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 1024 * 1024 });
-        return (new AudioCacheManager(settings, memCache), dir);
+        return (new AudioCacheManager(settings), dir);
     }
 
     [Test]

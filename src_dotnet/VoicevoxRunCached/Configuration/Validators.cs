@@ -45,10 +45,6 @@ public class CacheSettingsValidator : AbstractValidator<CacheSettings>
 
         RuleFor(x => x.MaxSizeGb)
             .InclusiveBetween(0.1, 1000.0).WithMessage("MaxSizeGbは0.1-1000.0GBの範囲である必要があります");
-
-        // 新しい検証ルール
-        RuleFor(x => x.MemoryCacheSizeMb)
-            .InclusiveBetween(1, 10000).WithMessage("MemoryCacheSizeMbは1-10000MBの範囲である必要があります");
     }
 }
 

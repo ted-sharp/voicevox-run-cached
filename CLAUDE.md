@@ -77,7 +77,6 @@ src_dotnet/
 │   │   ├── Cache/                          # キャッシュ層
 │   │   │   ├── AudioCacheManager.cs        # キャッシュ統合ファサード
 │   │   │   ├── CacheKeyGenerator.cs        # SHA256 キー生成 (変更禁止)
-│   │   │   ├── MemoryCacheStore.cs         # IMemoryCache ラッパ
 │   │   │   ├── DiskCacheStore.cs           # mp3 + meta の永続化
 │   │   │   ├── CacheEvictionPolicy.cs      # 期限切れ・サイズ超過の eviction
 │   │   │   └── CacheErrorMapper.cs         # I/O 例外 → VoicevoxRunCachedException 変換

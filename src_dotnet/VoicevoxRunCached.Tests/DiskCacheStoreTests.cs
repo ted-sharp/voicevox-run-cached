@@ -14,7 +14,6 @@ public class DiskCacheStoreTests
             Directory = dir,
             ExpirationDays = expirationDays,
             MaxSizeGb = 1.0,
-            MemoryCacheSizeMb = 100,
             UseExecutableBaseDirectory = false
         };
         return (new DiskCacheStore(settings), dir);

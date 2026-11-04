@@ -1,62 +1,44 @@
-﻿using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Cache;
 
 /// <summary>
-/// 音声キャッシュの統合ファサード。メモリ・ディスクストア、eviction、統計収集を組み合わせて公開 API を提供する。
+/// 音声キャッシュの統合ファサード。ディスクストアと eviction を組み合わせて公開 API を提供する。
 /// </summary>
+/// <remarks>
+/// 1 実行ごとに終了する CLI なのでメモリキャッシュは持たない (同一実行内で同じ文が繰り返される場合しか効かず、
+/// ディスク読み込みも OS のファイルキャッシュで十分速い)。
+/// </remarks>
 public class AudioCacheManager
 {
-    private readonly MemoryCacheStore _memory;
     private readonly DiskCacheStore _disk;
     private readonly CacheEvictionPolicy _eviction;
-    private readonly CacheSettings _settings;
     private readonly ILogger _logger;
 
-    public AudioCacheManager(CacheSettings settings, MemoryCache memoryCache, ILogger? logger = null)
+    public AudioCacheManager(CacheSettings settings, ILogger? logger = null)
     {
-        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        ArgumentNullException.ThrowIfNull(memoryCache);
+        ArgumentNullException.ThrowIfNull(settings);
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
-        _memory = new MemoryCacheStore(memoryCache, TimeSpan.FromDays(settings.ExpirationDays));
         _disk = new DiskCacheStore(settings, _logger);
         _eviction = new CacheEvictionPolicy(_disk, settings, _logger);
 
-        _logger.LogInformation("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}, メモリキャッシュ: 有効, 最大サイズ: {MaxSizeMB}MB",
-            _disk.Directory, settings.MemoryCacheSizeMb);
+        _logger.LogInformation("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}", _disk.Directory);
     }
 
     /// <summary>
-    /// キャッシュから音声データを取得する。メモリ→ディスクの順で参照。
+    /// ディスクキャッシュから音声データ (MP3) を取得する。
     /// </summary>
     /// <remarks>
     /// 破損ファイル等の現実的な I/O エラーは <see cref="DiskCacheStore.LoadAsync"/> 内で
     /// 削除 + null 返却まで完結する。それ以外で例外が漏れた場合はバグなので surface させる。
     /// </remarks>
-    public async Task<byte[]?> GetCachedAudioAsync(VoiceRequest request, CancellationToken cancellationToken = default)
+    public Task<byte[]?> GetCachedAudioAsync(VoiceRequest request, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-
-        var cacheKey = CacheKeyGenerator.Compute(request);
-
-        if (_memory.TryGet(cacheKey, out byte[]? memoryCached) && memoryCached != null)
-        {
-            _logger.LogDebug("メモリキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, memoryCached.Length);
-            return memoryCached;
-        }
-
-        var audioData = await _disk.LoadAsync(cacheKey, cancellationToken);
-        if (audioData != null)
-        {
-            _memory.Set(cacheKey, audioData);
-            return audioData;
-        }
-
-        return null;
+        return _disk.LoadAsync(CacheKeyGenerator.Compute(request), cancellationToken);
     }
 
     /// <summary>
@@ -74,7 +56,6 @@ public class AudioCacheManager
         var cacheKey = CacheKeyGenerator.Compute(request);
         var mp3Data = AudioConversionUtility.ConvertWavToMp3(audioData);
         await _disk.SaveAsync(request, mp3Data, cacheKey, cancellationToken);
-        _memory.Set(cacheKey, mp3Data);
 
         _logger.LogDebug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes", cacheKey, mp3Data.Length);
     }
@@ -97,12 +78,11 @@ public class AudioCacheManager
         return CacheErrorMapper.WithMappingAsync<object?>("キャッシュのクリア", null, _disk.Directory, _logger, () =>
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _memory.Clear();
             foreach (var file in _disk.GetAudioFiles())
             {
                 _disk.Delete(Path.GetFileNameWithoutExtension(file));
             }
-            _logger.LogInformation("すべてのキャッシュをクリアしました - メモリ・ディスク共にクリア済み");
+            _logger.LogInformation("すべてのキャッシュをクリアしました");
             return Task.FromResult<object?>(null);
         });
     }

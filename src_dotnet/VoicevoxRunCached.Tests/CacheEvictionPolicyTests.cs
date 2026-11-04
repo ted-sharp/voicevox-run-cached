@@ -15,7 +15,6 @@ public class CacheEvictionPolicyTests
             Directory = dir,
             ExpirationDays = expirationDays,
             MaxSizeGb = maxSizeGb,
-            MemoryCacheSizeMb = 100,
             UseExecutableBaseDirectory = false
         };
         var disk = new DiskCacheStore(settings);
