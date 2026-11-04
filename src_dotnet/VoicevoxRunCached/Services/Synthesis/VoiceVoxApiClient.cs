@@ -59,8 +59,8 @@ public class VoiceVoxApiClient : IDisposable
         _logger.LogDebug("スピーカー {SpeakerId} を初期化中...", speakerId);
         return ExecuteApiAsync($"initialize speaker {speakerId}", async ct =>
         {
-            using var response = await _httpClient.PostAsync($"/initialize_speaker?speaker={speakerId}", null, ct);
-            response.EnsureSuccessStatusCode();
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{_settings.BaseUrl}/initialize_speaker?speaker={speakerId}");
+            using var response = await SendAsync(request, ct);
             _logger.LogInformation("スピーカー {SpeakerId} の初期化が完了しました", speakerId);
             return true;
         }, cancellationToken);
@@ -96,9 +96,9 @@ public class VoiceVoxApiClient : IDisposable
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(baseUrl);
 
-        var speed = Math.Round(request.Speed, 2);
-        var pitch = Math.Round(request.Pitch, 2);
-        var volume = Math.Round(request.Volume, 2);
+        var speed = RoundLikeCacheKey(request.Speed);
+        var pitch = RoundLikeCacheKey(request.Pitch);
+        var volume = RoundLikeCacheKey(request.Volume);
 
         var encodedText = Uri.EscapeDataString(request.Text ?? String.Empty);
         var queryString = $"text={encodedText}&speaker={request.SpeakerId}";
@@ -113,6 +113,16 @@ public class VoiceVoxApiClient : IDisposable
 
         return $"{baseUrl}/audio_query?{queryString}";
     }
+
+    /// <summary>
+    /// <see cref="Cache.CacheKeyGenerator"/> と同じ "F2" 書式で丸める。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Math.Round(double, int)"/> と "F2" 書式は丸め方式が異なり、境界付近で結果がずれる
+    /// (例: 0.065 → Math.Round は 0.06、"F2" は "0.07")。書式を経由してキャッシュキーと完全に一致させる。
+    /// </remarks>
+    private static double RoundLikeCacheKey(double value)
+        => Double.Parse(value.ToString("F2", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
 
     public Task<byte[]> SynthesizeAudioAsync(string audioQuery, int speakerId, CancellationToken cancellationToken = default)
     {

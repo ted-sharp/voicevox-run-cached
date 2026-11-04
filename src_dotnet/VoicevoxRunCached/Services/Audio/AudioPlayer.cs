@@ -230,7 +230,8 @@ public class AudioPlayer : IDisposable
 
             await using var registration = cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
 
-            var timeoutTask = Task.Delay(TimeSpan.FromMilliseconds(AudioConstants.DefaultPlaybackTimeoutMs), cancellationToken);
+            var timeout = reader.TotalTime + TimeSpan.FromMilliseconds(AudioConstants.PlaybackTimeoutMarginMs);
+            var timeoutTask = Task.Delay(timeout, cancellationToken);
             var completed = await Task.WhenAny(tcs.Task, timeoutTask);
             if (completed == timeoutTask)
             {

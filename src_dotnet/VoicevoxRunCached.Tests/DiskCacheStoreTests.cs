@@ -149,9 +149,17 @@ public class DiskCacheStoreTests
         await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
         {
             Text = "ok",
-            SpeakerId = 0,
+            SpeakerId = -1,
             CreatedAt = DateTime.UtcNow
         })).IsFalse();
+
+        // speaker 0 は VOICEVOX に実在する ID なので有効
+        await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
+        {
+            Text = "ok",
+            SpeakerId = 0,
+            CreatedAt = DateTime.UtcNow
+        })).IsTrue();
 
         await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
         {

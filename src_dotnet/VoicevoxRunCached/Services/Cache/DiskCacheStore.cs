@@ -212,12 +212,13 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// メタデータの整合性検証 (Text が非空、SpeakerId > 0、CreatedAt が default でない)。
+    /// メタデータの整合性検証 (Text が非空、SpeakerId >= 0、CreatedAt が default でない)。
+    /// VOICEVOX は speaker 0 (四国めたん あまあま等) を持つため 0 も有効。
     /// </summary>
     public static bool IsMetadataValid(CacheMetadata metadata)
     {
         return !String.IsNullOrWhiteSpace(metadata.Text)
-            && metadata.SpeakerId > 0
+            && metadata.SpeakerId >= 0
             && metadata.CreatedAt != default;
     }
 

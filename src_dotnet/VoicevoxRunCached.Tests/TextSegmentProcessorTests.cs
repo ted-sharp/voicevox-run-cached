@@ -50,6 +50,28 @@ public class TextSegmentProcessorTests
     }
 
     [Test]
+    public async Task ProcessText_PeriodInsideToken_DoesNotSplit()
+    {
+        var processor = CreateProcessor();
+
+        var result = await processor.ProcessTextAsync("円周率は3.14です。Node.jsで動きます。");
+
+        await Assert.That(result.Select(s => s.Text).ToArray())
+            .IsEquivalentTo(new[] { "円周率は3.14です。", "Node.jsで動きます。" });
+    }
+
+    [Test]
+    public async Task ProcessText_PeriodFollowedBySpaceOrEnd_Splits()
+    {
+        var processor = CreateProcessor();
+
+        var result = await processor.ProcessTextAsync("Hello world. Good morning.");
+
+        await Assert.That(result.Select(s => s.Text).ToArray())
+            .IsEquivalentTo(new[] { "Hello world.", "Good morning." });
+    }
+
+    [Test]
     public async Task ProcessText_SingleSentenceWithoutTerminator_ReturnsOneSegment()
     {
         var processor = CreateProcessor();

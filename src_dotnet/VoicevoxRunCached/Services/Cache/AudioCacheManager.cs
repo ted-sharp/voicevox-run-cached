@@ -61,7 +61,7 @@ public class AudioCacheManager
 
     /// <summary>
     /// 音声データをキャッシュに保存する。WAV はディスク保存前に MP3 に変換される。
-    /// 容量超過時は同じ呼び出し内で eviction を走らせるため、戻り Task の完了は永続状態の確定を意味する。
+    /// eviction はここでは行わない (保存ごとに全ファイル走査するのを避けるため、<see cref="RunMaintenanceAsync"/> でまとめて行う)。
     /// </summary>
     /// <remarks>
     /// 例外は wrapping せずそのまま伝播させる。呼び出し元 (SegmentProducer.SaveCacheBestEffortAsync) が
@@ -77,9 +77,18 @@ public class AudioCacheManager
         _memory.Set(cacheKey, mp3Data);
 
         _logger.LogDebug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes", cacheKey, mp3Data.Length);
+    }
 
-        // size 超過時のみ古いファイルを削除 (通常はノーオペで安価)。
-        // 旧実装は fire-and-forget で Dispose 時に追跡していたが、producer 側で WhenAll する設計と冗長だったため同期化。
+    /// <summary>
+    /// 期限切れキャッシュの削除と、容量上限を超えた分の古い順削除をまとめて行う。
+    /// </summary>
+    /// <remarks>
+    /// ディレクトリ全体を走査するため、セグメント保存ごとではなく 1 実行につき 1 回だけ呼ぶこと
+    /// (<see cref="SegmentProducer"/> が全保存完了後に呼ぶ)。
+    /// </remarks>
+    public async Task RunMaintenanceAsync(CancellationToken cancellationToken = default)
+    {
+        await _eviction.CleanupExpiredAsync(cancellationToken);
         await _eviction.CleanupByMaxSizeAsync(cancellationToken);
     }
 

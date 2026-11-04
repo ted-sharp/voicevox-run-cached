@@ -10,7 +10,7 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// </summary>
 public partial class TextSegmentProcessor
 {
-    private static readonly char[] SentenceEndings = ['。', '！', '？', '.', '!', '?'];
+    private static readonly char[] SentenceEndings = ['。', '！', '？', '!', '?'];
     private static readonly char[] LineBreaks = ['\n', '\r'];
 
     private readonly int _maxSegmentLength;
@@ -32,12 +32,11 @@ public partial class TextSegmentProcessor
         }
 
         var rawSegments = SplitTextIntoSegments(text);
+        // rawSegments は AddSegmentIfNotEmpty で Trim 済み・空除外済み
         var optimized = rawSegments
-            .Select(t => OptimizeSegmentText(t))
-            .Where(t => !String.IsNullOrWhiteSpace(t))
             .Select(t => new TextSegment
             {
-                Text = t,
+                Text = WhitespaceRegex().Replace(t, " "),
                 SpeakerId = speakerId,
                 IsCached = false
             })
@@ -54,12 +53,14 @@ public partial class TextSegmentProcessor
         var segments = new List<string>();
         var currentSegment = new StringBuilder();
 
-        foreach (var c in text)
+        for (int i = 0; i < text.Length; i++)
         {
+            var c = text[i];
             currentSegment.Append(c);
 
             if (SentenceEndings.Contains(c)
                 || LineBreaks.Contains(c)
+                || IsSentenceEndingPeriod(text, i)
                 || currentSegment.Length >= _maxSegmentLength)
             {
                 AddSegmentIfNotEmpty(segments, currentSegment);
@@ -70,6 +71,12 @@ public partial class TextSegmentProcessor
         return segments;
     }
 
+    /// <summary>
+    /// 半角ピリオドは直後が空白か文末のときだけ文末とみなす (「3.14」「Node.js」を分割しない)。
+    /// </summary>
+    private static bool IsSentenceEndingPeriod(string text, int index)
+        => text[index] == '.' && (index == text.Length - 1 || Char.IsWhiteSpace(text[index + 1]));
+
     private static void AddSegmentIfNotEmpty(List<string> segments, StringBuilder buffer)
     {
         var segment = buffer.ToString().Trim();
@@ -78,17 +85,6 @@ public partial class TextSegmentProcessor
             segments.Add(segment);
         }
         buffer.Clear();
-    }
-
-    private static string OptimizeSegmentText(string text)
-    {
-        if (String.IsNullOrWhiteSpace(text))
-        {
-            return text;
-        }
-
-        var optimized = WhitespaceRegex().Replace(text.Trim(), " ");
-        return String.IsNullOrWhiteSpace(optimized) ? "。" : optimized;
     }
 
     [GeneratedRegex(@"\s+")]

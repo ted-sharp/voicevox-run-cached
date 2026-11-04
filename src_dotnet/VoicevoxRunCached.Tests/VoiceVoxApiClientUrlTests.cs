@@ -1,4 +1,5 @@
 ﻿using VoicevoxRunCached.Models;
+using VoicevoxRunCached.Services.Cache;
 using VoicevoxRunCached.Services.Synthesis;
 
 namespace VoicevoxRunCached.Tests;
@@ -118,6 +119,19 @@ public class VoiceVoxApiClientUrlTests
         var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("text", 1, 1.0, -0.15, 1.0), BaseUrl);
 
         await Assert.That(url).Contains("pitch_scale=-0.15");
+    }
+
+    [Test]
+    public async Task MidpointValue_RoundsSameAsCacheKey()
+    {
+        // 0.065 は Math.Round(0.065, 2) = 0.06 だが ToString("F2") = "0.07" になる (丸め方式の差)。
+        // CacheKeyGenerator は F2 なので 0.065 と 0.07 は同じキー → API にも同じ値を送らなければならない。
+        var midpoint = new VoiceRequest("text", 1, 1.0, 0.065, 1.0);
+        var rounded = new VoiceRequest("text", 1, 1.0, 0.07, 1.0);
+
+        await Assert.That(CacheKeyGenerator.Compute(midpoint)).IsEqualTo(CacheKeyGenerator.Compute(rounded));
+        await Assert.That(VoiceVoxApiClient.BuildAudioQueryUrl(midpoint, BaseUrl))
+            .IsEqualTo(VoiceVoxApiClient.BuildAudioQueryUrl(rounded, BaseUrl));
     }
 
     [Test]
