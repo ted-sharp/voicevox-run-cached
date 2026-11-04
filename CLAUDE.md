@@ -222,7 +222,7 @@ Options:
 
 ## Technical Constraints
 
-**API**: 全呼び出し直列。Connection timeout はデフォルト 30 秒で全 HTTP リクエストに適用。不正な speaker ID は最初の API 呼び出し前に弾く。
+**API**: 全呼び出し直列。Connection timeout はデフォルト 30 秒で全 HTTP リクエストに適用。CLI 引数は `ArgumentParser` で検証し、数値でない値・負の speaker/volume・0 以下の speed は `InvalidArguments` で即エラーにする (黙ってデフォルト値で続行しない)。エンジンに存在しない speaker ID は事前照会せず、`/initialize_speaker` が 4xx を返した時点で `VoiceVoxApiException` になる。
 
 **Text Processing**: `。！？!?` と改行 (半角 `.` は直後が空白・文末のとき) で文単位に分割。空セグメントは除外。各セグメントが独立にキャッシュされる。
 

@@ -1,4 +1,5 @@
 ﻿using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Services;
 
 namespace VoicevoxRunCached.Tests;
@@ -153,6 +154,78 @@ public class ArgumentParserTests
         await Assert.That(request.SpeakerId).IsEqualTo(3);
         await Assert.That(request.Speed).IsEqualTo(1.25);
         await Assert.That(options.OutPath).IsEqualTo("test.mp3");
+    }
+
+    [Test]
+    [Arguments("--speed", "abc")]
+    [Arguments("--speed", "0")]
+    [Arguments("--speed", "-1")]
+    [Arguments("--pitch", "x")]
+    [Arguments("--volume", "-0.5")]
+    [Arguments("--speaker", "1.5")]
+    [Arguments("--speaker", "-1")]
+    [Arguments("-s", "abc")]
+    public async Task Parse_InvalidOptionValue_Throws(string option, string value)
+    {
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(["text", option, value], DefaultSettings())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
+
+    [Test]
+    [Arguments("--speed")]
+    [Arguments("--out")]
+    [Arguments("-s")]
+    public async Task Parse_OptionWithoutValue_Throws(string option)
+    {
+        await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(["text", option], DefaultSettings())));
+    }
+
+    [Test]
+    public async Task Parse_Flags_DoNotWarnAboutExpandedTrue()
+    {
+        // PreprocessArgs が --no-play → --no-play true に展開するため、
+        // 直後の true を消費しないと "Unknown option 'true'" 警告が出ていた (回帰防止)
+        var logger = new WarningCountingLogger();
+
+        var (_, options) = ArgumentParser.Parse(
+            ["text", "--no-play", "--no-cache", "--verbose", "--cache-only", "-s", "3"], DefaultSettings(), logger);
+
+        await Assert.That(logger.WarningCount).IsEqualTo(0);
+        await Assert.That(options.NoPlay).IsTrue();
+        await Assert.That(options.NoCache).IsTrue();
+        await Assert.That(options.Verbose).IsTrue();
+        await Assert.That(options.CacheOnly).IsTrue();
+    }
+
+    private sealed class WarningCountingLogger : Microsoft.Extensions.Logging.ILogger
+    {
+        public int WarningCount { get; private set; }
+
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId,
+            TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel >= Microsoft.Extensions.Logging.LogLevel.Warning)
+                WarningCount++;
+        }
+    }
+
+    [Test]
+    public async Task Parse_BoundaryValues_Accepted()
+    {
+        var (request, _) = ArgumentParser.Parse(
+            ["text", "-s", "0", "--volume", "0", "--pitch", "-0.15", "--speed", "0.5"], DefaultSettings());
+
+        await Assert.That(request!.SpeakerId).IsEqualTo(0);
+        await Assert.That(request.Volume).IsEqualTo(0.0);
+        await Assert.That(request.Pitch).IsEqualTo(-0.15);
+        await Assert.That(request.Speed).IsEqualTo(0.5);
     }
 
     [Test]
