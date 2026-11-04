@@ -234,5 +234,6 @@ Options:
 ## Code Standards
 
 - **Target**: .NET 10 / C# 14 (primary constructors, collection expressions 等を活用)
+- **Version**: `src_dotnet/Directory.Build.props` の `<Version>` 1 箇所で管理する。AssemblyVersion / FileVersion は SDK が自動生成するので csproj に書かない (`task publish:zip` と `_publish_zip.cmd` もここから読む)
 - **Null Safety**: Nullable reference types 有効
 - **Exceptions**: ドメインエラーは `VoicevoxRunCachedException` で wrap し `ErrorCode` を付与。framework 例外は無理に隠さず surface させる

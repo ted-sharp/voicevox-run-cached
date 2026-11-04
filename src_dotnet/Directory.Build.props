@@ -9,6 +9,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>latest</LangVersion>
+
+    <!--
+      アプリのバージョンはここ 1 箇所で管理する。
+      AssemblyVersion / FileVersion は SDK が Version から自動生成するので個別指定しない。
+    -->
+    <Version>2.0.0</Version>
   </PropertyGroup>
 
 </Project>

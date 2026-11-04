@@ -7,10 +7,10 @@ echo Publishing VoicevoxRunCached with ZIP creation...
 
 rem Get version from project file
 echo Extracting version information...
-for /f "tokens=3 delims=<>" %%i in ('findstr "<Version>" VoicevoxRunCached\VoicevoxRunCached.csproj') do set PROJECT_VERSION=%%i
+for /f "tokens=3 delims=<>" %%i in ('findstr "<Version>" Directory.Build.props') do set PROJECT_VERSION=%%i
 
 if "%PROJECT_VERSION%"=="" (
-    echo Warning: Could not extract version from project file. Using default version 1.0.0
+    echo Warning: Could not extract version from Directory.Build.props. Using default version 1.0.0
     set PROJECT_VERSION=1.0.0
 )
 
