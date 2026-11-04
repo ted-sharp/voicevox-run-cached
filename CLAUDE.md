@@ -221,7 +221,7 @@ Options:
 
 ## Technical Constraints
 
-**API**: 全呼び出し直列。Connection timeout はデフォルト 30 秒で全 HTTP リクエストに適用。CLI 引数は `ArgumentParser` で検証し、数値でない値・負の speaker/volume・0 以下の speed は `InvalidArguments` で即エラーにする (黙ってデフォルト値で続行しない)。範囲判定は F2 に丸めた後の値で行う。`--out` 等の値に `--xxx` が来た場合も値の指定漏れとしてエラー。エンジンに存在しない speaker ID は事前照会しない (VOICEVOX は `/initialize_speaker` で 500 を返し、リトライ後に `GEN_001` で失敗する)。
+**API**: 全呼び出し直列。Connection timeout はデフォルト 30 秒で全 HTTP リクエストに適用。CLI 引数は `ArgumentParser` で検証し、数値でない値・負の speaker/volume・0 以下の speed は `InvalidArguments` で即エラーにする (黙ってデフォルト値で続行しない)。範囲判定は F2 に丸めた後の値で行う。`--out` 等の値に `--xxx` が来た場合も値の指定漏れとしてエラー。本文 (`args[0]`) は `PreprocessArgs` にかけない (`-sample` が `-s ample` に割られるため)。speaker ID の存在は合成が必要なときだけ `TextToSpeechProcessor.EnsureSpeakerExists` が `/speakers` で事前確認し、無ければ `InvalidArguments` (VOICEVOX は `/initialize_speaker` で 500 を返しリトライで十数秒待たされるため)。全セグメントがキャッシュヒットなら照会しない。`InvalidArguments` は CommandRouter でスタックトレースなしの Warning ログになる。
 
 **Text Processing**: `。！？!?` と改行 (半角 `.` は直後が空白・文末のとき) で文単位に分割。空セグメントは除外。各セグメントが独立にキャッシュされる。
 

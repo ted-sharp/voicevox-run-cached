@@ -61,7 +61,15 @@ public class CommandRouter
         }
         catch (VoicevoxRunCachedException ex)
         {
-            _logger.LogError(ex, "コマンド実行中にエラーが発生しました: {Command}, ErrorCode: {ErrorCode}", command, ex.ErrorCode);
+            // 利用者の入力ミスはスタックトレースが不要なので Warning で要点だけ残す
+            if (ex.ErrorCode == ErrorCodes.General.InvalidArguments)
+            {
+                _logger.LogWarning("入力が不正です: {Command}, {Message}", command, ex.Message);
+            }
+            else
+            {
+                _logger.LogError(ex, "コマンド実行中にエラーが発生しました: {Command}, ErrorCode: {ErrorCode}", command, ex.ErrorCode);
+            }
             ConsoleHelper.WriteError($"Error: {ex.UserMessage}");
 
             if (!String.IsNullOrEmpty(ex.SuggestedSolution))

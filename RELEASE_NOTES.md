@@ -10,6 +10,9 @@
   - エンジン子プロセスを kill によって確実に停止
   - 例外ハンドリング (`ErrorHandlingUtility`) と Async 呼び出しの統一
 - 改善/修正:
+  - 存在しない speaker ID を合成前に `/speakers` で検出し即エラーにする (リトライ待ちの十数秒を解消)
+  - 入力エラー (`InvalidArguments`) はスタックトレースなしの Warning ログにする
+  - `-sample` のようにハイフンで始まる本文がオプションとして分解されていた問題を修正
   - キャッシュ I/O エラー時に API へ fallback する経路を追加
   - 浮動小数粒度バグ修正 (キャッシュキーの揺らぎ防止)
   - `ConsoleHelper` のログ二重出力を解消
