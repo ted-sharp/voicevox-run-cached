@@ -8,24 +8,24 @@ VOICEVOX REST API のラッパー C# Console アプリ。テキストを文単�
 
 ## Development Commands
 
-`src_dotnet/VoicevoxRunCached/` で作業する。
+リポジトリ直下の `Taskfile.yml` ([go-task](https://taskfile.dev)) で実行する。`task` だけで一覧が出る。
 
 ```bash
-# 基本
-dotnet build                          # Debug build
-dotnet build -c Release               # Release build (BenchmarkDotNet に必要)
-dotnet format                         # コード整形 (pre-commit でも実行)
-dotnet run "こんにちは、世界！"        # サンプル実行
-dotnet run -- --test                  # appsettings.json の Test.Message で実行
-
-# src_dotnet/ から
-_publish.cmd          # standalone EXE を ./publish に出力
-_publish_zip.cmd      # 同上 + ZIP 化
-_fix-all.ps1 -Fast    # format + build (pre-commit 相当のクイック確認)
-_fix-all.ps1          # 上記 + tests + SonarQube + ReSharper
+task build                    # Debug build
+task build:release            # Release build
+task test                     # TUnit テスト (dotnet run --project VoicevoxRunCached.Tests)
+task format                   # コード整形
+task format:check             # 整形差分の検証のみ
+task check                    # format → Release build → test (コミット前の確認)
+task run -- "こんにちは" -s 0  # サンプル実行 (エンジンはアプリが自動起動)
+task run:test                 # appsettings.json の Test.Message で実行
+task publish                  # standalone EXE を src_dotnet/publish に出力
+task publish:zip              # 同上 + バージョン付き ZIP
+task clean                    # bin / obj / publish を削除
+task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube + ReSharper まで)
 ```
 
-完全なコマンド一覧は後述の「Command Interface」を参照。
+テストは .NET 10 + Microsoft.Testing.Platform のため `dotnet test` では動かない (`task test` を使う)。完全なコマンド一覧は後述の「Command Interface」を参照。
 
 ## Architecture Overview
 
@@ -188,12 +188,13 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 
 `.pre-commit-config.yaml` で `git commit` 時に以下が自動実行される:
 
-1. **dotnet-build** (Release 構成)
+1. **dotnet-build**
 2. **dotnet-format** (idempotent、いつでも安全に実行可)
-3. **dotnet-test** (`VoicevoxRunCached.Tests/` の TUnit テスト)
-4. ファイル系チェック (trailing whitespace, EOF, YAML/JSON 検証, merge conflict 検出)
+3. ファイル系チェック (trailing whitespace, EOF, YAML/JSON 検証, merge conflict 検出)
 
-**フック失敗時**: `dotnet-format` 起因なら `dotnet format` を再実行すれば大半は解消する。`--no-verify` で skip しない。`_fix-all.ps1 -Fast` で同等のクイック確認ができる。
+テストはコミット時には実行しない。コミット前に `task check` (または `task test`) を手動で実行すること。
+
+**フック失敗時**: `dotnet-format` 起因なら `task format` を再実行すれば大半は解消する。`--no-verify` で skip しない。
 
 ## Command Interface
 

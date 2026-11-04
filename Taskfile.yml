@@ -1,0 +1,88 @@
+# https://taskfile.dev
+# 使い方: `task` でタスク一覧、`task <name>` で実行。引数は `--` の後ろに渡す (例: task run -- "こんにちは")
+version: '3'
+
+vars:
+  SRC: src_dotnet
+  SLN: src_dotnet/VoicevoxRunCached.slnx
+  PROJ: src_dotnet/VoicevoxRunCached/VoicevoxRunCached.csproj
+  TESTS: src_dotnet/VoicevoxRunCached.Tests
+  PUBLISH_DIR: src_dotnet/publish
+
+tasks:
+  default:
+    desc: タスク一覧を表示
+    silent: true
+    cmds:
+      - task --list
+
+  build:
+    desc: Debug ビルド
+    cmds:
+      - dotnet build {{.SLN}}
+
+  build:release:
+    desc: Release ビルド
+    cmds:
+      - dotnet build {{.SLN}} -c Release
+
+  test:
+    desc: TUnit テストを実行
+    cmds:
+      - dotnet run --project {{.TESTS}} --no-launch-profile
+
+  format:
+    desc: dotnet format でコード整形
+    cmds:
+      - dotnet format {{.SLN}}
+
+  format:check:
+    desc: 整形差分が無いか検証のみ (ファイルは変更しない)
+    cmds:
+      - dotnet format {{.SLN}} --verify-no-changes
+
+  check:
+    desc: format → Release ビルド → テスト (コミット前の確認用)
+    cmds:
+      - task: format
+      - task: build:release
+      - task: test
+
+  fix-all:
+    desc: _fix-all.ps1 を実行 (例 task fix-all -- -Fast)
+    dir: '{{.SRC}}'
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File _fix-all.ps1 {{.CLI_ARGS}}
+
+  run:
+    desc: アプリを実行 (例 task run -- "こんにちは" -s 0 --out out.wav)
+    cmds:
+      - dotnet run --project {{.PROJ}} -- {{.CLI_ARGS}}
+
+  run:test:
+    desc: appsettings.json の Test.Message で読み上げ
+    cmds:
+      - dotnet run --project {{.PROJ}} -- --test {{.CLI_ARGS}}
+
+  publish:
+    desc: standalone EXE を src_dotnet/publish/VoicevoxRunCached に出力
+    cmds:
+      - rm -rf {{.PUBLISH_DIR}}
+      - dotnet publish {{.PROJ}} -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o {{.PUBLISH_DIR}}/VoicevoxRunCached
+
+  publish:zip:
+    desc: publish + バージョン付き ZIP を作成
+    vars:
+      VERSION:
+        sh: dotnet msbuild {{.PROJ}} -getProperty:Version
+      ZIP: '{{.PUBLISH_DIR}}/VoicevoxRunCached-v{{.VERSION}}-win-x64.zip'
+    cmds:
+      - task: publish
+      - powershell -NoProfile -Command "Compress-Archive -Path '{{.PUBLISH_DIR}}/VoicevoxRunCached/*' -DestinationPath '{{.ZIP}}' -Force"
+      - 'echo "Created: {{.ZIP}}"'
+
+  clean:
+    desc: bin / obj / publish を削除 (キャッシュ・ログは残す)
+    cmds:
+      - dotnet clean {{.SLN}} --verbosity quiet
+      - rm -rf {{.SRC}}/VoicevoxRunCached/bin {{.SRC}}/VoicevoxRunCached/obj {{.SRC}}/VoicevoxRunCached.Tests/bin {{.SRC}}/VoicevoxRunCached.Tests/obj {{.PUBLISH_DIR}}
