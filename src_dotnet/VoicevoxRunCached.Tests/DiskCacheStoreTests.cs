@@ -83,7 +83,7 @@ public class DiskCacheStoreTests
 
             // メタデータの CreatedAt を 2 日前に書き換える
             var metaPath = Path.Combine(dir, $"{key}.meta.json");
-            var meta = await store.ReadMetadataAsync(key);
+            var meta = System.Text.Json.JsonSerializer.Deserialize<CacheMetadata>(await File.ReadAllTextAsync(metaPath));
             await Assert.That(meta).IsNotNull();
             meta!.CreatedAt = DateTime.UtcNow.AddDays(-2);
             await File.WriteAllTextAsync(metaPath,
@@ -113,24 +113,6 @@ public class DiskCacheStoreTests
 
             await Assert.That(File.Exists(Path.Combine(dir, $"{key}.mp3"))).IsFalse();
             await Assert.That(File.Exists(Path.Combine(dir, $"{key}.meta.json"))).IsFalse();
-        }
-        finally { Directory.Delete(dir, true); }
-    }
-
-    [Test]
-    public async Task GetStatistics_ReportsFileCountAndSize()
-    {
-        var (store, dir) = CreateStore();
-        try
-        {
-            var request = new VoiceRequest("stats", 1);
-            await store.SaveAsync(request, new byte[100], "k1");
-            await store.SaveAsync(request, new byte[200], "k2");
-
-            var (count, size) = store.GetStatistics();
-
-            await Assert.That(count).IsEqualTo(2);
-            await Assert.That(size).IsEqualTo(300L);
         }
         finally { Directory.Delete(dir, true); }
     }

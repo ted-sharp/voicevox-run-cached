@@ -97,14 +97,13 @@ src_dotnet/
 │   │       ├── ApplicationBootstrap.cs     # 設定 + Serilog + MF 初期化
 │   │       ├── ConfigurationManager.cs / ConfigurationValidationService.cs
 │   │       ├── LoggingManager.cs           # Serilog 構成
-│   │       ├── RetryPolicyService.cs       # Polly リトライ
+│   │       ├── RetryPolicyService.cs       # HTTP リトライ (自前実装の指数バックオフ)
 │   │       ├── CancellationManager.cs      # Ctrl+C 協調キャンセル
 │   │       ├── ConsoleHelper.cs            # 色付き出力
 │   │       ├── ErrorHandlingUtility.cs     # 未知例外の表示
 │   │       ├── ProgressSpinner.cs          # 進捗表示
 │   │       ├── IClock.cs                   # 時刻抽象 (テスト用に差し替え可)
 │   │       └── AssemblyVersion.cs          # アセンブリバージョン参照
-│   ├── Benchmarks/                    # AudioProcessingBenchmarks (BenchmarkDotNet)
 │   ├── Exceptions/                    # VoicevoxRunCachedException, ErrorCodes
 │   └── appsettings.json
 └── VoicevoxRunCached.Tests/           # TUnit ベースのユニットテスト
@@ -129,7 +128,7 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 
 - **`ConsoleHelper`**: 色付き出力、エラー表示。`Console.WriteLine` を直接使わず原則これ経由
 - **`ErrorHandlingUtility`**: 例外 → ErrorCode → ExitCode 変換。`HandleExceptionAndGetExitCode` がコマンド末尾の定型処理
-- **`RetryPolicyService`**: HTTP/ファイル操作のリトライ Polly ポリシー
+- **`RetryPolicyService`**: VOICEVOX API 呼び出しのリトライ (5xx/429/timeout、自前実装の指数バックオフ。Polly は使っていない)
 - **`CancellationManager`**: Ctrl+C の協調キャンセル
 - **`MediaFoundationManager`** (`Services/Audio/`): NAudio の MediaFoundation 初期化を一元管理
 - **`ConfigurationManager` / `ConfigurationValidationService`**: AppSettings 読込と FluentValidation による検証

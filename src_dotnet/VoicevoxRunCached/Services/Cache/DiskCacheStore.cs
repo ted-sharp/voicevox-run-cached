@@ -137,78 +137,11 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// メタデータファイル一覧を取得。
-    /// </summary>
-    public string[] GetMetadataFiles()
-    {
-        return System.IO.Directory.GetFiles(_settings.Directory, "*.meta.json");
-    }
-
-    /// <summary>
     /// メタデータからキャッシュキーを推定 (ファイル名先頭部分)。
     /// </summary>
     public static string ExtractKeyFromMetadataPath(string metaFilePath)
     {
         return Path.GetFileNameWithoutExtension(metaFilePath).Replace(".meta", "");
-    }
-
-    /// <summary>
-    /// cacheKey 指定でメタデータを読む。失敗時 null。
-    /// </summary>
-    public Task<CacheMetadata?> ReadMetadataAsync(string cacheKey, CancellationToken cancellationToken = default)
-    {
-        var (_, metaPath) = ResolvePaths(cacheKey);
-        return ReadMetadataFromPathAsync(metaPath, cancellationToken);
-    }
-
-    /// <summary>
-    /// メタデータファイルパスを直接指定して非同期に読み込む (eviction が dir 列挙から渡してくる用途)。
-    /// </summary>
-    public async Task<CacheMetadata?> ReadMetadataFromPathAsync(string metaFilePath, CancellationToken cancellationToken = default)
-    {
-        if (!File.Exists(metaFilePath))
-            return null;
-
-        try
-        {
-            var json = await File.ReadAllTextAsync(metaFilePath, cancellationToken);
-            return JsonSerializer.Deserialize<CacheMetadata>(json);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to read metadata file: {Path}", metaFilePath);
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// ディスクキャッシュ全体の集計 (ファイル数・合計サイズ)。
-    /// </summary>
-    public (int TotalFiles, long TotalSize) GetStatistics()
-    {
-        var files = GetAudioFiles();
-        long totalSize = 0;
-        int validFiles = 0;
-
-        foreach (var path in files)
-        {
-            try
-            {
-                var info = new FileInfo(path);
-                totalSize += info.Length;
-                validFiles++;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "キャッシュファイル情報の取得に失敗 (統計集計時): {FilePath}", path);
-            }
-        }
-
-        return (validFiles, totalSize);
     }
 
     /// <summary>

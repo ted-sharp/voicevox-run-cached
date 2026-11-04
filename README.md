@@ -40,10 +40,12 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
 
 ```bash
 git clone https://github.com/ted-sharp/voicevox-run-cached.git
-cd voicevox-run-cached/src_dotnet
-_publish.cmd        # 開発用 (./publish/VoicevoxRunCached/)
-_publish_zip.cmd    # 配布用 (バージョン付き ZIP)
+cd voicevox-run-cached
+task publish        # 開発用 (src_dotnet/publish/VoicevoxRunCached/)
+task publish:zip    # 配布用 (バージョン付き ZIP)
 ```
+
+[Task](https://taskfile.dev) が無い場合は `src_dotnet/_publish.cmd` / `_publish_zip.cmd` でも同じ出力になる。
 
 ## 使い方
 
@@ -228,15 +230,18 @@ Total execution time: 2445.4ms
 - **NAudio + NAudio.Lame**: 再生と MP3 エンコード
 - **Serilog**: 構造化ログ (Console + File sink)
 - **FluentValidation**: 設定検証
-- **Polly**: HTTP / ファイル操作のリトライ
-- **BenchmarkDotNet**: パフォーマンス計測
+- **TUnit**: ユニットテスト
+
+リポジトリ直下の `Taskfile.yml` でよく使う操作をまとめている (`task` で一覧表示)。
 
 ```bash
-cd src_dotnet/VoicevoxRunCached
-dotnet build                      # Debug
-dotnet run "テストメッセージ"
-dotnet build -c Release           # Release
+task build                        # Debug ビルド
+task test                         # テスト
+task check                        # format → Release ビルド → テスト (コミット前に実行)
+task run -- "テストメッセージ"
 ```
+
+バージョンは `src_dotnet/Directory.Build.props` の `<Version>` で一元管理している。
 
 設計方針・アーキテクチャ詳細は [`CLAUDE.md`](./CLAUDE.md) を参照。
 

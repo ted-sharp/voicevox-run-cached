@@ -28,6 +28,11 @@ public class CacheEvictionPolicy
     /// <summary>
     /// 期限切れキャッシュを削除する。
     /// </summary>
+    /// <remarks>
+    /// 新規保存のある実行ごとに全件走査するため、meta.json の中身は読まずファイル更新日時で判定する
+    /// (meta.json は CreatedAt 記録時に書かれるので同義。数万件でも stat のみで済む)。
+    /// 読み込み時の厳密な期限判定は <see cref="DiskCacheStore.LoadAsync"/> が CreatedAt で行う。
+    /// </remarks>
     public Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
         return CacheErrorMapper.WithMappingAsync<object?>(
@@ -35,22 +40,21 @@ public class CacheEvictionPolicy
             null,
             _settings.Directory,
             _logger,
-            async () =>
+            () =>
             {
                 if (!Directory.Exists(_settings.Directory))
-                    return null;
+                    return Task.FromResult<object?>(null);
 
-                var metaFiles = _disk.GetMetadataFiles();
+                var now = _clock.UtcNow;
                 var expiredKeys = new List<string>();
 
-                foreach (var metaFile in metaFiles)
+                foreach (var metaFile in new DirectoryInfo(_settings.Directory).EnumerateFiles("*.meta.json"))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    var metadata = await _disk.ReadMetadataFromPathAsync(metaFile, cancellationToken);
-                    if (metadata == null || _clock.UtcNow - metadata.CreatedAt > _expiration)
+                    if (now - metaFile.LastWriteTimeUtc > _expiration)
                     {
-                        expiredKeys.Add(DiskCacheStore.ExtractKeyFromMetadataPath(metaFile));
+                        expiredKeys.Add(DiskCacheStore.ExtractKeyFromMetadataPath(metaFile.FullName));
                     }
                 }
 
@@ -64,13 +68,17 @@ public class CacheEvictionPolicy
                     _logger.LogInformation("期限切れキャッシュをクリーンアップしました - {Count} ファイル", expiredKeys.Count);
                 }
 
-                return null;
+                return Task.FromResult<object?>(null);
             });
     }
 
     /// <summary>
     /// MaxSizeGb を超えていれば古いものから削除する。
     /// </summary>
+    /// <remarks>
+    /// 上限に達したキャッシュでは毎回ここを通るため、古さは meta.json を読まずファイル更新日時で判定する
+    /// (<see cref="CleanupExpiredAsync"/> と同じ理由)。
+    /// </remarks>
     public Task CleanupByMaxSizeAsync(CancellationToken cancellationToken = default)
     {
         return CacheErrorMapper.WithMappingAsync<object?>(
@@ -78,37 +86,22 @@ public class CacheEvictionPolicy
             null,
             _settings.Directory,
             _logger,
-            async () =>
+            () =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (!Directory.Exists(_settings.Directory))
-                    return null;
+                    return Task.FromResult<object?>(null);
 
-                var dirInfo = new DirectoryInfo(_settings.Directory);
-                var entries = dirInfo.GetFiles("*.mp3", SearchOption.TopDirectoryOnly)
-                    .Select(f => new FileEntry(
-                        f,
-                        new FileInfo(Path.Combine(_settings.Directory,
-                            Path.GetFileNameWithoutExtension(f.Name) + ".meta.json"))))
-                    .ToList();
+                var entries = new DirectoryInfo(_settings.Directory).GetFiles("*.mp3", SearchOption.TopDirectoryOnly);
 
-                long totalBytes = entries.Sum(x => x.File.Length);
+                long totalBytes = entries.Sum(x => x.Length);
                 long maxBytes = (long)(Math.Max(0.0, _settings.MaxSizeGb) * 1024 * 1024 * 1024);
 
                 if (maxBytes <= 0 || totalBytes <= maxBytes)
-                    return null;
+                    return Task.FromResult<object?>(null);
 
-                // タイムスタンプで昇順比較するため、各エントリの timestamp を非同期で先に解決する (古いものから削除)
-                var withTimestamps = new List<(FileEntry Entry, DateTime Timestamp)>(entries.Count);
-                foreach (var entry in entries)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    var ts = await ResolveTimestampAsync(entry, cancellationToken);
-                    withTimestamps.Add((entry, ts));
-                }
-
-                var ordered = withTimestamps.OrderBy(x => x.Timestamp).Select(x => x.Entry).ToList();
+                var ordered = entries.OrderBy(ResolveTimestamp).ToList();
 
                 int deleted = 0;
                 foreach (var entry in ordered)
@@ -118,9 +111,8 @@ public class CacheEvictionPolicy
                     if (totalBytes <= maxBytes)
                         break;
 
-                    var key = Path.GetFileNameWithoutExtension(entry.File.Name);
-                    _disk.Delete(key);
-                    totalBytes -= entry.File.Length;
+                    _disk.Delete(Path.GetFileNameWithoutExtension(entry.Name));
+                    totalBytes -= entry.Length;
                     deleted++;
                 }
 
@@ -128,20 +120,16 @@ public class CacheEvictionPolicy
                 {
                     _logger.LogInformation("サイズ制限によるキャッシュクリーンアップが完了しました - {Count} ファイル削除", deleted);
                 }
-                return null;
+                return Task.FromResult<object?>(null);
             });
     }
 
-    private async Task<DateTime> ResolveTimestampAsync(FileEntry entry, CancellationToken cancellationToken)
+    /// <summary>
+    /// エントリの古さ。meta.json があればその更新日時 (= CreatedAt 記録時刻)、無ければ mp3 の更新日時。
+    /// </summary>
+    private static DateTime ResolveTimestamp(FileInfo mp3)
     {
-        if (entry.Meta.Exists)
-        {
-            var meta = await _disk.ReadMetadataFromPathAsync(entry.Meta.FullName, cancellationToken);
-            if (meta != null)
-                return meta.CreatedAt;
-        }
-        return entry.File.LastWriteTimeUtc;
+        var meta = new FileInfo(Path.ChangeExtension(mp3.FullName, ".meta.json"));
+        return meta.Exists ? meta.LastWriteTimeUtc : mp3.LastWriteTimeUtc;
     }
-
-    private readonly record struct FileEntry(FileInfo File, FileInfo Meta);
 }
