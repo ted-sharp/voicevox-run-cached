@@ -10,10 +10,12 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// </summary>
 public class AudioExportService
 {
+    private readonly AudioFormatDetector _formatDetector;
     private readonly ILogger _logger;
 
-    public AudioExportService(ILogger logger)
+    public AudioExportService(AudioFormatDetector formatDetector, ILogger logger)
     {
+        _formatDetector = formatDetector ?? throw new ArgumentNullException(nameof(formatDetector));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -67,48 +69,52 @@ public class AudioExportService
         }
     }
 
-    private async Task<byte[]> CombineWavSegmentsAsync(List<byte[]> wavDataList, CancellationToken cancellationToken)
+    /// <summary>
+    /// 各セグメントを PCM にデコードして 1 本の WAV に結合する。
+    /// </summary>
+    /// <remarks>
+    /// キャッシュヒットしたセグメントは MP3、今回合成したセグメントは WAV なので、
+    /// <see cref="AudioFormatDetector.CreateWaveStream"/> で形式を判定してから読む。
+    /// 出力フォーマットは先頭セグメントのデコード結果に合わせ、異なるフォーマットが混ざれば例外にする。
+    /// 1 件のみの場合も同じ経路を通す (キャッシュ由来の MP3 をそのまま .wav として書き出さないため)。
+    /// </remarks>
+    private async Task<byte[]> CombineWavSegmentsAsync(List<byte[]> audioDataList, CancellationToken cancellationToken)
     {
-        if (wavDataList.Count == 0)
-        {
-            throw new AudioProcessingException(
-                ErrorCodes.Audio.AudioFormatError,
-                "WAV data list is empty",
-                "結合対象の WAV データが空です。",
-                "合成済みセグメントを 1 件以上渡してください。");
-        }
-
-        if (wavDataList.Count == 1)
-        {
-            return wavDataList[0];
-        }
-
-        // 最初のセグメントのフォーマットで Writer を作る。VOICEVOX が同一エンジンで返すので
-        // 全セグメントのフォーマットは揃っている前提 (異なる場合は WaveFileWriter 側でエラー)。
-        using var firstStream = new MemoryStream(wavDataList[0]);
-        using var firstReader = new WaveFileReader(firstStream);
-        var waveFormat = firstReader.WaveFormat;
-
         using var outputStream = new MemoryStream();
-        using var writer = new WaveFileWriter(outputStream, waveFormat);
-
-        foreach (var wavData in wavDataList)
+        WaveFileWriter? writer = null;
+        try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            using var inputStream = new MemoryStream(wavData);
-            using var reader = new WaveFileReader(inputStream);
-
-            var buffer = new byte[waveFormat.AverageBytesPerSecond * 4];
-            int bytesRead;
-            while ((bytesRead = await reader.ReadAsync(buffer, 0, buffer.Length, cancellationToken)) > 0)
+            foreach (var audioData in audioDataList)
             {
-                await writer.WriteAsync(buffer, 0, bytesRead, cancellationToken);
-            }
-        }
+                cancellationToken.ThrowIfCancellationRequested();
 
-        writer.Flush();
-        return outputStream.ToArray();
+                using var reader = _formatDetector.CreateWaveStream(audioData);
+                writer ??= new WaveFileWriter(outputStream, reader.WaveFormat);
+
+                if (!reader.WaveFormat.Equals(writer.WaveFormat))
+                {
+                    throw new AudioProcessingException(
+                        ErrorCodes.Audio.AudioFormatError,
+                        $"Segment format mismatch: {reader.WaveFormat} vs {writer.WaveFormat}",
+                        "セグメント間で音声フォーマットが一致しません。",
+                        "--no-cache を付けて再実行するか、--clear でキャッシュを削除してください。");
+                }
+
+                var buffer = new byte[reader.WaveFormat.AverageBytesPerSecond];
+                int bytesRead;
+                while ((bytesRead = await reader.ReadAsync(buffer, cancellationToken)) > 0)
+                {
+                    await writer.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+                }
+            }
+
+            writer!.Flush();
+            return outputStream.ToArray();
+        }
+        finally
+        {
+            writer?.Dispose();
+        }
     }
 
     private async Task WriteOutputFileAsync(byte[] audioData, string outPath, CancellationToken cancellationToken)

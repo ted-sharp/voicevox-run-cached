@@ -8,24 +8,24 @@ VOICEVOX REST API のラッパー C# Console アプリ。テキストを文単�
 
 ## Development Commands
 
-`src_dotnet/VoicevoxRunCached/` で作業する。
+リポジトリ直下の `Taskfile.yml` ([go-task](https://taskfile.dev)) で実行する。`task` だけで一覧が出る。
 
 ```bash
-# 基本
-dotnet build                          # Debug build
-dotnet build -c Release               # Release build (BenchmarkDotNet に必要)
-dotnet format                         # コード整形 (pre-commit でも実行)
-dotnet run "こんにちは、世界！"        # サンプル実行
-dotnet run -- --test                  # appsettings.json の Test.Message で実行
-
-# src_dotnet/ から
-_publish.cmd          # standalone EXE を ./publish に出力
-_publish_zip.cmd      # 同上 + ZIP 化
-_fix-all.ps1 -Fast    # format + build (pre-commit 相当のクイック確認)
-_fix-all.ps1          # 上記 + tests + SonarQube + ReSharper
+task build                    # Debug build
+task build:release            # Release build
+task test                     # TUnit テスト (dotnet run --project VoicevoxRunCached.Tests)
+task format                   # コード整形
+task format:check             # 整形差分の検証のみ
+task check                    # format → Release build → test (コミット前の確認)
+task run -- "こんにちは" -s 0  # サンプル実行 (エンジンはアプリが自動起動)
+task run:test                 # appsettings.json の Test.Message で実行
+task publish                  # standalone EXE を src_dotnet/publish に出力
+task publish:zip              # 同上 + バージョン付き ZIP
+task clean                    # bin / obj / publish を削除
+task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube + ReSharper まで)
 ```
 
-完全なコマンド一覧は後述の「Command Interface」を参照。
+テストは .NET 10 + Microsoft.Testing.Platform のため `dotnet test` では動かない (`task test` を使う)。完全なコマンド一覧は後述の「Command Interface」を参照。
 
 ## Architecture Overview
 
@@ -43,7 +43,9 @@ _fix-all.ps1          # 上記 + tests + SonarQube + ReSharper
 
 **Serial API Calls**: VOICEVOX API は producer 側 (`SegmentProducer.ProduceAsync`) が `foreach` で 1 件ずつ処理することで直列性を担保している。`VoiceVoxApiClient` 自身に明示的なロックは無いので、もし複数スレッドから同時に呼び出すコードを足す場合は呼び出し元で直列化すること。各 speaker は session 内で初回のみ `/initialize_speaker` する (`TextToSpeechProcessor.SynthesizeAndPlayAsync` 側で 1 回だけ呼ぶ)。
 
-**Cache Keys**: `SHA256(speaker_id + raw_text + speed + pitch + volume)` を 16 進文字列化したものをファイル名として使用。`{CacheDirectory}/{SHA256_HEX}.mp3` と `{SHA256_HEX}.meta.json` (speaker_id, parameters, text hash) のペアで保存。**SHA256 生成ロジックを変えると既存キャッシュが全て無効化されるため変更禁止**。
+**Cache Keys**: `CacheKeyGenerator.Compute` が `SHA256("{text}|{speakerId}|{speed:F2}|{pitch:F2}|{volume:F2}")` (InvariantCulture) を 16 進小文字化したものをファイル名として使用。`{CacheDirectory}/{SHA256_HEX}.mp3` と `{SHA256_HEX}.meta.json` (CreatedAt, Text, SpeakerId, Speed, Pitch, Volume, VoiceParametersApplied) のペアで保存。**SHA256 生成ロジックを変えると既存キャッシュが全て無効化されるため変更禁止**。**Speed/Pitch/Volume は `/audio_query` のクエリでは効かない** (VOICEVOX が無視する) ので、`VoiceVoxApiClient.ApplyVoiceParameters` が返却 JSON の `speedScale`/`pitchScale`/`volumeScale` を書き換えてから `/synthesis` に渡す。値は `CacheKeyGenerator.NormalizeParameter` (F2 書式経由。`Math.Round` は丸め方式が異なるので使わない) で丸め、キーと合成パラメータを一致させる。旧版はパラメータ未反映の音声をキャッシュしていたため、`VoiceParametersApplied` の無い既定値以外のエントリは `DiskCacheStore.IsMetadataValid` で無効扱いになり再合成される。
+
+**Cache Data Format**: キャッシュ由来の `TextSegment.AudioData` は **MP3**、今回合成したものは **WAV**。両者が混在するため、音声バイト列を読むときは必ず `AudioFormatDetector.CreateWaveStream` で形式判定する (`WaveFileReader` 決め打ち禁止)。
 
 **Streaming Playback**: `TextToSpeechProcessor.SynthesizeAndPlayAsync` で `Channel<TextSegment>` を介した producer (`SegmentProducer.ProduceAsync`) / consumer (`AudioPlayer.PlayStreamingAsync`) を並走させる。キャッシュ済みセグメントは即座に channel に流して再生開始、未キャッシュ分は producer が直列に API を叩きながら順次 channel に流す。consumer 側が `AudioConstants.FillerStartDelayMs` 以内に次セグメントを取れない場合は `FillerManager.GetRandomFillerAudioAsync` で相槌音声を挿入して無音を回避する。片側の例外は linked CTS で双方を停止する。キャッシュ書き込みは channel 書き込みの後で fire-and-forget して producer の次の API 呼び出しを遅らせない (producer 終了時に `finally` 内で `Task.WhenAll` 待機、例外パスでも保証)。`writer.TryComplete()` は `pendingCacheSaves` の `WhenAll` より**前**に呼ぶこと — 順序を逆にすると最終セグメント再生後の `WaitToReadAsync` が `FillerStartDelayMs` を超え、フィラーを誤発火する。
 
@@ -75,7 +77,6 @@ src_dotnet/
 │   │   ├── Cache/                          # キャッシュ層
 │   │   │   ├── AudioCacheManager.cs        # キャッシュ統合ファサード
 │   │   │   ├── CacheKeyGenerator.cs        # SHA256 キー生成 (変更禁止)
-│   │   │   ├── MemoryCacheStore.cs         # IMemoryCache ラッパ
 │   │   │   ├── DiskCacheStore.cs           # mp3 + meta の永続化
 │   │   │   ├── CacheEvictionPolicy.cs      # 期限切れ・サイズ超過の eviction
 │   │   │   └── CacheErrorMapper.cs         # I/O 例外 → VoicevoxRunCachedException 変換
@@ -96,14 +97,13 @@ src_dotnet/
 │   │       ├── ApplicationBootstrap.cs     # 設定 + Serilog + MF 初期化
 │   │       ├── ConfigurationManager.cs / ConfigurationValidationService.cs
 │   │       ├── LoggingManager.cs           # Serilog 構成
-│   │       ├── RetryPolicyService.cs       # Polly リトライ
+│   │       ├── RetryPolicyService.cs       # HTTP リトライ (自前実装の指数バックオフ)
 │   │       ├── CancellationManager.cs      # Ctrl+C 協調キャンセル
 │   │       ├── ConsoleHelper.cs            # 色付き出力
 │   │       ├── ErrorHandlingUtility.cs     # 未知例外の表示
 │   │       ├── ProgressSpinner.cs          # 進捗表示
 │   │       ├── IClock.cs                   # 時刻抽象 (テスト用に差し替え可)
 │   │       └── AssemblyVersion.cs          # アセンブリバージョン参照
-│   ├── Benchmarks/                    # AudioProcessingBenchmarks (BenchmarkDotNet)
 │   ├── Exceptions/                    # VoicevoxRunCachedException, ErrorCodes
 │   └── appsettings.json
 └── VoicevoxRunCached.Tests/           # TUnit ベースのユニットテスト
@@ -128,7 +128,7 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 
 - **`ConsoleHelper`**: 色付き出力、エラー表示。`Console.WriteLine` を直接使わず原則これ経由
 - **`ErrorHandlingUtility`**: 例外 → ErrorCode → ExitCode 変換。`HandleExceptionAndGetExitCode` がコマンド末尾の定型処理
-- **`RetryPolicyService`**: HTTP/ファイル操作のリトライ Polly ポリシー
+- **`RetryPolicyService`**: VOICEVOX API 呼び出しのリトライ (5xx/429/timeout、自前実装の指数バックオフ。Polly は使っていない)
 - **`CancellationManager`**: Ctrl+C の協調キャンセル
 - **`MediaFoundationManager`** (`Services/Audio/`): NAudio の MediaFoundation 初期化を一元管理
 - **`ConfigurationManager` / `ConfigurationValidationService`**: AppSettings 読込と FluentValidation による検証
@@ -137,15 +137,16 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 ### Modifying Cache Behavior
 
 - SHA256 生成ロジックは**変更禁止** (既存キャッシュが全て無効化される)
-- 期限切れは `ExpirationDays`、容量上限は `MaxSizeGB` で eviction
+- 期限切れは `ExpirationDays`、容量上限は `MaxSizeGB` で eviction。`AudioCacheManager.RunMaintenanceAsync` で両方まとめて実行し、`SegmentProducer` が新規保存のあった実行の最後に 1 回だけ呼ぶ (保存ごとに全走査しない)
+- 期限切れは読み込み時 (`DiskCacheStore.LoadAsync`) にも判定され、該当ファイルは削除される
 - キャッシュは executable と同じディレクトリに保存される (`UseExecutableBaseDirectory: true`)
-- 再生前に必ず `.meta.json` の speaker_id とパラメータが一致するか検証する
+- `.meta.json` の検証 (`DiskCacheStore.IsMetadataValid`) は Text 非空・SpeakerId >= 0 (speaker 0 は実在)・CreatedAt 設定済みのみ。パラメータ一致はキー自体が保証するので照合しない
 
 ### Working with Text Segmentation
 
 `TextSegmentProcessor.ProcessTextAsync(text, speakerId)` が `List<TextSegment>` を返す。
 
-- 分割は日本語の文末記号 (`。 ! ?`) と改行で行われる
+- 分割は文末記号 (`。！？!?`) と改行で行われる。半角 `.` は直後が空白か文末のときだけ区切る (`3.14` や `Node.js` を割らない)
 - 1 セグメントが `maxSegmentLength` (デフォルト 100 文字) を超えると強制分割
 - 空白のみ・空セグメントは filter される
 - キャッシュヒット判定はセグメント単位なので、テキストの一部変更でも未変更部分は再利用される
@@ -185,12 +186,13 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 
 `.pre-commit-config.yaml` で `git commit` 時に以下が自動実行される:
 
-1. **dotnet-build** (Release 構成)
+1. **dotnet-build**
 2. **dotnet-format** (idempotent、いつでも安全に実行可)
-3. **dotnet-test** (`VoicevoxRunCached.Tests/` の TUnit テスト)
-4. ファイル系チェック (trailing whitespace, EOF, YAML/JSON 検証, merge conflict 検出)
+3. ファイル系チェック (trailing whitespace, EOF, YAML/JSON 検証, merge conflict 検出)
 
-**フック失敗時**: `dotnet-format` 起因なら `dotnet format` を再実行すれば大半は解消する。`--no-verify` で skip しない。`_fix-all.ps1 -Fast` で同等のクイック確認ができる。
+テストはコミット時には実行しない。コミット前に `task check` (または `task test`) を手動で実行すること。
+
+**フック失敗時**: `dotnet-format` 起因なら `task format` を再実行すれば大半は解消する。`--no-verify` で skip しない。
 
 ## Command Interface
 
@@ -219,9 +221,9 @@ Options:
 
 ## Technical Constraints
 
-**API**: 全呼び出し直列。Connection timeout はデフォルト 30 秒で全 HTTP リクエストに適用。不正な speaker ID は最初の API 呼び出し前に弾く。
+**API**: 全呼び出し直列。Connection timeout はデフォルト 30 秒で全 HTTP リクエストに適用。CLI 引数は `ArgumentParser` で検証し、数値でない値・負の speaker/volume・0 以下の speed は `InvalidArguments` で即エラーにする (黙ってデフォルト値で続行しない)。範囲判定は F2 に丸めた後の値で行う。`--out` 等の値に `--xxx` が来た場合も値の指定漏れとしてエラー。エンジンに存在しない speaker ID は事前照会しない (VOICEVOX は `/initialize_speaker` で 500 を返し、リトライ後に `GEN_001` で失敗する)。
 
-**Text Processing**: `。 ! ?` で文単位に分割。空セグメントは除外。各セグメントが独立にキャッシュされる。
+**Text Processing**: `。！？!?` と改行 (半角 `.` は直後が空白・文末のとき) で文単位に分割。空セグメントは除外。各セグメントが独立にキャッシュされる。
 
 **Engine Management**: 起動時に既存 VOICEVOX プロセスを検査してから launch。`EnginePath` 空なら一般的なインストール場所から自動検出。
 
@@ -230,5 +232,6 @@ Options:
 ## Code Standards
 
 - **Target**: .NET 10 / C# 14 (primary constructors, collection expressions 等を活用)
+- **Version**: `src_dotnet/Directory.Build.props` の `<Version>` 1 箇所で管理する。AssemblyVersion / FileVersion は SDK が自動生成するので csproj に書かない (`task publish:zip` と `_publish_zip.cmd` もここから読む)
 - **Null Safety**: Nullable reference types 有効
 - **Exceptions**: ドメインエラーは `VoicevoxRunCachedException` で wrap し `ErrorCode` を付与。framework 例外は無理に隠さず surface させる

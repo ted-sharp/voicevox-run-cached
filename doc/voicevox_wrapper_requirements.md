@@ -7,7 +7,7 @@
 
 ## 実装サマリ
 
-- **キャッシュ**: 文単位セグメント化 + MP3保存 + 期限/容量管理 + メモリキャッシュ層
+- **キャッシュ**: 文単位セグメント化 + MP3保存 + 期限/容量管理
 - **再生**: NAudio (`WaveOutEvent`) ベース、`Channel<TextSegment>` による producer/consumer ストリーミング、デバイス暖気運転（オプション）
 - **エンジン管理**: 自動起動、起動完了待機、永続化（任意）、子プロセス kill による確実な停止
 - **フィラー**: 生成待機時の自然な間つなぎ音声（任意）
@@ -60,8 +60,7 @@ Options:
     "Directory": "./cache/audio/",
     "UseExecutableBaseDirectory": true,
     "ExpirationDays": 30,
-    "MaxSizeGB": 1.0,
-    "MemoryCacheSizeMb": 100
+    "MaxSizeGB": 1.0
   },
   "Audio": {
     "OutputDevice": -1,
@@ -111,7 +110,6 @@ Options:
 
 - `NAudio`, `NAudio.Lame` — 音声再生・MP3 エンコード
 - `Microsoft.Extensions.Configuration` — `appsettings.json` バインド
-- `Microsoft.Extensions.Caching.Memory` — メモリキャッシュ
 - `Microsoft.Extensions.Logging` — DI 経由のロギング抽象
 - `Serilog` (Console / File sink) — 構造化ロギング
 - `FluentValidation` — `AppSettings` の検証

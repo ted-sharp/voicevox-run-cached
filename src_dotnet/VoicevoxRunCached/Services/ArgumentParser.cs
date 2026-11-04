@@ -3,6 +3,7 @@ using System.Globalization;
 using Aloe.Utils.CommandLine;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services;
@@ -111,44 +112,40 @@ public static class ArgumentParser
             var arg = processedArgs[i];
             switch (arg)
             {
-                case "--speaker" or "-s" when i + 1 < processedArgs.Length && Int32.TryParse(processedArgs[i + 1], out int speaker):
-                    request.SpeakerId = speaker;
+                case "--speaker" or "-s":
+                    request.SpeakerId = ReadInt(processedArgs, i, min: 0);
                     i += 2;
                     break;
-                case "--speed" when i + 1 < processedArgs.Length && Double.TryParse(processedArgs[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double speed):
-                    request.Speed = speed;
+                case "--speed":
+                    request.Speed = ReadDouble(processedArgs, i, min: 0, minExclusive: true);
                     i += 2;
                     break;
-                case "--pitch" when i + 1 < processedArgs.Length && Double.TryParse(processedArgs[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double pitch):
-                    request.Pitch = pitch;
+                case "--pitch":
+                    request.Pitch = ReadDouble(processedArgs, i);
                     i += 2;
                     break;
-                case "--volume" when i + 1 < processedArgs.Length && Double.TryParse(processedArgs[i + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double volume):
-                    request.Volume = volume;
+                case "--volume":
+                    request.Volume = ReadDouble(processedArgs, i, min: 0);
                     i += 2;
                     break;
                 case "--no-cache":
-                    noCache = true;
-                    i++;
+                    noCache = ReadFlag(processedArgs, ref i);
                     break;
                 case "--cache-only":
-                    cacheOnly = true;
-                    i++;
+                    cacheOnly = ReadFlag(processedArgs, ref i);
                     break;
                 case "--verbose":
-                    verbose = true;
-                    i++;
+                    verbose = ReadFlag(processedArgs, ref i);
                     break;
                 case "--no-play":
-                    noPlay = true;
-                    i++;
+                    noPlay = ReadFlag(processedArgs, ref i);
                     break;
-                case "--out" or "-o" when i + 1 < processedArgs.Length:
-                    outPath = processedArgs[i + 1];
+                case "--out" or "-o":
+                    outPath = ReadValue(processedArgs, i);
                     i += 2;
                     break;
                 case "--help" or "-h":
-                    i++;
+                    ReadFlag(processedArgs, ref i);
                     break;
                 case "--log-level" or "--log-format" when i + 1 < processedArgs.Length:
                     // ConfigurationManager.AddCommandLine 経由で LoggingSettings にバインドされる。
@@ -171,6 +168,81 @@ public static class ArgumentParser
 
         return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay);
     }
+
+    /// <summary>
+    /// フラグ引数を読み、<paramref name="i"/> を次の引数位置へ進める。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="PreprocessArgs"/> は IConfiguration 向けに <c>--flag</c> を <c>--flag true</c> へ展開するため、
+    /// 直後の <c>true</c>/<c>false</c> は値として消費する (読み飛ばさないと "Unknown option 'true'" 警告になる)。
+    /// </remarks>
+    private static bool ReadFlag(string[] args, ref int i)
+    {
+        if (i + 1 < args.Length && Boolean.TryParse(args[i + 1], out var value))
+        {
+            i += 2;
+            return value;
+        }
+        i++;
+        return true;
+    }
+
+    /// <summary>
+    /// <paramref name="optionIndex"/> 位置のオプションに続く値を返す。値が無ければ例外。
+    /// </summary>
+    /// <remarks>
+    /// 不正値をデフォルトで黙って続行すると、意図と違うパラメータで合成・キャッシュされるためエラーで止める。
+    /// 次が <c>--xxx</c> の場合も値の指定漏れとみなす (<c>--out --no-play</c> で "--no-play" というファイルを作らない)。
+    /// 負数 (<c>-0.1</c>) は値として受け付けるため、単一ハイフンは対象外。
+    /// </remarks>
+    private static string ReadValue(string[] args, int optionIndex)
+    {
+        if (optionIndex + 1 >= args.Length || args[optionIndex + 1].StartsWith("--", StringComparison.Ordinal))
+        {
+            throw InvalidOption(args[optionIndex], "値が指定されていません。");
+        }
+        return args[optionIndex + 1];
+    }
+
+    private static int ReadInt(string[] args, int optionIndex, int min)
+    {
+        var raw = ReadValue(args, optionIndex);
+        if (!Int32.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+        {
+            throw InvalidOption(args[optionIndex], $"整数ではありません: '{raw}'");
+        }
+        if (value < min)
+        {
+            throw InvalidOption(args[optionIndex], $"{min} 以上である必要があります: {value}");
+        }
+        return value;
+    }
+
+    /// <remarks>
+    /// 範囲判定はキャッシュキー / API と同じ粒度に丸めた値で行う
+    /// (<c>--speed 0.004</c> は丸めると 0 になり、生値の "&gt; 0" 判定をすり抜けるため)。
+    /// </remarks>
+    private static double ReadDouble(string[] args, int optionIndex, double min = Double.NegativeInfinity, bool minExclusive = false)
+    {
+        var raw = ReadValue(args, optionIndex);
+        if (!Double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) || !Double.IsFinite(value))
+        {
+            throw InvalidOption(args[optionIndex], $"数値ではありません: '{raw}'");
+        }
+        var normalized = Cache.CacheKeyGenerator.NormalizeParameter(value);
+        if (minExclusive ? normalized <= min : normalized < min)
+        {
+            var bound = minExclusive ? $"{min} より大きい" : $"{min} 以上である";
+            throw InvalidOption(args[optionIndex], $"{bound}必要があります: {raw}");
+        }
+        return value;
+    }
+
+    private static VoicevoxRunCachedException InvalidOption(string option, string reason) => new(
+        errorCode: ErrorCodes.General.InvalidArguments,
+        message: $"Invalid value for {option}: {reason}",
+        userMessage: $"オプション {option} の指定が不正です。{reason}",
+        suggestedSolution: "--help で使い方を確認してください。");
 
     public static void ShowUsage()
     {

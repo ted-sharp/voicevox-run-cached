@@ -130,22 +130,6 @@ public class ValidatorsTests
         }
     }
 
-    [Test]
-    public async Task CacheSettings_MemoryCacheSizeOutOfRange_Fails()
-    {
-        var dir = CreateTempCacheDir();
-        try
-        {
-            var validator = new CacheSettingsValidator();
-            await Assert.That(validator.Validate(new CacheSettings { Directory = dir, MemoryCacheSizeMb = 0 }).IsValid).IsFalse();
-            await Assert.That(validator.Validate(new CacheSettings { Directory = dir, MemoryCacheSizeMb = 10001 }).IsValid).IsFalse();
-        }
-        finally
-        {
-            Directory.Delete(dir, true);
-        }
-    }
-
     // AudioSettings -------------------------------------------------------
 
     [Test]

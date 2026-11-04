@@ -14,7 +14,6 @@ public class DiskCacheStoreTests
             Directory = dir,
             ExpirationDays = expirationDays,
             MaxSizeGb = 1.0,
-            MemoryCacheSizeMb = 100,
             UseExecutableBaseDirectory = false
         };
         return (new DiskCacheStore(settings), dir);
@@ -84,7 +83,7 @@ public class DiskCacheStoreTests
 
             // メタデータの CreatedAt を 2 日前に書き換える
             var metaPath = Path.Combine(dir, $"{key}.meta.json");
-            var meta = await store.ReadMetadataAsync(key);
+            var meta = System.Text.Json.JsonSerializer.Deserialize<CacheMetadata>(await File.ReadAllTextAsync(metaPath));
             await Assert.That(meta).IsNotNull();
             meta!.CreatedAt = DateTime.UtcNow.AddDays(-2);
             await File.WriteAllTextAsync(metaPath,
@@ -119,24 +118,6 @@ public class DiskCacheStoreTests
     }
 
     [Test]
-    public async Task GetStatistics_ReportsFileCountAndSize()
-    {
-        var (store, dir) = CreateStore();
-        try
-        {
-            var request = new VoiceRequest("stats", 1);
-            await store.SaveAsync(request, new byte[100], "k1");
-            await store.SaveAsync(request, new byte[200], "k2");
-
-            var (count, size) = store.GetStatistics();
-
-            await Assert.That(count).IsEqualTo(2);
-            await Assert.That(size).IsEqualTo(300L);
-        }
-        finally { Directory.Delete(dir, true); }
-    }
-
-    [Test]
     public async Task IsMetadataValid_RejectsEmptyOrInvalid()
     {
         await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
@@ -149,23 +130,90 @@ public class DiskCacheStoreTests
         await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
         {
             Text = "ok",
+            SpeakerId = -1,
+            CreatedAt = DateTime.UtcNow
+        })).IsFalse();
+
+        // speaker 0 は VOICEVOX に実在する ID なので有効
+        await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
+        {
+            Text = "ok",
             SpeakerId = 0,
-            CreatedAt = DateTime.UtcNow
-        })).IsFalse();
-
-        await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
-        {
-            Text = "ok",
-            SpeakerId = 1,
-            CreatedAt = default
-        })).IsFalse();
-
-        await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
-        {
-            Text = "ok",
-            SpeakerId = 1,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            VoiceParametersApplied = true
         })).IsTrue();
+
+        await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
+        {
+            Text = "ok",
+            SpeakerId = 1,
+            CreatedAt = default,
+            VoiceParametersApplied = true
+        })).IsFalse();
+
+        await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
+        {
+            Text = "ok",
+            SpeakerId = 1,
+            CreatedAt = DateTime.UtcNow,
+            VoiceParametersApplied = true
+        })).IsTrue();
+    }
+
+    [Test]
+    public async Task IsMetadataValid_LegacyEntry_ValidOnlyWithDefaultParameters()
+    {
+        // 旧版 (VoiceParametersApplied 無し) は Speed/Pitch/Volume を反映せず既定値の音声を保存していた。
+        // 既定値のエントリは正しい音声なので再利用し、既定値以外は作り直させる。
+        await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
+        {
+            Text = "ok",
+            SpeakerId = 1,
+            CreatedAt = DateTime.UtcNow,
+            Speed = 1.0,
+            Pitch = 0.0,
+            Volume = 1.0
+        })).IsTrue();
+
+        await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
+        {
+            Text = "ok",
+            SpeakerId = 1,
+            CreatedAt = DateTime.UtcNow,
+            Speed = 1.5,
+            Pitch = 0.0,
+            Volume = 1.0
+        })).IsFalse();
+
+        await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
+        {
+            Text = "ok",
+            SpeakerId = 1,
+            CreatedAt = DateTime.UtcNow,
+            Speed = 1.0,
+            Pitch = 0.1,
+            Volume = 1.0
+        })).IsFalse();
+    }
+
+    [Test]
+    public async Task LoadAsync_LegacyNonDefaultEntry_IsDeletedAndMisses()
+    {
+        var (store, dir) = CreateStore();
+        try
+        {
+            const string key = "legacy-speed";
+            await File.WriteAllBytesAsync(Path.Combine(dir, $"{key}.mp3"), [0x01]);
+            // 旧版の meta.json (VoiceParametersApplied フィールドが無い)
+            await File.WriteAllTextAsync(Path.Combine(dir, $"{key}.meta.json"),
+                $$"""{"CreatedAt":"{{DateTime.UtcNow:O}}","Text":"旧","SpeakerId":1,"Speed":1.5,"Pitch":0.0,"Volume":1.0}""");
+
+            var loaded = await store.LoadAsync(key);
+
+            await Assert.That(loaded).IsNull();
+            await Assert.That(File.Exists(Path.Combine(dir, $"{key}.mp3"))).IsFalse();
+        }
+        finally { Directory.Delete(dir, true); }
     }
 
     [Test]

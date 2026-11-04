@@ -6,9 +6,10 @@
 public static class AudioConstants
 {
     /// <summary>
-    /// デフォルトの音声再生タイムアウト時間（ミリ秒）
+    /// 音声再生タイムアウトの余裕時間（ミリ秒）。実際のタイムアウトは「音声の長さ + この値」
+    /// (長文 × 低速再生でも正常再生をタイムアウト扱いしないため)
     /// </summary>
-    public const int DefaultPlaybackTimeoutMs = 30000;
+    public const int PlaybackTimeoutMarginMs = 30000;
 
     /// <summary>
     /// 最初のセグメント再生前の遅延時間（ミリ秒）
@@ -109,9 +110,4 @@ public static class AudioConstants
     /// API リトライのバックオフ上限（ミリ秒）
     /// </summary>
     public const int RetryMaxDelayMs = 30000;
-
-    /// <summary>
-    /// 浮動小数点比較の許容誤差。Speed/Pitch/Volume などの「デフォルト値との実質一致」判定に使う。
-    /// </summary>
-    public const double FloatingPointEpsilon = 0.0001;
 }

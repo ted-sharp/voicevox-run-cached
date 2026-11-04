@@ -1,13 +1,13 @@
-﻿using Microsoft.Extensions.Caching.Memory;
-using VoicevoxRunCached.Configuration;
+﻿using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
+using VoicevoxRunCached.Services.Audio;
 using VoicevoxRunCached.Services.Cache;
 
 namespace VoicevoxRunCached.Tests;
 
 public class AudioCacheManagerIntegrationTests
 {
-    private static (AudioCacheManager manager, string dir) CreateManager()
+    private static (AudioCacheManager manager, string dir) CreateManager(double maxSizeGb = 1.0)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_acm_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
@@ -15,12 +15,31 @@ public class AudioCacheManagerIntegrationTests
         {
             Directory = dir,
             ExpirationDays = 30,
-            MaxSizeGb = 1.0,
-            MemoryCacheSizeMb = 100,
+            MaxSizeGb = maxSizeGb,
             UseExecutableBaseDirectory = false
         };
-        var memCache = new MemoryCache(new MemoryCacheOptions { SizeLimit = 1024 * 1024 });
-        return (new AudioCacheManager(settings, memCache), dir);
+        return (new AudioCacheManager(settings), dir);
+    }
+
+    [Test]
+    public async Task SaveAudioCache_DoesNotEvict_RunMaintenanceDoes()
+    {
+        // 上限 ~107B。保存ごとの全走査をやめたので、Save 単体では上限超過でも消えず、
+        // RunMaintenanceAsync で初めて古い順に削除される
+        var (mgr, dir) = CreateManager(maxSizeGb: 1e-7);
+        try
+        {
+            var wav = AudioConversionUtility.CreateMinimalWavData(300);
+            await mgr.SaveAudioCacheAsync(new VoiceRequest("一つ目", 1), wav);
+            await mgr.SaveAudioCacheAsync(new VoiceRequest("二つ目", 1), wav);
+
+            await Assert.That(Directory.GetFiles(dir, "*.mp3").Length).IsEqualTo(2);
+
+            await mgr.RunMaintenanceAsync();
+
+            await Assert.That(Directory.GetFiles(dir, "*.mp3").Length).IsLessThan(2);
+        }
+        finally { Directory.Delete(dir, true); }
     }
 
     [Test]

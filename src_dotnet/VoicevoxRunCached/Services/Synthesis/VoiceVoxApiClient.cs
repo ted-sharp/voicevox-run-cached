@@ -1,10 +1,9 @@
-﻿using System.Globalization;
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
@@ -59,8 +58,8 @@ public class VoiceVoxApiClient : IDisposable
         _logger.LogDebug("スピーカー {SpeakerId} を初期化中...", speakerId);
         return ExecuteApiAsync($"initialize speaker {speakerId}", async ct =>
         {
-            using var response = await _httpClient.PostAsync($"/initialize_speaker?speaker={speakerId}", null, ct);
-            response.EnsureSuccessStatusCode();
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{_settings.BaseUrl}/initialize_speaker?speaker={speakerId}");
+            using var response = await SendAsync(request, ct);
             _logger.LogInformation("スピーカー {SpeakerId} の初期化が完了しました", speakerId);
             return true;
         }, cancellationToken);
@@ -79,7 +78,7 @@ public class VoiceVoxApiClient : IDisposable
             var content = await response.Content.ReadAsStringAsync(ct);
 
             _logger.LogDebug("Audio query を取得しました - Length: {Length} chars", content.Length);
-            return content;
+            return ApplyVoiceParameters(content, request);
         }, cancellationToken);
     }
 
@@ -87,31 +86,37 @@ public class VoiceVoxApiClient : IDisposable
     /// /audio_query エンドポイント URL を組み立てる純粋関数 (テスト容易性のために分離)。
     /// </summary>
     /// <remarks>
-    /// CacheKeyGenerator が F2 (小数 2 桁) で正規化するので、API 送信値も同じ粒度に揃える
-    /// (これでキャッシュキーと API パラメータが必ず一致する)。
-    /// 数値は InvariantCulture を強制 (CurrentCulture が de-DE 等だと "1,5" と出て API が弾く)。
+    /// VOICEVOX の /audio_query は text と speaker しか受け付けない (speed_scale 等をクエリに付けても無視される)。
+    /// 話速・音高・音量は <see cref="ApplyVoiceParameters"/> で返却 JSON 側に設定する。
     /// </remarks>
     public static string BuildAudioQueryUrl(VoiceRequest request, string baseUrl)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(baseUrl);
 
-        var speed = Math.Round(request.Speed, 2);
-        var pitch = Math.Round(request.Pitch, 2);
-        var volume = Math.Round(request.Volume, 2);
-
         var encodedText = Uri.EscapeDataString(request.Text ?? String.Empty);
-        var queryString = $"text={encodedText}&speaker={request.SpeakerId}";
+        return $"{baseUrl}/audio_query?text={encodedText}&speaker={request.SpeakerId}";
+    }
 
-        // 丸め後の値がデフォルトと異なる場合だけクエリに乗せる
-        if (Math.Abs(speed - 1.0) > AudioConstants.FloatingPointEpsilon)
-            queryString += $"&speed_scale={speed.ToString(CultureInfo.InvariantCulture)}";
-        if (Math.Abs(pitch - 0.0) > AudioConstants.FloatingPointEpsilon)
-            queryString += $"&pitch_scale={pitch.ToString(CultureInfo.InvariantCulture)}";
-        if (Math.Abs(volume - 1.0) > AudioConstants.FloatingPointEpsilon)
-            queryString += $"&volume_scale={volume.ToString(CultureInfo.InvariantCulture)}";
+    /// <summary>
+    /// /audio_query が返した JSON の speedScale / pitchScale / volumeScale を request の値で上書きする純粋関数。
+    /// </summary>
+    /// <remarks>
+    /// 値は <see cref="Cache.CacheKeyGenerator.NormalizeParameter"/> でキャッシュキーと同じ粒度に丸めて設定する
+    /// (キーと実際に合成されるパラメータを必ず一致させる)。その他のフィールドはエンジンの返却値をそのまま保つ。
+    /// </remarks>
+    public static string ApplyVoiceParameters(string audioQueryJson, VoiceRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
 
-        return $"{baseUrl}/audio_query?{queryString}";
+        var query = JsonNode.Parse(audioQueryJson)?.AsObject()
+            ?? throw new JsonException("audio_query の応答が JSON オブジェクトではありません");
+
+        query["speedScale"] = Cache.CacheKeyGenerator.NormalizeParameter(request.Speed);
+        query["pitchScale"] = Cache.CacheKeyGenerator.NormalizeParameter(request.Pitch);
+        query["volumeScale"] = Cache.CacheKeyGenerator.NormalizeParameter(request.Volume);
+
+        return query.ToJsonString();
     }
 
     public Task<byte[]> SynthesizeAudioAsync(string audioQuery, int speakerId, CancellationToken cancellationToken = default)

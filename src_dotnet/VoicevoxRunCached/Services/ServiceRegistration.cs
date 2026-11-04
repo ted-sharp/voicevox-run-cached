@@ -1,5 +1,4 @@
 ﻿using DryIoc;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Services.Audio;
@@ -33,13 +32,6 @@ public static class ServiceRegistration
 
         // 時刻プロバイダ (テストで mock 可能にするため抽象化)
         container.RegisterInstance<IClock>(SystemClock.Instance);
-
-        // MemoryCache 具象を登録 (Compact() を呼ぶため IMemoryCache 抽象では足りない)
-        var memoryCacheOptions = new MemoryCacheOptions
-        {
-            SizeLimit = settings.Cache.MemoryCacheSizeMb * 1024L * 1024L
-        };
-        container.RegisterInstance(new MemoryCache(memoryCacheOptions));
 
         // 基盤サービス (singleton)
         container.Register<RetryPolicyService>(Reuse.Singleton);

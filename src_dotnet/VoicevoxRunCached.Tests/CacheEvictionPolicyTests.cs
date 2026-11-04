@@ -15,7 +15,6 @@ public class CacheEvictionPolicyTests
             Directory = dir,
             ExpirationDays = expirationDays,
             MaxSizeGb = maxSizeGb,
-            MemoryCacheSizeMb = 100,
             UseExecutableBaseDirectory = false
         };
         var disk = new DiskCacheStore(settings);
@@ -28,10 +27,29 @@ public class CacheEvictionPolicyTests
         await disk.SaveAsync(request, data, key);
 
         // メタの CreatedAt を上書き
-        var meta = await disk.ReadMetadataAsync(key);
-        meta!.CreatedAt = createdAt;
         var metaPath = Path.Combine(disk.Directory, $"{key}.meta.json");
+        var meta = JsonSerializer.Deserialize<CacheMetadata>(await File.ReadAllTextAsync(metaPath));
+        meta!.CreatedAt = createdAt;
         await File.WriteAllTextAsync(metaPath, JsonSerializer.Serialize(meta));
+
+        // eviction は meta.json の更新日時で古さを判定するので、実運用と同じく CreatedAt に揃える
+        File.SetLastWriteTimeUtc(metaPath, createdAt);
+    }
+
+    [Test]
+    public async Task CleanupExpiredAsync_KeepsEntriesWithinExpiration()
+    {
+        var (policy, disk, dir) = Create(expirationDays: 7);
+        try
+        {
+            await SeedAsync(disk, "recent", new byte[10], DateTime.UtcNow.AddDays(-6));
+
+            await policy.CleanupExpiredAsync();
+
+            await Assert.That(File.Exists(Path.Combine(dir, "recent.mp3"))).IsTrue();
+            await Assert.That(File.Exists(Path.Combine(dir, "recent.meta.json"))).IsTrue();
+        }
+        finally { Directory.Delete(dir, true); }
     }
 
     [Test]

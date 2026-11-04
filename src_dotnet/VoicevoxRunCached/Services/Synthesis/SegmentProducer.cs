@@ -12,6 +12,7 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// 順序契約 (フィラー誤発火を避けるため厳守):
 ///   1. 全セグメントの write 完了 (または例外) → writer.TryComplete() で再生側を即座に解放
 ///   2. その後に pending cache save を WhenAll で待つ
+///   3. 新規保存があれば、最後に 1 回だけキャッシュ eviction (期限切れ + 容量上限) を行う
 /// 例外パスでも 2. を必ず実行することで、producer 終了 = 全 cache save 完了を上位に保証する。
 /// </remarks>
 public class SegmentProducer
@@ -74,6 +75,13 @@ public class SegmentProducer
                 try
                 { await Task.WhenAll(pendingCacheSaves); }
                 catch { /* SaveCacheBestEffortAsync 内でログ済み */ }
+
+                // 3. 新規保存があった実行でのみ、全保存完了後に 1 回だけ eviction を行う。
+                //    再生側は 1. で解放済みなので、残りの再生と並走する。
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    await RunCacheMaintenanceBestEffortAsync(cancellationToken);
+                }
             }
         }
 
@@ -128,6 +136,22 @@ public class SegmentProducer
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "キャッシュ保存に失敗しました (best-effort、再生は継続)");
+        }
+    }
+
+    private async Task RunCacheMaintenanceBestEffortAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await _cacheManager.RunMaintenanceAsync(cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            // Ctrl+C 等。eviction は次回実行で行えばよい
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "キャッシュの eviction に失敗しました (best-effort、再生は継続)");
         }
     }
 

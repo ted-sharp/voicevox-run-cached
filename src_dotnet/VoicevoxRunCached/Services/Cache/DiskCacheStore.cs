@@ -87,7 +87,8 @@ public class DiskCacheStore
             SpeakerId = request.SpeakerId,
             Speed = request.Speed,
             Pitch = request.Pitch,
-            Volume = request.Volume
+            Volume = request.Volume,
+            VoiceParametersApplied = true
         };
 
         await File.WriteAllBytesAsync(audioPath, mp3Data, cancellationToken);
@@ -137,14 +138,6 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// メタデータファイル一覧を取得。
-    /// </summary>
-    public string[] GetMetadataFiles()
-    {
-        return System.IO.Directory.GetFiles(_settings.Directory, "*.meta.json");
-    }
-
-    /// <summary>
     /// メタデータからキャッシュキーを推定 (ファイル名先頭部分)。
     /// </summary>
     public static string ExtractKeyFromMetadataPath(string metaFilePath)
@@ -153,73 +146,25 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// cacheKey 指定でメタデータを読む。失敗時 null。
-    /// </summary>
-    public Task<CacheMetadata?> ReadMetadataAsync(string cacheKey, CancellationToken cancellationToken = default)
-    {
-        var (_, metaPath) = ResolvePaths(cacheKey);
-        return ReadMetadataFromPathAsync(metaPath, cancellationToken);
-    }
-
-    /// <summary>
-    /// メタデータファイルパスを直接指定して非同期に読み込む (eviction が dir 列挙から渡してくる用途)。
-    /// </summary>
-    public async Task<CacheMetadata?> ReadMetadataFromPathAsync(string metaFilePath, CancellationToken cancellationToken = default)
-    {
-        if (!File.Exists(metaFilePath))
-            return null;
-
-        try
-        {
-            var json = await File.ReadAllTextAsync(metaFilePath, cancellationToken);
-            return JsonSerializer.Deserialize<CacheMetadata>(json);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to read metadata file: {Path}", metaFilePath);
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// ディスクキャッシュ全体の集計 (ファイル数・合計サイズ)。
-    /// </summary>
-    public (int TotalFiles, long TotalSize) GetStatistics()
-    {
-        var files = GetAudioFiles();
-        long totalSize = 0;
-        int validFiles = 0;
-
-        foreach (var path in files)
-        {
-            try
-            {
-                var info = new FileInfo(path);
-                totalSize += info.Length;
-                validFiles++;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogDebug(ex, "キャッシュファイル情報の取得に失敗 (統計集計時): {FilePath}", path);
-            }
-        }
-
-        return (validFiles, totalSize);
-    }
-
-    /// <summary>
-    /// メタデータの整合性検証 (Text が非空、SpeakerId > 0、CreatedAt が default でない)。
+    /// メタデータの整合性検証 (Text が非空、SpeakerId >= 0、CreatedAt が default でない、
+    /// 旧版で作られた既定値以外のエントリでない)。
+    /// VOICEVOX は speaker 0 (四国めたん あまあま等) を持つため 0 も有効。
     /// </summary>
     public static bool IsMetadataValid(CacheMetadata metadata)
     {
         return !String.IsNullOrWhiteSpace(metadata.Text)
-            && metadata.SpeakerId > 0
-            && metadata.CreatedAt != default;
+            && metadata.SpeakerId >= 0
+            && metadata.CreatedAt != default
+            && (metadata.VoiceParametersApplied || HasDefaultVoiceParameters(metadata));
     }
+
+    /// <summary>
+    /// Speed/Pitch/Volume がすべて既定値 (1.0 / 0.0 / 1.0) か。旧版でも既定値のエントリは正しい音声なので再利用できる。
+    /// </summary>
+    private static bool HasDefaultVoiceParameters(CacheMetadata metadata)
+        => CacheKeyGenerator.NormalizeParameter(metadata.Speed) == 1.0
+            && CacheKeyGenerator.NormalizeParameter(metadata.Pitch) == 0.0
+            && CacheKeyGenerator.NormalizeParameter(metadata.Volume) == 1.0;
 
     private (string AudioPath, string MetaPath) ResolvePaths(string cacheKey)
     {

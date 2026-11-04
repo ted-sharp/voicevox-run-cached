@@ -5,10 +5,6 @@
     <PlatformTarget>AnyCPU</PlatformTarget>
     <ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>None</ResolveAssemblyWarnOrErrorOnTargetArchitectureMismatch>
 
-    <!-- Version Information -->
-    <Version>2.0.0</Version>
-    <AssemblyVersion>1.6.0.0</AssemblyVersion>
-    <FileVersion>1.6.0.0</FileVersion>
     <Product>VoicevoxRunCached</Product>
     <Description>VOICEVOX REST API wrapper with audio caching functionality</Description>
     <Copyright>Copyright © 2025 ted-sharp</Copyright>
@@ -35,7 +31,6 @@
     <PackageReference Include="Serilog.Enrichers.Environment" Version="3.0.1" />
     <PackageReference Include="Serilog.Enrichers.Thread" Version="4.0.0" />
 
-    <PackageReference Include="Microsoft.Extensions.Caching.Memory" Version="10.0.2" />
 
     <PackageReference Include="Aloe.Utils.CommandLine" Version="2.0.0" />
 
