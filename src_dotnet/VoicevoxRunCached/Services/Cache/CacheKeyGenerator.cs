@@ -29,4 +29,15 @@ public static class CacheKeyGenerator
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(keyString));
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
+
+    /// <summary>
+    /// Speed/Pitch/Volume をキャッシュキーと同じ粒度 ("F2" 書式) に丸める。
+    /// API に渡す値や入力検証はこの値を使い、キーと実際に合成されるパラメータを必ず一致させる。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Math.Round(double, int)"/> は "F2" 書式と丸め方式が異なり境界でずれる
+    /// (例: 0.065 → Math.Round は 0.06、"F2" は "0.07") ため、書式を経由する。
+    /// </remarks>
+    public static double NormalizeParameter(double value)
+        => Double.Parse(value.ToString("F2", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
 }

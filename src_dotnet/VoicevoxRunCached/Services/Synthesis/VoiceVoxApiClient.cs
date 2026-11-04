@@ -1,10 +1,9 @@
-﻿using System.Globalization;
-using System.Net;
+﻿using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
-using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
@@ -79,7 +78,7 @@ public class VoiceVoxApiClient : IDisposable
             var content = await response.Content.ReadAsStringAsync(ct);
 
             _logger.LogDebug("Audio query を取得しました - Length: {Length} chars", content.Length);
-            return content;
+            return ApplyVoiceParameters(content, request);
         }, cancellationToken);
     }
 
@@ -87,42 +86,38 @@ public class VoiceVoxApiClient : IDisposable
     /// /audio_query エンドポイント URL を組み立てる純粋関数 (テスト容易性のために分離)。
     /// </summary>
     /// <remarks>
-    /// CacheKeyGenerator が F2 (小数 2 桁) で正規化するので、API 送信値も同じ粒度に揃える
-    /// (これでキャッシュキーと API パラメータが必ず一致する)。
-    /// 数値は InvariantCulture を強制 (CurrentCulture が de-DE 等だと "1,5" と出て API が弾く)。
+    /// VOICEVOX の /audio_query は text と speaker しか受け付けない (speed_scale 等をクエリに付けても無視される)。
+    /// 話速・音高・音量は <see cref="ApplyVoiceParameters"/> で返却 JSON 側に設定する。
     /// </remarks>
     public static string BuildAudioQueryUrl(VoiceRequest request, string baseUrl)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(baseUrl);
 
-        var speed = RoundLikeCacheKey(request.Speed);
-        var pitch = RoundLikeCacheKey(request.Pitch);
-        var volume = RoundLikeCacheKey(request.Volume);
-
         var encodedText = Uri.EscapeDataString(request.Text ?? String.Empty);
-        var queryString = $"text={encodedText}&speaker={request.SpeakerId}";
-
-        // 丸め後の値がデフォルトと異なる場合だけクエリに乗せる
-        if (Math.Abs(speed - 1.0) > AudioConstants.FloatingPointEpsilon)
-            queryString += $"&speed_scale={speed.ToString(CultureInfo.InvariantCulture)}";
-        if (Math.Abs(pitch - 0.0) > AudioConstants.FloatingPointEpsilon)
-            queryString += $"&pitch_scale={pitch.ToString(CultureInfo.InvariantCulture)}";
-        if (Math.Abs(volume - 1.0) > AudioConstants.FloatingPointEpsilon)
-            queryString += $"&volume_scale={volume.ToString(CultureInfo.InvariantCulture)}";
-
-        return $"{baseUrl}/audio_query?{queryString}";
+        return $"{baseUrl}/audio_query?text={encodedText}&speaker={request.SpeakerId}";
     }
 
     /// <summary>
-    /// <see cref="Cache.CacheKeyGenerator"/> と同じ "F2" 書式で丸める。
+    /// /audio_query が返した JSON の speedScale / pitchScale / volumeScale を request の値で上書きする純粋関数。
     /// </summary>
     /// <remarks>
-    /// <see cref="Math.Round(double, int)"/> と "F2" 書式は丸め方式が異なり、境界付近で結果がずれる
-    /// (例: 0.065 → Math.Round は 0.06、"F2" は "0.07")。書式を経由してキャッシュキーと完全に一致させる。
+    /// 値は <see cref="Cache.CacheKeyGenerator.NormalizeParameter"/> でキャッシュキーと同じ粒度に丸めて設定する
+    /// (キーと実際に合成されるパラメータを必ず一致させる)。その他のフィールドはエンジンの返却値をそのまま保つ。
     /// </remarks>
-    private static double RoundLikeCacheKey(double value)
-        => Double.Parse(value.ToString("F2", CultureInfo.InvariantCulture), CultureInfo.InvariantCulture);
+    public static string ApplyVoiceParameters(string audioQueryJson, VoiceRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var query = JsonNode.Parse(audioQueryJson)?.AsObject()
+            ?? throw new JsonException("audio_query の応答が JSON オブジェクトではありません");
+
+        query["speedScale"] = Cache.CacheKeyGenerator.NormalizeParameter(request.Speed);
+        query["pitchScale"] = Cache.CacheKeyGenerator.NormalizeParameter(request.Pitch);
+        query["volumeScale"] = Cache.CacheKeyGenerator.NormalizeParameter(request.Volume);
+
+        return query.ToJsonString();
+    }
 
     public Task<byte[]> SynthesizeAudioAsync(string audioQuery, int speakerId, CancellationToken cancellationToken = default)
     {

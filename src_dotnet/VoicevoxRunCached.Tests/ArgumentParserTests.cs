@@ -184,6 +184,22 @@ public class ArgumentParserTests
     }
 
     [Test]
+    public async Task Parse_OutFollowedByOption_Throws()
+    {
+        // --out の値を書き忘れたとき "--no-play" という名前のファイルを作らない
+        await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(["text", "--out", "--no-play"], DefaultSettings())));
+    }
+
+    [Test]
+    public async Task Parse_SpeedRoundingToZero_Throws()
+    {
+        // 0.004 は F2 で 0.00 になり、実際には speed 0 で合成されてしまう
+        await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(["text", "--speed", "0.004"], DefaultSettings())));
+    }
+
+    [Test]
     public async Task Parse_Flags_DoNotWarnAboutExpandedTrue()
     {
         // PreprocessArgs が --no-play → --no-play true に展開するため、

@@ -1,90 +1,31 @@
-﻿using VoicevoxRunCached.Models;
+﻿using System.Text.Json.Nodes;
+using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Cache;
 using VoicevoxRunCached.Services.Synthesis;
 
 namespace VoicevoxRunCached.Tests;
 
 /// <summary>
-/// VoiceVoxApiClient.BuildAudioQueryUrl のテスト。
-/// 浮動小数粒度 (F2) と InvariantCulture フォーマットの回帰防止が主目的。
+/// VoiceVoxApiClient.BuildAudioQueryUrl / ApplyVoiceParameters のテスト。
+/// VOICEVOX の /audio_query はクエリの speed_scale 等を無視するため、話速・音高・音量は JSON 側に設定する。
 /// </summary>
 public class VoiceVoxApiClientUrlTests
 {
     private const string BaseUrl = "http://127.0.0.1:50021";
 
-    [Test]
-    public async Task DefaultRequest_OmitsScaleParameters()
-    {
-        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("text", 1, 1.0, 0.0, 1.0), BaseUrl);
+    // /audio_query が返す JSON の最小形 (エンジンは常に既定値を返す)
+    private const string EngineQuery =
+        """{"accent_phrases":[],"speedScale":1.0,"pitchScale":0.0,"intonationScale":1.0,"volumeScale":1.0,"outputSamplingRate":24000,"kana":"ア"}""";
 
-        await Assert.That(url).DoesNotContain("speed_scale");
-        await Assert.That(url).DoesNotContain("pitch_scale");
-        await Assert.That(url).DoesNotContain("volume_scale");
-    }
+    private static JsonObject Apply(VoiceRequest request)
+        => JsonNode.Parse(VoiceVoxApiClient.ApplyVoiceParameters(EngineQuery, request))!.AsObject();
 
     [Test]
-    public async Task NonDefaultSpeed_IncludesSpeedScale()
+    public async Task Url_ContainsOnlyTextAndSpeaker()
     {
-        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("text", 1, 1.5, 0.0, 1.0), BaseUrl);
+        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("text", 1, 1.5, 0.1, 0.5), BaseUrl);
 
-        await Assert.That(url).Contains("speed_scale=1.5");
-    }
-
-    [Test]
-    public async Task SpeedNearDefault_RoundedToDefault_OmitsParameter()
-    {
-        // 1.001 は F2 で 1.00 に丸まり、デフォルトと同じになるので omit される
-        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("text", 1, 1.001, 0.0, 1.0), BaseUrl);
-
-        await Assert.That(url).DoesNotContain("speed_scale");
-    }
-
-    [Test]
-    public async Task SpeedRoundsToTwoDecimals()
-    {
-        // 1.005 は F2 で 1.01 (banker's rounding により実際は 1.00 になり得るが Math.Round デフォルトは ToEven)
-        // 1.014 は F2 で 1.01 (確実に)
-        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("text", 1, 1.014, 0.0, 1.0), BaseUrl);
-
-        await Assert.That(url).Contains("speed_scale=1.01");
-    }
-
-    [Test]
-    public async Task UsesInvariantCulture_EvenUnderGermanLocale()
-    {
-        var original = System.Threading.Thread.CurrentThread.CurrentCulture;
-        try
-        {
-            System.Threading.Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
-            var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("text", 1, 1.5, 0.0, 1.0), BaseUrl);
-
-            // de-DE では 1,5 になるはずだが InvariantCulture で 1.5 になる
-            await Assert.That(url).Contains("speed_scale=1.5");
-            await Assert.That(url).DoesNotContain("speed_scale=1,5");
-        }
-        finally
-        {
-            System.Threading.Thread.CurrentThread.CurrentCulture = original;
-        }
-    }
-
-    [Test]
-    public async Task PitchAndVolume_BothIncludedWhenNonDefault()
-    {
-        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("text", 1, 1.0, 0.25, 0.8), BaseUrl);
-
-        await Assert.That(url).Contains("pitch_scale=0.25");
-        await Assert.That(url).Contains("volume_scale=0.8");
-        await Assert.That(url).DoesNotContain("speed_scale");
-    }
-
-    [Test]
-    public async Task SpeakerIdAndText_AlwaysIncluded()
-    {
-        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("hello", 42), BaseUrl);
-
-        await Assert.That(url).Contains("speaker=42");
-        await Assert.That(url).Contains("text=hello");
+        await Assert.That(url).IsEqualTo($"{BaseUrl}/audio_query?text=text&speaker=1");
     }
 
     [Test]
@@ -106,42 +47,55 @@ public class VoiceVoxApiClientUrlTests
     }
 
     [Test]
-    public async Task BaseUrl_IsPrefixedAsIs()
+    public async Task ApplyVoiceParameters_OverwritesScales()
     {
-        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("x", 1), "http://example.com:9999");
+        var query = Apply(new VoiceRequest("text", 1, 1.5, -0.15, 0.8));
 
-        await Assert.That(url).StartsWith("http://example.com:9999/audio_query?");
+        await Assert.That(query["speedScale"]!.GetValue<double>()).IsEqualTo(1.5);
+        await Assert.That(query["pitchScale"]!.GetValue<double>()).IsEqualTo(-0.15);
+        await Assert.That(query["volumeScale"]!.GetValue<double>()).IsEqualTo(0.8);
     }
 
     [Test]
-    public async Task PitchNegative_IsIncludedWithSign()
+    public async Task ApplyVoiceParameters_KeepsOtherFields()
     {
-        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("text", 1, 1.0, -0.15, 1.0), BaseUrl);
+        var query = Apply(new VoiceRequest("text", 1, 1.5, 0.0, 1.0));
 
-        await Assert.That(url).Contains("pitch_scale=-0.15");
+        await Assert.That(query["intonationScale"]!.GetValue<double>()).IsEqualTo(1.0);
+        await Assert.That(query["outputSamplingRate"]!.GetValue<int>()).IsEqualTo(24000);
+        await Assert.That(query["kana"]!.GetValue<string>()).IsEqualTo("ア");
+        await Assert.That(query["accent_phrases"]).IsNotNull();
     }
 
     [Test]
-    public async Task MidpointValue_RoundsSameAsCacheKey()
+    public async Task ApplyVoiceParameters_RoundsSameAsCacheKey()
     {
         // 0.065 は Math.Round(0.065, 2) = 0.06 だが ToString("F2") = "0.07" になる (丸め方式の差)。
-        // CacheKeyGenerator は F2 なので 0.065 と 0.07 は同じキー → API にも同じ値を送らなければならない。
+        // CacheKeyGenerator は F2 なので 0.065 と 0.07 は同じキー → 合成パラメータも同じでなければならない。
         var midpoint = new VoiceRequest("text", 1, 1.0, 0.065, 1.0);
         var rounded = new VoiceRequest("text", 1, 1.0, 0.07, 1.0);
 
         await Assert.That(CacheKeyGenerator.Compute(midpoint)).IsEqualTo(CacheKeyGenerator.Compute(rounded));
-        await Assert.That(VoiceVoxApiClient.BuildAudioQueryUrl(midpoint, BaseUrl))
-            .IsEqualTo(VoiceVoxApiClient.BuildAudioQueryUrl(rounded, BaseUrl));
+        await Assert.That(VoiceVoxApiClient.ApplyVoiceParameters(EngineQuery, midpoint))
+            .IsEqualTo(VoiceVoxApiClient.ApplyVoiceParameters(EngineQuery, rounded));
+        await Assert.That(Apply(midpoint)["pitchScale"]!.GetValue<double>()).IsEqualTo(0.07);
     }
 
     [Test]
-    public async Task RoundedValuesMatchCacheKeyGenerator()
+    public async Task ApplyVoiceParameters_IsCultureInvariant()
     {
-        // CacheKeyGenerator も F2 で正規化するため、Speed=1.001 と Speed=1.004 は同じキーを生む。
-        // それと整合するように、API 側でも両者は同じ omit 判定 (デフォルトと同じ) になるべき。
-        var u1 = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("text", 1, 1.001, 0.0, 1.0), BaseUrl);
-        var u2 = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("text", 1, 1.004, 0.0, 1.0), BaseUrl);
+        var original = Thread.CurrentThread.CurrentCulture;
+        try
+        {
+            Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
 
-        await Assert.That(u1).IsEqualTo(u2);
+            var json = VoiceVoxApiClient.ApplyVoiceParameters(EngineQuery, new VoiceRequest("text", 1, 1.5, 0.0, 1.0));
+
+            await Assert.That(json).Contains("\"speedScale\":1.5");
+        }
+        finally
+        {
+            Thread.CurrentThread.CurrentCulture = original;
+        }
     }
 }

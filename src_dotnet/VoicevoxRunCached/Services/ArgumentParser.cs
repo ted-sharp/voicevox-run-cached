@@ -192,10 +192,12 @@ public static class ArgumentParser
     /// </summary>
     /// <remarks>
     /// 不正値をデフォルトで黙って続行すると、意図と違うパラメータで合成・キャッシュされるためエラーで止める。
+    /// 次が <c>--xxx</c> の場合も値の指定漏れとみなす (<c>--out --no-play</c> で "--no-play" というファイルを作らない)。
+    /// 負数 (<c>-0.1</c>) は値として受け付けるため、単一ハイフンは対象外。
     /// </remarks>
     private static string ReadValue(string[] args, int optionIndex)
     {
-        if (optionIndex + 1 >= args.Length)
+        if (optionIndex + 1 >= args.Length || args[optionIndex + 1].StartsWith("--", StringComparison.Ordinal))
         {
             throw InvalidOption(args[optionIndex], "値が指定されていません。");
         }
@@ -216,6 +218,10 @@ public static class ArgumentParser
         return value;
     }
 
+    /// <remarks>
+    /// 範囲判定はキャッシュキー / API と同じ粒度に丸めた値で行う
+    /// (<c>--speed 0.004</c> は丸めると 0 になり、生値の "&gt; 0" 判定をすり抜けるため)。
+    /// </remarks>
     private static double ReadDouble(string[] args, int optionIndex, double min = Double.NegativeInfinity, bool minExclusive = false)
     {
         var raw = ReadValue(args, optionIndex);
@@ -223,7 +229,8 @@ public static class ArgumentParser
         {
             throw InvalidOption(args[optionIndex], $"数値ではありません: '{raw}'");
         }
-        if (minExclusive ? value <= min : value < min)
+        var normalized = Cache.CacheKeyGenerator.NormalizeParameter(value);
+        if (minExclusive ? normalized <= min : normalized < min)
         {
             var bound = minExclusive ? $"{min} より大きい" : $"{min} 以上である";
             throw InvalidOption(args[optionIndex], $"{bound}必要があります: {raw}");

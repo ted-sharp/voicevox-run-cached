@@ -87,7 +87,8 @@ public class DiskCacheStore
             SpeakerId = request.SpeakerId,
             Speed = request.Speed,
             Pitch = request.Pitch,
-            Volume = request.Volume
+            Volume = request.Volume,
+            VoiceParametersApplied = true
         };
 
         await File.WriteAllBytesAsync(audioPath, mp3Data, cancellationToken);
@@ -145,15 +146,25 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// メタデータの整合性検証 (Text が非空、SpeakerId >= 0、CreatedAt が default でない)。
+    /// メタデータの整合性検証 (Text が非空、SpeakerId >= 0、CreatedAt が default でない、
+    /// 旧版で作られた既定値以外のエントリでない)。
     /// VOICEVOX は speaker 0 (四国めたん あまあま等) を持つため 0 も有効。
     /// </summary>
     public static bool IsMetadataValid(CacheMetadata metadata)
     {
         return !String.IsNullOrWhiteSpace(metadata.Text)
             && metadata.SpeakerId >= 0
-            && metadata.CreatedAt != default;
+            && metadata.CreatedAt != default
+            && (metadata.VoiceParametersApplied || HasDefaultVoiceParameters(metadata));
     }
+
+    /// <summary>
+    /// Speed/Pitch/Volume がすべて既定値 (1.0 / 0.0 / 1.0) か。旧版でも既定値のエントリは正しい音声なので再利用できる。
+    /// </summary>
+    private static bool HasDefaultVoiceParameters(CacheMetadata metadata)
+        => CacheKeyGenerator.NormalizeParameter(metadata.Speed) == 1.0
+            && CacheKeyGenerator.NormalizeParameter(metadata.Pitch) == 0.0
+            && CacheKeyGenerator.NormalizeParameter(metadata.Volume) == 1.0;
 
     private (string AudioPath, string MetaPath) ResolvePaths(string cacheKey)
     {

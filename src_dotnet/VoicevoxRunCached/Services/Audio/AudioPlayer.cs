@@ -235,6 +235,8 @@ public class AudioPlayer : IDisposable
             var completed = await Task.WhenAny(tcs.Task, timeoutTask);
             if (completed == timeoutTask)
             {
+                // timeoutTask も同じ token で完了するので、Ctrl+C をタイムアウトと誤報告しないよう先に確認する
+                cancellationToken.ThrowIfCancellationRequested();
                 _logger.LogWarning("セグメント再生がタイムアウトしました。強制停止します。");
                 wavePlayer.Stop();
                 throw new TimeoutException("セグメント再生がタイムアウトしました");
