@@ -61,7 +61,8 @@ public static class ArgumentParser
             return (null, EmptyOptions);
         }
 
-        var processedArgs = PreprocessArgs(args);
+        // 本文 (args[0]) は前処理しない。"-sample" のような先頭ハイフンの本文が "-s ample" に割られるのを防ぐ
+        string[] processedArgs = [args[0], .. PreprocessArgs(args[1..])];
         var request = CreateDefaultRequest(args[0], settings);
         var options = ApplyOptions(processedArgs, optionsStartIndex: 1, request, logger);
 

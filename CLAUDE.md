@@ -49,7 +49,7 @@ task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube 
 
 **Streaming Playback**: `TextToSpeechProcessor.SynthesizeAndPlayAsync` で `Channel<TextSegment>` を介した producer (`SegmentProducer.ProduceAsync`) / consumer (`AudioPlayer.PlayStreamingAsync`) を並走させる。キャッシュ済みセグメントは即座に channel に流して再生開始、未キャッシュ分は producer が直列に API を叩きながら順次 channel に流す。consumer 側が `AudioConstants.FillerStartDelayMs` 以内に次セグメントを取れない場合は `FillerManager.GetRandomFillerAudioAsync` で相槌音声を挿入して無音を回避する。片側の例外は linked CTS で双方を停止する。キャッシュ書き込みは channel 書き込みの後で fire-and-forget して producer の次の API 呼び出しを遅らせない (producer 終了時に `finally` 内で `Task.WhenAll` 待機、例外パスでも保証)。`writer.TryComplete()` は `pendingCacheSaves` の `WhenAll` より**前**に呼ぶこと — 順序を逆にすると最終セグメント再生後の `WaitToReadAsync` が `FillerStartDelayMs` を超え、フィラーを誤発火する。
 
-**Audio Format Chain**: API (WAV) → NAudio で変換 → NAudio.Lame で MP3 化 → `.mp3` + `.meta.json` でキャッシュ。
+**Audio Format Chain**: API (WAV) → NAudio で変換 → NAudio.Lame で MP3 化 (CBR、`Cache.Mp3BitrateKbps`、既定 64kbps) → `.mp3` + `.meta.json` でキャッシュ。ビットレートはキャッシュキーに含めない (変えても既存キャッシュは流用され、作り直すなら `--clear`)。
 
 **Engine Lifecycle**: `VoiceVoxEngineManager` が起動済みプロセスを検出してから launch。VOICEVOX / AIVIS Speech 両対応 (設定で切替)。`KeepEngineRunning: true` で常駐、false で終了時に停止。
 
@@ -221,7 +221,7 @@ Options:
 
 ## Technical Constraints
 
-**API**: 全呼び出し直列。Connection timeout はデフォルト 30 秒で全 HTTP リクエストに適用。CLI 引数は `ArgumentParser` で検証し、数値でない値・負の speaker/volume・0 以下の speed は `InvalidArguments` で即エラーにする (黙ってデフォルト値で続行しない)。範囲判定は F2 に丸めた後の値で行う。`--out` 等の値に `--xxx` が来た場合も値の指定漏れとしてエラー。エンジンに存在しない speaker ID は事前照会しない (VOICEVOX は `/initialize_speaker` で 500 を返し、リトライ後に `GEN_001` で失敗する)。
+**API**: 全呼び出し直列。Connection timeout はデフォルト 30 秒で全 HTTP リクエストに適用。CLI 引数は `ArgumentParser` で検証し、数値でない値・負の speaker/volume・0 以下の speed は `InvalidArguments` で即エラーにする (黙ってデフォルト値で続行しない)。範囲判定は F2 に丸めた後の値で行う。`--out` 等の値に `--xxx` が来た場合も値の指定漏れとしてエラー。本文 (`args[0]`) は `PreprocessArgs` にかけない (`-sample` が `-s ample` に割られるため)。speaker ID の存在は合成が必要なときだけ `TextToSpeechProcessor.EnsureSpeakerExists` が `/speakers` で事前確認し、無ければ `InvalidArguments` (VOICEVOX は `/initialize_speaker` で 500 を返しリトライで十数秒待たされるため)。全セグメントがキャッシュヒットなら照会しない。`InvalidArguments` は CommandRouter でスタックトレースなしの Warning ログになる。
 
 **Text Processing**: `。！？!?` と改行 (半角 `.` は直後が空白・文末のとき) で文単位に分割。空セグメントは除外。各セグメントが独立にキャッシュされる。
 

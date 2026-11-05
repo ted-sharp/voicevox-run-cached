@@ -16,12 +16,14 @@ public class AudioCacheManager
     private readonly DiskCacheStore _disk;
     private readonly CacheEvictionPolicy _eviction;
     private readonly ILogger _logger;
+    private readonly int _mp3BitrateKbps;
 
     public AudioCacheManager(CacheSettings settings, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
+        _mp3BitrateKbps = settings.Mp3BitrateKbps;
         _disk = new DiskCacheStore(settings, _logger);
         _eviction = new CacheEvictionPolicy(_disk, settings, _logger);
 
@@ -54,7 +56,7 @@ public class AudioCacheManager
         cancellationToken.ThrowIfCancellationRequested();
 
         var cacheKey = CacheKeyGenerator.Compute(request);
-        var mp3Data = AudioConversionUtility.ConvertWavToMp3(audioData);
+        var mp3Data = AudioConversionUtility.ConvertWavToMp3(audioData, _mp3BitrateKbps);
         await _disk.SaveAsync(request, mp3Data, cacheKey, cancellationToken);
 
         _logger.LogDebug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes", cacheKey, mp3Data.Length);

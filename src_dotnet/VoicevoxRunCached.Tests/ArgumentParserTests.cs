@@ -200,6 +200,18 @@ public class ArgumentParserTests
     }
 
     [Test]
+    [Arguments("-sample")]
+    [Arguments("--hello")]
+    [Arguments("-s3")]
+    public async Task Parse_TextStartingWithHyphen_IsKeptVerbatim(string text)
+    {
+        var (request, _) = ArgumentParser.Parse([text, "-s", "3"], DefaultSettings());
+
+        await Assert.That(request!.Text).IsEqualTo(text);
+        await Assert.That(request.SpeakerId).IsEqualTo(3);
+    }
+
+    [Test]
     public async Task Parse_Flags_DoNotWarnAboutExpandedTrue()
     {
         // PreprocessArgs が --no-play → --no-play true に展開するため、

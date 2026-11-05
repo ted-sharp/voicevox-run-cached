@@ -14,8 +14,9 @@ public static class AudioConversionUtility
     /// WAV 音声データを MP3 に変換します。NAudio.Lame による in-memory 変換のため外部プロセス起動を伴いません。
     /// </summary>
     /// <param name="wavData">変換元のWAVデータ</param>
+    /// <param name="bitrateKbps">CBR ビットレート (kbps)</param>
     /// <returns>変換後のMP3データ</returns>
-    public static byte[] ConvertWavToMp3(byte[] wavData)
+    public static byte[] ConvertWavToMp3(byte[] wavData, int bitrateKbps = AudioConstants.Mp3BitrateKbps)
     {
         try
         {
@@ -23,7 +24,7 @@ public static class AudioConversionUtility
             using var wavReader = new WaveFileReader(wavStream);
             using var mp3Stream = new MemoryStream();
 
-            using (var mp3Writer = new LameMP3FileWriter(mp3Stream, wavReader.WaveFormat, AudioConstants.Mp3BitrateKbps))
+            using (var mp3Writer = new LameMP3FileWriter(mp3Stream, wavReader.WaveFormat, bitrateKbps))
             {
                 wavReader.CopyTo(mp3Writer);
             }

@@ -37,9 +37,15 @@ public static class AudioConstants
     public const int SubsequentSegmentTrailingDelayMs = 100;
 
     /// <summary>
-    /// MP3 エンコード時のビットレート（kbps）
+    /// MP3 エンコード時の既定ビットレート (kbps)。音声合成の 24kHz mono なら 64kbps で聴感上の劣化はほぼ無い。
+    /// キャッシュ保存分は <c>Cache.Mp3BitrateKbps</c> 設定で上書きできる。
     /// </summary>
-    public const int Mp3BitrateKbps = 128;
+    public const int Mp3BitrateKbps = 64;
+
+    /// <summary>
+    /// LAME の CBR (MPEG-1/2 Layer III) で指定可能なビットレート (kbps)。
+    /// </summary>
+    public static readonly int[] SupportedMp3BitratesKbps = [32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
 
     /// <summary>
     /// デバイス準備のタイムアウト時間（秒）
