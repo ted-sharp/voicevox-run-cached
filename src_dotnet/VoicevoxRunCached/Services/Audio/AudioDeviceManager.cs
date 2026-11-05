@@ -20,7 +20,6 @@ public class AudioDeviceManager : IDisposable
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        // MediaFoundation は ApplicationBootstrap で Acquire 済み。DI 経由で生成されるため二重初期化の心配は無い
 
         if (_settings.PrepareDevice)
         {
