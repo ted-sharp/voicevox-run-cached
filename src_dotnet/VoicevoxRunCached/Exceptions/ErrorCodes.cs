@@ -46,7 +46,6 @@ public static class ErrorCodes
             // Audio
             Audio.AudioGenerationFailed => "音声の生成に失敗しました",
             Audio.AudioFormatError => "音声フォーマットが無効です",
-            Audio.MediaFoundationInitFailed => "MediaFoundationの初期化に失敗しました",
             Audio.AudioFileExportFailed => "音声ファイルの出力に失敗しました",
 
             // API
@@ -91,7 +90,6 @@ public static class ErrorCodes
     {
         public const string AudioGenerationFailed = "AUDIO_001";
         public const string AudioFormatError = "AUDIO_003";
-        public const string MediaFoundationInitFailed = "AUDIO_006";
         public const string AudioFileExportFailed = "AUDIO_007";
     }
 

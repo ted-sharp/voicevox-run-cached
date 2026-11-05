@@ -131,17 +131,17 @@ public class ValidatorsTests
     }
 
     [Test]
-    [Arguments(0, false)]
-    [Arguments(65, false)]
+    [Arguments(11, false)]
+    [Arguments(129, false)]
+    [Arguments(12, true)]
     [Arguments(32, true)]
-    [Arguments(64, true)]
-    [Arguments(320, true)]
-    public async Task CacheSettings_Mp3Bitrate_OnlyLameCbrValuesPass(int bitrate, bool expected)
+    [Arguments(128, true)]
+    public async Task CacheSettings_OpusBitrate_Range(int bitrate, bool expected)
     {
         var dir = CreateTempCacheDir();
         try
         {
-            var result = new CacheSettingsValidator().Validate(new CacheSettings { Directory = dir, Mp3BitrateKbps = bitrate });
+            var result = new CacheSettingsValidator().Validate(new CacheSettings { Directory = dir, OpusBitrateKbps = bitrate });
             await Assert.That(result.IsValid).IsEqualTo(expected);
         }
         finally

@@ -89,14 +89,14 @@ public class ArgumentParserTests
     public async Task Parse_DetectsAllFlags()
     {
         var (_, options) = ArgumentParser.Parse(
-            new[] { "text", "--no-cache", "--cache-only", "--verbose", "--no-play", "--out", "/tmp/out.mp3" },
+            new[] { "text", "--no-cache", "--cache-only", "--verbose", "--no-play", "--out", "/tmp/out.opus" },
             DefaultSettings());
 
         await Assert.That(options.NoCache).IsTrue();
         await Assert.That(options.CacheOnly).IsTrue();
         await Assert.That(options.Verbose).IsTrue();
         await Assert.That(options.NoPlay).IsTrue();
-        await Assert.That(options.OutPath).IsEqualTo("/tmp/out.mp3");
+        await Assert.That(options.OutPath).IsEqualTo("/tmp/out.opus");
     }
 
     [Test]
@@ -122,20 +122,22 @@ public class ArgumentParserTests
     [Test]
     public async Task Parse_OutEqualsForm_Recognized()
     {
-        var (_, options) = ArgumentParser.Parse(new[] { "text", "--out=C:/tmp/out.mp3" }, DefaultSettings());
-        await Assert.That(options.OutPath).IsEqualTo("C:/tmp/out.mp3");
+        var (_, options) = ArgumentParser.Parse(new[] { "text", "--out=C:/tmp/out.opus" }, DefaultSettings());
+        await Assert.That(options.OutPath).IsEqualTo("C:/tmp/out.opus");
     }
 
     [Test]
-    public async Task Parse_LogLevelAndFormat_DoNotProduceWarning()
+    [Arguments("--log-level", "debug", "--log-format", "json")]
+    [Arguments("--log-level=debug", "--log-format=json", "-s", "3")]
+    public async Task Parse_LogLevelAndFormat_DoNotProduceWarning(string a, string b, string c, string d)
     {
-        // --log-level / --log-format は ArgumentParser では skip されるが、未知扱いにはならない
-        var (request, _) = ArgumentParser.Parse(
-            new[] { "text", "--log-level", "debug", "--log-format", "json" },
-            DefaultSettings());
+        // --log-level / --log-format は ConfigurationManager 側で反映するので ArgumentParser では skip する。
+        // = 形式も含め、未知オプション扱いの警告を出さないこと
+        var logger = new WarningCountingLogger();
+        var (request, _) = ArgumentParser.Parse(["text", a, b, c, d], DefaultSettings(), logger);
 
-        await Assert.That(request).IsNotNull();
         await Assert.That(request!.Text).IsEqualTo("text");
+        await Assert.That(logger.WarningCount).IsEqualTo(0);
     }
 
     [Test]
@@ -147,13 +149,13 @@ public class ArgumentParserTests
 
         var (request, options) = ArgumentParser.ParseTestCommand(
             "テストメッセージ",
-            new[] { "--speaker", "3", "--speed", "1.25", "--out", "test.mp3" },
+            new[] { "--speaker", "3", "--speed", "1.25", "--out", "test.opus" },
             settings);
 
         await Assert.That(request.Text).IsEqualTo("テストメッセージ");
         await Assert.That(request.SpeakerId).IsEqualTo(3);
         await Assert.That(request.Speed).IsEqualTo(1.25);
-        await Assert.That(options.OutPath).IsEqualTo("test.mp3");
+        await Assert.That(options.OutPath).IsEqualTo("test.opus");
     }
 
     [Test]
@@ -197,6 +199,29 @@ public class ArgumentParserTests
         // 0.004 は F2 で 0.00 になり、実際には speed 0 で合成されてしまう
         await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
             Task.FromResult(ArgumentParser.Parse(["text", "--speed", "0.004"], DefaultSettings())));
+    }
+
+    [Test]
+    [Arguments("out.mp3")]
+    [Arguments("out.txt")]
+    [Arguments("out")]
+    public async Task Parse_OutUnsupportedExtension_ThrowsInvalidArguments(string path)
+    {
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(["text", "--out", path], DefaultSettings())));
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+
+        await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(["text", $"--out={path}"], DefaultSettings())));
+    }
+
+    [Test]
+    [Arguments("out.wav")]
+    [Arguments("OUT.OPUS")]
+    public async Task Parse_OutSupportedExtension_Accepted(string path)
+    {
+        var (_, options) = ArgumentParser.Parse(["text", "--out", path], DefaultSettings());
+        await Assert.That(options.OutPath).IsEqualTo(path);
     }
 
     [Test]

@@ -1,7 +1,13 @@
 # VoicevoxRunCached リリースノート
 
-## Unreleased
+## Unreleased (3.0.0)
 
+- **破壊的変更: キャッシュ形式を MP3 から Ogg Opus に変更**
+  - 32kbps VBR (`Cache.OpusBitrateKbps`) で MP3 64kbps の約半分の容量。実測: テストメッセージ 52 秒分で 205KB (平均 31kbps)
+  - 既存の `.mp3` キャッシュは使われず、次回の新規合成時か `--clear` で削除される (フィラーは `--init` で作り直し)
+  - `--out` は `.wav` / `.opus` のみ。`.mp3` などそれ以外の拡張子はエラー
+  - `--out .wav` は 48kHz mono 16bit で出力される
+  - NAudio.Lame と未使用の MediaFoundation 初期化を削除
 - アーキテクチャ/リファクタリング:
   - `SegmentProducer` を `TextToSpeechProcessor` から切り出し、合成 producer の責務を分離
   - `IClock` 抽象を導入し、時刻取得のテスト容易性を向上
@@ -10,7 +16,8 @@
   - エンジン子プロセスを kill によって確実に停止
   - 例外ハンドリング (`ErrorHandlingUtility`) と Async 呼び出しの統一
 - 改善/修正:
-  - MP3 の既定ビットレートを 128 → 64kbps に変更しキャッシュ容量を約半分に。`Cache.Mp3BitrateKbps` で変更可能 (既存キャッシュはそのまま利用)
+  - `--log-level` / `--log-format` が一切反映されていなかった問題を修正 (`=` 形式も対応)
+  - フィラーが既定 6 件 + 設定 6 件の重複 12 件になり、`FillerTexts` で既定を外せなかった問題を修正
   - 存在しない speaker ID を合成前に `/speakers` で検出し即エラーにする (リトライ待ちの十数秒を解消)
   - 入力エラー (`InvalidArguments`) はスタックトレースなしの Warning ログにする
   - `-sample` のようにハイフンで始まる本文がオプションとして分解されていた問題を修正

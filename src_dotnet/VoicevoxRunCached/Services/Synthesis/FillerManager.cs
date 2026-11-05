@@ -35,6 +35,7 @@ public class FillerManager
         }
 
         Directory.CreateDirectory(_settings.Directory);
+        DeleteFiles($"*{DiskCacheStore.LegacyAudioExtension}");
         _logger.LogInformation("フィラーキャッシュの初期化を開始します - テキスト数: {Count}", _settings.FillerTexts.Length);
 
         using var spinner = new ProgressSpinner("Initializing filler cache...");
@@ -52,9 +53,9 @@ public class FillerManager
             _logger.LogDebug("フィラー音声を生成中 {Processed}/{Total}: \"{Text}\"", processed, total, fillerText);
 
             var fillerRequest = BuildFillerRequest(fillerText);
-            var fillerCacheMp3 = ResolveFillerCachePath(fillerRequest);
+            var fillerCachePath = ResolveFillerCachePath(fillerRequest);
 
-            if (File.Exists(fillerCacheMp3))
+            if (File.Exists(fillerCachePath))
             {
                 _logger.LogDebug("フィラー音声は既にキャッシュ済み: \"{Text}\"", fillerText);
                 continue;
@@ -65,8 +66,7 @@ public class FillerManager
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(fillerRequest, cancellationToken);
                 var audioData = await apiClient.SynthesizeAudioAsync(audioQuery, fillerRequest.SpeakerId, cancellationToken);
 
-                var mp3 = AudioConversionUtility.ConvertWavToMp3(audioData);
-                await File.WriteAllBytesAsync(fillerCacheMp3, mp3, cancellationToken);
+                await File.WriteAllBytesAsync(fillerCachePath, OpusCodec.EncodeWav(audioData), cancellationToken);
                 _logger.LogDebug("フィラー音声を生成・保存しました: \"{Text}\"", fillerText);
             }
             catch (OperationCanceledException)
@@ -95,17 +95,17 @@ public class FillerManager
         _logger.LogDebug("ランダムフィラー音声を選択: \"{Text}\"", selectedFiller);
 
         var fillerRequest = BuildFillerRequest(selectedFiller);
-        var fillerCacheMp3 = ResolveFillerCachePath(fillerRequest);
+        var fillerCachePath = ResolveFillerCachePath(fillerRequest);
 
-        if (!File.Exists(fillerCacheMp3))
+        if (!File.Exists(fillerCachePath))
         {
-            _logger.LogWarning("フィラーキャッシュファイルが見つかりませんでした - text=\"{Text}\"", selectedFiller);
+            _logger.LogWarning("フィラーキャッシュファイルが見つかりませんでした (--init で生成してください) - text=\"{Text}\"", selectedFiller);
             return null;
         }
 
-        var data = await File.ReadAllBytesAsync(fillerCacheMp3, cancellationToken);
+        var data = await File.ReadAllBytesAsync(fillerCachePath, cancellationToken);
         _logger.LogDebug("フィラーキャッシュファイルを読み込みました: {Path} (サイズ: {Size} bytes)",
-            Path.GetFileName(fillerCacheMp3), data.Length);
+            Path.GetFileName(fillerCachePath), data.Length);
         return data;
     }
 
@@ -140,15 +140,24 @@ public class FillerManager
     private string ResolveFillerCachePath(VoiceRequest fillerRequest)
     {
         var cacheKey = CacheKeyGenerator.Compute(fillerRequest);
-        return Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
+        return Path.Combine(_settings.Directory, $"{cacheKey}{DiskCacheStore.AudioExtension}");
     }
 
+    /// <summary>
+    /// フィラーキャッシュを削除する (旧形式の MP3 も含む)。
+    /// </summary>
     public void ClearFillerCache()
+    {
+        DeleteFiles($"*{DiskCacheStore.AudioExtension}");
+        DeleteFiles($"*{DiskCacheStore.LegacyAudioExtension}");
+    }
+
+    private void DeleteFiles(string searchPattern)
     {
         if (!Directory.Exists(_settings.Directory))
             return;
 
-        foreach (var file in Directory.GetFiles(_settings.Directory, "*.mp3"))
+        foreach (var file in Directory.GetFiles(_settings.Directory, searchPattern))
         {
             try
             { File.Delete(file); }

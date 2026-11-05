@@ -8,10 +8,16 @@ using VoicevoxRunCached.Utilities;
 namespace VoicevoxRunCached.Services.Cache;
 
 /// <summary>
-/// ディスク上の MP3 + .meta.json ペアの読み書き・削除・統計を提供する。
+/// ディスク上の Ogg Opus + .meta.json ペアの読み書き・削除を提供する。
 /// </summary>
 public class DiskCacheStore
 {
+    /// <summary>キャッシュ音声の拡張子。</summary>
+    public const string AudioExtension = ".opus";
+
+    /// <summary>v2 以前の MP3 キャッシュの拡張子。読み込まず、掃除時に削除する。</summary>
+    public const string LegacyAudioExtension = ".mp3";
+
     private readonly CacheSettings _settings;
     private readonly TimeSpan _expiration;
     private readonly ILogger _logger;
@@ -74,9 +80,9 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// MP3 データとメタデータをディスクに保存する。
+    /// 音声データ (Ogg Opus) とメタデータをディスクに保存する。
     /// </summary>
-    public async Task SaveAsync(VoiceRequest request, byte[] mp3Data, string cacheKey, CancellationToken cancellationToken = default)
+    public async Task SaveAsync(VoiceRequest request, byte[] audioData, string cacheKey, CancellationToken cancellationToken = default)
     {
         var (audioPath, metaPath) = ResolvePaths(cacheKey);
 
@@ -87,20 +93,19 @@ public class DiskCacheStore
             SpeakerId = request.SpeakerId,
             Speed = request.Speed,
             Pitch = request.Pitch,
-            Volume = request.Volume,
-            VoiceParametersApplied = true
+            Volume = request.Volume
         };
 
-        await File.WriteAllBytesAsync(audioPath, mp3Data, cancellationToken);
+        await File.WriteAllBytesAsync(audioPath, audioData, cancellationToken);
 
         var metaJson = JsonSerializer.Serialize(metadata, JsonSerializerOptionsCache.Indented);
         await File.WriteAllTextAsync(metaPath, metaJson, cancellationToken);
 
-        _logger.LogDebug("キャッシュファイルを保存しました: {CacheKey}, サイズ: {Size} bytes", cacheKey, mp3Data.Length);
+        _logger.LogDebug("キャッシュファイルを保存しました: {CacheKey}, サイズ: {Size} bytes", cacheKey, audioData.Length);
     }
 
     /// <summary>
-    /// MP3 と meta.json のペアを削除。
+    /// 音声と meta.json のペアを削除。
     /// </summary>
     public void Delete(string cacheKey)
     {
@@ -122,19 +127,54 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// キャッシュディレクトリ内の MP3 ファイル一覧を取得。
+    /// キャッシュディレクトリ内の音声ファイル一覧を取得。
     /// </summary>
     public string[] GetAudioFiles()
     {
         try
         {
-            return System.IO.Directory.GetFiles(_settings.Directory, "*.mp3");
+            return System.IO.Directory.GetFiles(_settings.Directory, $"*{AudioExtension}");
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "ファイル一覧の取得に失敗: {Directory}", _settings.Directory);
             return Array.Empty<string>();
         }
+    }
+
+    /// <summary>
+    /// v2 以前の MP3 キャッシュを削除する。meta.json は同じキーの Opus が無い場合のみ削除する
+    /// (キーは共通なので、再合成済みなら meta.json は Opus 側のもの)。
+    /// </summary>
+    /// <returns>削除した MP3 の件数</returns>
+    public int DeleteLegacyFiles()
+    {
+        if (!System.IO.Directory.Exists(_settings.Directory))
+            return 0;
+
+        int deleted = 0;
+        foreach (var legacyPath in System.IO.Directory.EnumerateFiles(_settings.Directory, $"*{LegacyAudioExtension}"))
+        {
+            var cacheKey = Path.GetFileNameWithoutExtension(legacyPath);
+            var (audioPath, metaPath) = ResolvePaths(cacheKey);
+            try
+            {
+                File.Delete(legacyPath);
+                if (!File.Exists(audioPath) && File.Exists(metaPath))
+                    File.Delete(metaPath);
+                deleted++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "旧形式キャッシュの削除に失敗: {Path}", legacyPath);
+            }
+        }
+
+        if (deleted > 0)
+        {
+            _logger.LogInformation("旧形式 (MP3) のキャッシュを {Count} 件削除しました", deleted);
+        }
+        return deleted;
     }
 
     /// <summary>
@@ -146,29 +186,22 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// メタデータの整合性検証 (Text が非空、SpeakerId >= 0、CreatedAt が default でない、
-    /// 旧版で作られた既定値以外のエントリでない)。
+    /// メタデータの整合性検証 (Text が非空、SpeakerId >= 0、CreatedAt が default でない)。
     /// VOICEVOX は speaker 0 (四国めたん あまあま等) を持つため 0 も有効。
     /// </summary>
+    /// <remarks>
+    /// Speed/Pitch/Volume 未反映だった旧版のキャッシュは全て MP3 なので、Opus 移行で読まれなくなった (検証不要)。
+    /// </remarks>
     public static bool IsMetadataValid(CacheMetadata metadata)
     {
         return !String.IsNullOrWhiteSpace(metadata.Text)
             && metadata.SpeakerId >= 0
-            && metadata.CreatedAt != default
-            && (metadata.VoiceParametersApplied || HasDefaultVoiceParameters(metadata));
+            && metadata.CreatedAt != default;
     }
-
-    /// <summary>
-    /// Speed/Pitch/Volume がすべて既定値 (1.0 / 0.0 / 1.0) か。旧版でも既定値のエントリは正しい音声なので再利用できる。
-    /// </summary>
-    private static bool HasDefaultVoiceParameters(CacheMetadata metadata)
-        => CacheKeyGenerator.NormalizeParameter(metadata.Speed) == 1.0
-            && CacheKeyGenerator.NormalizeParameter(metadata.Pitch) == 0.0
-            && CacheKeyGenerator.NormalizeParameter(metadata.Volume) == 1.0;
 
     private (string AudioPath, string MetaPath) ResolvePaths(string cacheKey)
     {
-        var audio = Path.Combine(_settings.Directory, $"{cacheKey}.mp3");
+        var audio = Path.Combine(_settings.Directory, $"{cacheKey}{AudioExtension}");
         var meta = Path.Combine(_settings.Directory, $"{cacheKey}.meta.json");
         return (audio, meta);
     }

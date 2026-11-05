@@ -14,7 +14,7 @@ static class Program
     {
         try
         {
-            // アプリケーションの初期化 (設定ロード + Serilog 設定 + MediaFoundation 初期化)
+            // アプリケーションの初期化 (設定ロード + Serilog 設定)
             var (settings, logger) = await ApplicationBootstrap.InitializeAsync(args);
 
             // DI コンテナ構築
@@ -30,9 +30,6 @@ static class Program
             }
             finally
             {
-                // MediaFoundationManager.Release は内部で SafeShutdown が try/catch + finally を持つため
-                // ここで二重に守る必要は無い
-                MediaFoundationManager.Release(logger);
                 Serilog.Log.CloseAndFlush();
             }
         }

@@ -41,9 +41,9 @@ public class CacheSettings
     public bool UseExecutableBaseDirectory { get; set; }
 
     /// <summary>
-    /// キャッシュ保存時の MP3 ビットレート (kbps)。キャッシュキーには含まれないため、変更しても既存キャッシュはそのまま使われる。
+    /// キャッシュ保存時の Opus ビットレート (kbps, VBR)。キャッシュキーには含まれないため、変更しても既存キャッシュはそのまま使われる。
     /// </summary>
-    public int Mp3BitrateKbps { get; set; } = AudioConstants.Mp3BitrateKbps;
+    public int OpusBitrateKbps { get; set; } = AudioConstants.OpusBitrateKbps;
 }
 
 // Audio output settings
@@ -64,15 +64,14 @@ public class FillerSettings
     public bool Enabled { get; set; } = false;
     public string Directory { get; set; } = "./cache/filler/";
 
-    public string[] FillerTexts { get; set; } =
-    [
-        "えーっと、",
-        "あのー、",
-        "あのう、",
-        "ええと、",
-        "ええっと、",
-        "えとえと、"
-    ];
+    /// <summary>
+    /// フィラーとして読み上げるテキスト。appsettings.json の値をそのまま使う。
+    /// </summary>
+    /// <remarks>
+    /// 初期値を入れてはいけない。ConfigurationBinder は配列プロパティの既存要素に設定値を「追記」するため、
+    /// 初期値があると既定 + 設定の重複リストになり、利用者が既定のフィラーを外せなくなる。
+    /// </remarks>
+    public string[] FillerTexts { get; set; } = [];
 
     public bool UseExecutableBaseDirectory { get; set; } = false;
 }

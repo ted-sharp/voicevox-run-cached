@@ -93,7 +93,7 @@ public class CacheEvictionPolicy
                 if (!Directory.Exists(_settings.Directory))
                     return Task.FromResult<object?>(null);
 
-                var entries = new DirectoryInfo(_settings.Directory).GetFiles("*.mp3", SearchOption.TopDirectoryOnly);
+                var entries = new DirectoryInfo(_settings.Directory).GetFiles($"*{DiskCacheStore.AudioExtension}", SearchOption.TopDirectoryOnly);
 
                 long totalBytes = entries.Sum(x => x.Length);
                 long maxBytes = (long)(Math.Max(0.0, _settings.MaxSizeGb) * 1024 * 1024 * 1024);
@@ -125,11 +125,11 @@ public class CacheEvictionPolicy
     }
 
     /// <summary>
-    /// エントリの古さ。meta.json があればその更新日時 (= CreatedAt 記録時刻)、無ければ mp3 の更新日時。
+    /// エントリの古さ。meta.json があればその更新日時 (= CreatedAt 記録時刻)、無ければ音声ファイルの更新日時。
     /// </summary>
-    private static DateTime ResolveTimestamp(FileInfo mp3)
+    private static DateTime ResolveTimestamp(FileInfo audio)
     {
-        var meta = new FileInfo(Path.ChangeExtension(mp3.FullName, ".meta.json"));
-        return meta.Exists ? meta.LastWriteTimeUtc : mp3.LastWriteTimeUtc;
+        var meta = new FileInfo(Path.ChangeExtension(audio.FullName, ".meta.json"));
+        return meta.Exists ? meta.LastWriteTimeUtc : audio.LastWriteTimeUtc;
     }
 }

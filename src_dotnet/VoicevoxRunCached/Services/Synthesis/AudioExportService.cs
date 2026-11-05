@@ -1,5 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
+using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
@@ -10,6 +12,15 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// </summary>
 public class AudioExportService
 {
+    /// <summary><c>--out</c> で指定できる拡張子 (小文字)。</summary>
+    public static readonly string[] SupportedExtensions = [".wav", ".opus"];
+
+    /// <summary>
+    /// 結合後のフォーマット。キャッシュ由来 (Opus デコード = 48kHz) と今回合成分 (VOICEVOX = 24kHz) が混在するため、
+    /// 情報を落とさない 48kHz mono 16bit に揃える。
+    /// </summary>
+    private static readonly WaveFormat OutputFormat = new(AudioConstants.OpusDecodeSampleRate, 16, 1);
+
     private readonly AudioFormatDetector _formatDetector;
     private readonly ILogger _logger;
 
@@ -35,11 +46,11 @@ public class AudioExportService
                     "事前に合成を実行し、AudioData が埋まったセグメントを渡してください。");
             }
 
-            var combinedWavData = await CombineWavSegmentsAsync(validSegments.Select(s => s.AudioData!).ToList(), cancellationToken);
+            var combinedWavData = CombineWavSegments(validSegments.Select(s => s.AudioData!).ToList(), cancellationToken);
 
             var extension = Path.GetExtension(outPath).ToLowerInvariant();
-            byte[] finalAudioData = extension == ".mp3"
-                ? AudioConversionUtility.ConvertWavToMp3(combinedWavData)
+            byte[] finalAudioData = extension == ".opus"
+                ? OpusCodec.EncodeWav(combinedWavData)
                 : combinedWavData;
 
             await WriteOutputFileAsync(finalAudioData, outPath, cancellationToken);
@@ -73,48 +84,47 @@ public class AudioExportService
     /// 各セグメントを PCM にデコードして 1 本の WAV に結合する。
     /// </summary>
     /// <remarks>
-    /// キャッシュヒットしたセグメントは MP3、今回合成したセグメントは WAV なので、
-    /// <see cref="AudioFormatDetector.CreateWaveStream"/> で形式を判定してから読む。
-    /// 出力フォーマットは先頭セグメントのデコード結果に合わせ、異なるフォーマットが混ざれば例外にする。
-    /// 1 件のみの場合も同じ経路を通す (キャッシュ由来の MP3 をそのまま .wav として書き出さないため)。
+    /// キャッシュヒットしたセグメントは Ogg Opus、今回合成したセグメントは WAV なので、
+    /// <see cref="AudioFormatDetector.CreateWaveStream"/> で形式を判定してから読み、<see cref="OutputFormat"/> に揃えて結合する。
+    /// 1 件のみの場合も同じ経路を通す (キャッシュ由来の Opus をそのまま .wav として書き出さないため)。
     /// </remarks>
-    private async Task<byte[]> CombineWavSegmentsAsync(List<byte[]> audioDataList, CancellationToken cancellationToken)
+    private byte[] CombineWavSegments(List<byte[]> audioDataList, CancellationToken cancellationToken)
     {
         using var outputStream = new MemoryStream();
-        WaveFileWriter? writer = null;
-        try
+        using (var writer = new WaveFileWriter(outputStream, OutputFormat))
         {
             foreach (var audioData in audioDataList)
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
                 using var reader = _formatDetector.CreateWaveStream(audioData);
-                writer ??= new WaveFileWriter(outputStream, reader.WaveFormat);
+                var provider = ToOutputFormat(reader.ToSampleProvider());
 
-                if (!reader.WaveFormat.Equals(writer.WaveFormat))
+                var buffer = new float[OutputFormat.SampleRate];
+                int read;
+                while ((read = provider.Read(buffer, 0, buffer.Length)) > 0)
                 {
-                    throw new AudioProcessingException(
-                        ErrorCodes.Audio.AudioFormatError,
-                        $"Segment format mismatch: {reader.WaveFormat} vs {writer.WaveFormat}",
-                        "セグメント間で音声フォーマットが一致しません。",
-                        "--no-cache を付けて再実行するか、--clear でキャッシュを削除してください。");
-                }
-
-                var buffer = new byte[reader.WaveFormat.AverageBytesPerSecond];
-                int bytesRead;
-                while ((bytesRead = await reader.ReadAsync(buffer, cancellationToken)) > 0)
-                {
-                    await writer.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
+                    writer.WriteSamples(buffer, 0, read);
                 }
             }
+        }
+        return outputStream.ToArray();
+    }
 
-            writer!.Flush();
-            return outputStream.ToArray();
-        }
-        finally
+    /// <summary>
+    /// mono・<see cref="OutputFormat"/> のサンプルレートに揃える。
+    /// </summary>
+    private static ISampleProvider ToOutputFormat(ISampleProvider source)
+    {
+        if (source.WaveFormat.Channels == 2)
         {
-            writer?.Dispose();
+            source = new StereoToMonoSampleProvider(source);
         }
+        if (source.WaveFormat.SampleRate != OutputFormat.SampleRate)
+        {
+            source = new WdlResamplingSampleProvider(source, OutputFormat.SampleRate);
+        }
+        return source;
     }
 
     private async Task WriteOutputFileAsync(byte[] audioData, string outPath, CancellationToken cancellationToken)

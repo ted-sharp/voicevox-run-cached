@@ -1,8 +1,8 @@
 # VoicevoxRunCached
 
-VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA256 キーで MP3 キャッシュしながら逐次合成・再生するコマンドラインツール。
+VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA256 キーで Ogg Opus キャッシュしながら逐次合成・再生するコマンドラインツール。
 
-- **ワンコマンド**: テキストを渡すだけで API 呼び出し → MP3 化 → 再生まで完結
+- **ワンコマンド**: テキストを渡すだけで API 呼び出し → Opus 化 → 再生まで完結
 - **セグメント単位キャッシュ**: 文の一部だけ変えても変更されていない部分はキャッシュから即再生
 - **ストリーミング再生**: キャッシュ済み部分を再生しつつ未キャッシュ部分をバックグラウンド生成、待機中はフィラー音声で繋ぐ
 - **エンジン自動管理**: VOICEVOX / AIVIS Speech のプロセス起動・常駐・停止を自動化
@@ -57,7 +57,7 @@ VoicevoxRunCached.exe "こんにちは、世界！"
 VoicevoxRunCached.exe "テストです。" --speaker 2 --speed 1.2 --pitch 0.1
 
 # ファイル保存 (再生なし)
-VoicevoxRunCached.exe "保存します。" --out out.mp3 --no-play
+VoicevoxRunCached.exe "保存します。" --out out.opus --no-play
 
 # キャッシュのみ (API 呼ばない)
 VoicevoxRunCached.exe "既に生成済みのテキスト" --cache-only
@@ -85,7 +85,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 | `--volume <value>` | 音量 (0.0–2.0) | 1.0 |
 | `--no-cache` | キャッシュを使わない | false |
 | `--cache-only` | キャッシュのみ使う (API を呼ばない) | false |
-| `--out, -o <path>` | ファイル保存 (`.wav` / `.mp3` 自動判定) | — |
+| `--out, -o <path>` | ファイル保存 (`.wav` / `.opus` を拡張子で判定。それ以外はエラー) | — |
 | `--no-play` | 再生しない (`--out` と併用推奨) | false |
 | `--verbose` | 詳細タイミングを表示 | false |
 | `--log-level <level>` | `trace`/`debug`/`info`/`warn`/`error`/`crit`/`none` | info |
@@ -114,7 +114,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "UseExecutableBaseDirectory": true,  // 相対パスを exe 基準で解決
     "ExpirationDays": 30,
     "MaxSizeGB": 1.0,             // 上限超過時に古い順に eviction
-    "Mp3BitrateKbps": 64          // キャッシュ MP3 のビットレート (キーに含まれないので既存キャッシュは流用)
+    "OpusBitrateKbps": 32         // キャッシュ Opus のビットレート 12-128 (キーに含まれないので既存キャッシュは流用)
   },
   "Audio": {
     "OutputDevice": -1,           // -1 = OS デフォルト, 0+ = WaveOut index
@@ -148,7 +148,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 
 ### セグメント単位キャッシュ
 
-入力テキストは `。 ! ?` で文単位に分割され、各セグメントが `SHA256(speaker_id + text + speed + pitch + volume)` をキーに `.mp3` + `.meta.json` として独立にキャッシュされる。
+入力テキストは `。 ! ?` で文単位に分割され、各セグメントが `SHA256(speaker_id + text + speed + pitch + volume)` をキーに `.opus` (Ogg Opus) + `.meta.json` として独立にキャッシュされる。v2 以前の `.mp3` キャッシュは使われず、次回の新規合成時か `--clear` で削除される。
 
 - **部分変更でも再利用**: テキストの一部だけ変えても、変更されていない文はキャッシュヒット
 - **即時再生**: キャッシュ済みセグメントは待機なしで再生開始
@@ -228,7 +228,8 @@ Total execution time: 2445.4ms
 ## 開発
 
 - **.NET 10 / C# 14** (primary constructors, collection expressions, ref readonly 等を活用)
-- **NAudio + NAudio.Lame**: 再生と MP3 エンコード
+- **NAudio**: 再生・WAV 処理・リサンプル
+- **Concentus + Concentus.OggFile**: Ogg Opus のエンコード/デコード (純 C#、ネイティブ依存なし)
 - **Serilog**: 構造化ログ (Console + File sink)
 - **FluentValidation**: 設定検証
 - **TUnit**: ユニットテスト

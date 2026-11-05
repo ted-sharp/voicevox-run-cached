@@ -16,14 +16,14 @@ public class AudioCacheManager
     private readonly DiskCacheStore _disk;
     private readonly CacheEvictionPolicy _eviction;
     private readonly ILogger _logger;
-    private readonly int _mp3BitrateKbps;
+    private readonly int _opusBitrateKbps;
 
     public AudioCacheManager(CacheSettings settings, ILogger? logger = null)
     {
         ArgumentNullException.ThrowIfNull(settings);
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
 
-        _mp3BitrateKbps = settings.Mp3BitrateKbps;
+        _opusBitrateKbps = settings.OpusBitrateKbps;
         _disk = new DiskCacheStore(settings, _logger);
         _eviction = new CacheEvictionPolicy(_disk, settings, _logger);
 
@@ -31,7 +31,7 @@ public class AudioCacheManager
     }
 
     /// <summary>
-    /// ディスクキャッシュから音声データ (MP3) を取得する。
+    /// ディスクキャッシュから音声データ (Ogg Opus) を取得する。
     /// </summary>
     /// <remarks>
     /// 破損ファイル等の現実的な I/O エラーは <see cref="DiskCacheStore.LoadAsync"/> 内で
@@ -44,7 +44,7 @@ public class AudioCacheManager
     }
 
     /// <summary>
-    /// 音声データをキャッシュに保存する。WAV はディスク保存前に MP3 に変換される。
+    /// 音声データをキャッシュに保存する。WAV はディスク保存前に Ogg Opus に変換される。
     /// eviction はここでは行わない (保存ごとに全ファイル走査するのを避けるため、<see cref="RunMaintenanceAsync"/> でまとめて行う)。
     /// </summary>
     /// <remarks>
@@ -56,14 +56,16 @@ public class AudioCacheManager
         cancellationToken.ThrowIfCancellationRequested();
 
         var cacheKey = CacheKeyGenerator.Compute(request);
-        var mp3Data = AudioConversionUtility.ConvertWavToMp3(audioData, _mp3BitrateKbps);
-        await _disk.SaveAsync(request, mp3Data, cacheKey, cancellationToken);
+        // エンコードは CPU バウンドの同期処理。呼び出し元 (SegmentProducer) は fire-and-forget で次の API 呼び出しに
+        // 進みたいので、最初の await より前に同期で走らせず thread pool に逃がす
+        var opusData = await Task.Run(() => OpusCodec.EncodeWav(audioData, _opusBitrateKbps), cancellationToken);
+        await _disk.SaveAsync(request, opusData, cacheKey, cancellationToken);
 
-        _logger.LogDebug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes", cacheKey, mp3Data.Length);
+        _logger.LogDebug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes (WAV {WavSize} bytes)", cacheKey, opusData.Length, audioData.Length);
     }
 
     /// <summary>
-    /// 期限切れキャッシュの削除と、容量上限を超えた分の古い順削除をまとめて行う。
+    /// 旧形式 (MP3) の削除、期限切れキャッシュの削除、容量上限を超えた分の古い順削除をまとめて行う。
     /// </summary>
     /// <remarks>
     /// ディレクトリ全体を走査するため、セグメント保存ごとではなく 1 実行につき 1 回だけ呼ぶこと
@@ -71,6 +73,7 @@ public class AudioCacheManager
     /// </remarks>
     public async Task RunMaintenanceAsync(CancellationToken cancellationToken = default)
     {
+        _disk.DeleteLegacyFiles();
         await _eviction.CleanupExpiredAsync(cancellationToken);
         await _eviction.CleanupByMaxSizeAsync(cancellationToken);
     }
@@ -84,6 +87,7 @@ public class AudioCacheManager
             {
                 _disk.Delete(Path.GetFileNameWithoutExtension(file));
             }
+            _disk.DeleteLegacyFiles();
             _logger.LogInformation("すべてのキャッシュをクリアしました");
             return Task.FromResult<object?>(null);
         });

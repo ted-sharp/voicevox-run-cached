@@ -142,21 +142,27 @@ public static class ArgumentParser
                     noPlay = ReadFlag(processedArgs, ref i);
                     break;
                 case "--out" or "-o":
-                    outPath = ReadValue(processedArgs, i);
+                    outPath = ValidateOutPath(arg, ReadValue(processedArgs, i));
                     i += 2;
                     break;
                 case "--help" or "-h":
                     ReadFlag(processedArgs, ref i);
                     break;
                 case "--log-level" or "--log-format" when i + 1 < processedArgs.Length:
-                    // ConfigurationManager.AddCommandLine 経由で LoggingSettings にバインドされる。
+                    // ConfigurationManager.SwitchMappings で Logging:Level / Logging:Format にバインドされる。
                     // ここでは Unknown 警告を出さないために値を読み飛ばす。
                     i += 2;
                     break;
                 default:
                     if (arg.StartsWith("--out=", StringComparison.Ordinal))
                     {
-                        outPath = arg["--out=".Length..];
+                        outPath = ValidateOutPath("--out", arg["--out=".Length..]);
+                        i++;
+                        break;
+                    }
+                    if (arg.StartsWith("--log-level=", StringComparison.Ordinal) || arg.StartsWith("--log-format=", StringComparison.Ordinal))
+                    {
+                        // 値は ConfigurationManager.SwitchMappings 経由で反映済み
                         i++;
                         break;
                     }
@@ -203,6 +209,19 @@ public static class ArgumentParser
             throw InvalidOption(args[optionIndex], "値が指定されていません。");
         }
         return args[optionIndex + 1];
+    }
+
+    /// <summary>
+    /// <c>--out</c> の拡張子を検証する。合成してから失敗しないよう、解析時点で弾く。
+    /// </summary>
+    private static string ValidateOutPath(string option, string path)
+    {
+        if (!AudioExportService.SupportedExtensions.Contains(Path.GetExtension(path).ToLowerInvariant()))
+        {
+            throw InvalidOption(option,
+                $"対応していない拡張子です: '{path}' ({String.Join(" / ", AudioExportService.SupportedExtensions)} のみ)");
+        }
+        return path;
     }
 
     private static int ReadInt(string[] args, int optionIndex, int min)
@@ -270,10 +289,10 @@ Options:
   --volume <value>          Speech volume (default: 1.0)
   --no-cache               Skip cache usage
   --cache-only             Use cache only, don't call API
-  --out, -o <path>         Save output audio to file (.wav or .mp3)
+  --out, -o <path>         Save output audio to file (.wav or .opus)
   --no-play                Do not play audio (useful with --out)
   --verbose                Show detailed timing information
-  --log-level <level>      Log level: trace|debug|info|warn|error|crit|none (default: info; verbose=debug)
+  --log-level <level>      Log level: trace|debug|info|warn|error|crit|none (default: appsettings Logging.Level)
   --log-format <fmt>       Log format: simple|json (default: simple)
   --help, -h               Show this help message
 
