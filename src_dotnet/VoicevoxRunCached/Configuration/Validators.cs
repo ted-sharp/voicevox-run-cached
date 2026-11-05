@@ -1,4 +1,5 @@
 ﻿using FluentValidation;
+using VoicevoxRunCached.Constants;
 
 namespace VoicevoxRunCached.Configuration;
 
@@ -45,6 +46,10 @@ public class CacheSettingsValidator : AbstractValidator<CacheSettings>
 
         RuleFor(x => x.MaxSizeGb)
             .InclusiveBetween(0.1, 1000.0).WithMessage("MaxSizeGbは0.1-1000.0GBの範囲である必要があります");
+
+        RuleFor(x => x.Mp3BitrateKbps)
+            .Must(b => AudioConstants.SupportedMp3BitratesKbps.Contains(b))
+            .WithMessage($"Mp3BitrateKbpsは {String.Join(", ", AudioConstants.SupportedMp3BitratesKbps)} のいずれかである必要があります");
     }
 }
 

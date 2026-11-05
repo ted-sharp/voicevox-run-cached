@@ -10,6 +10,7 @@
   - エンジン子プロセスを kill によって確実に停止
   - 例外ハンドリング (`ErrorHandlingUtility`) と Async 呼び出しの統一
 - 改善/修正:
+  - MP3 の既定ビットレートを 128 → 64kbps に変更しキャッシュ容量を約半分に。`Cache.Mp3BitrateKbps` で変更可能 (既存キャッシュはそのまま利用)
   - 存在しない speaker ID を合成前に `/speakers` で検出し即エラーにする (リトライ待ちの十数秒を解消)
   - 入力エラー (`InvalidArguments`) はスタックトレースなしの Warning ログにする
   - `-sample` のようにハイフンで始まる本文がオプションとして分解されていた問題を修正

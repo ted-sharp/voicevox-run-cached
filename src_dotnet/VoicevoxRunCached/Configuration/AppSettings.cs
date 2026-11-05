@@ -1,4 +1,6 @@
-﻿namespace VoicevoxRunCached.Configuration;
+﻿using VoicevoxRunCached.Constants;
+
+namespace VoicevoxRunCached.Configuration;
 
 public class AppSettings
 {
@@ -37,6 +39,11 @@ public class CacheSettings
     public int ExpirationDays { get; set; } = 30;
     public double MaxSizeGb { get; set; } = 1.0;
     public bool UseExecutableBaseDirectory { get; set; }
+
+    /// <summary>
+    /// キャッシュ保存時の MP3 ビットレート (kbps)。キャッシュキーには含まれないため、変更しても既存キャッシュはそのまま使われる。
+    /// </summary>
+    public int Mp3BitrateKbps { get; set; } = AudioConstants.Mp3BitrateKbps;
 }
 
 // Audio output settings

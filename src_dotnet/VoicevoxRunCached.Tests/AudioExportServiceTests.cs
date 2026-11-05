@@ -17,6 +17,21 @@ public class AudioExportServiceTests
     private static TextSegment Segment(byte[] audio) => new() { Text = "x", AudioData = audio };
 
     [Test]
+    [Arguments(32)]
+    [Arguments(64)]
+    [Arguments(128)]
+    public async Task ConvertWavToMp3_UsesRequestedBitrate(int bitrateKbps)
+    {
+        var mp3 = AudioConversionUtility.ConvertWavToMp3(AudioConversionUtility.CreateMinimalWavData(1000), bitrateKbps);
+
+        using var reader = new Mp3FileReader(new MemoryStream(mp3));
+        var frame = reader.ReadNextFrame();
+
+        await Assert.That(frame).IsNotNull();
+        await Assert.That(frame!.BitRate).IsEqualTo(bitrateKbps * 1000);
+    }
+
+    [Test]
     public async Task Export_MixedWavAndMp3_WritesValidWav()
     {
         var wav = AudioConversionUtility.CreateMinimalWavData(500);

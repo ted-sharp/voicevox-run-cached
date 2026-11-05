@@ -60,7 +60,8 @@ Options:
     "Directory": "./cache/audio/",
     "UseExecutableBaseDirectory": true,
     "ExpirationDays": 30,
-    "MaxSizeGB": 1.0
+    "MaxSizeGB": 1.0,
+    "Mp3BitrateKbps": 64
   },
   "Audio": {
     "OutputDevice": -1,

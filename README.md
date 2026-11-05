@@ -113,7 +113,8 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "Directory": "./cache/audio/",
     "UseExecutableBaseDirectory": true,  // 相対パスを exe 基準で解決
     "ExpirationDays": 30,
-    "MaxSizeGB": 1.0              // 上限超過時に古い順に eviction
+    "MaxSizeGB": 1.0,             // 上限超過時に古い順に eviction
+    "Mp3BitrateKbps": 64          // キャッシュ MP3 のビットレート (キーに含まれないので既存キャッシュは流用)
   },
   "Audio": {
     "OutputDevice": -1,           // -1 = OS デフォルト, 0+ = WaveOut index

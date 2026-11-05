@@ -130,6 +130,26 @@ public class ValidatorsTests
         }
     }
 
+    [Test]
+    [Arguments(0, false)]
+    [Arguments(65, false)]
+    [Arguments(32, true)]
+    [Arguments(64, true)]
+    [Arguments(320, true)]
+    public async Task CacheSettings_Mp3Bitrate_OnlyLameCbrValuesPass(int bitrate, bool expected)
+    {
+        var dir = CreateTempCacheDir();
+        try
+        {
+            var result = new CacheSettingsValidator().Validate(new CacheSettings { Directory = dir, Mp3BitrateKbps = bitrate });
+            await Assert.That(result.IsValid).IsEqualTo(expected);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
     // AudioSettings -------------------------------------------------------
 
     [Test]
