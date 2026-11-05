@@ -191,7 +191,7 @@ public class AudioPlayer : IDisposable
     }
 
     /// <summary>
-    /// 1 つの WAV/MP3 データを指定 WavePlayer で再生する共通ロジック。
+    /// 1 つの WAV/Ogg Opus データを指定 WavePlayer で再生する共通ロジック。
     /// </summary>
     private async Task PlayWaveAsync(
         byte[] audioData,

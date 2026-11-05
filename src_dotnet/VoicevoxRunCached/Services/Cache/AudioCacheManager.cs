@@ -56,7 +56,9 @@ public class AudioCacheManager
         cancellationToken.ThrowIfCancellationRequested();
 
         var cacheKey = CacheKeyGenerator.Compute(request);
-        var opusData = OpusCodec.EncodeWav(audioData, _opusBitrateKbps);
+        // エンコードは CPU バウンドの同期処理。呼び出し元 (SegmentProducer) は fire-and-forget で次の API 呼び出しに
+        // 進みたいので、最初の await より前に同期で走らせず thread pool に逃がす
+        var opusData = await Task.Run(() => OpusCodec.EncodeWav(audioData, _opusBitrateKbps), cancellationToken);
         await _disk.SaveAsync(request, opusData, cacheKey, cancellationToken);
 
         _logger.LogDebug("キャッシュを保存しました: {CacheKey} - サイズ: {Size} bytes (WAV {WavSize} bytes)", cacheKey, opusData.Length, audioData.Length);
