@@ -64,15 +64,14 @@ public class FillerSettings
     public bool Enabled { get; set; } = false;
     public string Directory { get; set; } = "./cache/filler/";
 
-    public string[] FillerTexts { get; set; } =
-    [
-        "えーっと、",
-        "あのー、",
-        "あのう、",
-        "ええと、",
-        "ええっと、",
-        "えとえと、"
-    ];
+    /// <summary>
+    /// フィラーとして読み上げるテキスト。appsettings.json の値をそのまま使う。
+    /// </summary>
+    /// <remarks>
+    /// 初期値を入れてはいけない。ConfigurationBinder は配列プロパティの既存要素に設定値を「追記」するため、
+    /// 初期値があると既定 + 設定の重複リストになり、利用者が既定のフィラーを外せなくなる。
+    /// </remarks>
+    public string[] FillerTexts { get; set; } = [];
 
     public bool UseExecutableBaseDirectory { get; set; } = false;
 }
