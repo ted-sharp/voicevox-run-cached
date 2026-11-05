@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-VOICEVOX REST API のラッパー C# Console アプリ。テキストを文単位に分割し、SHA256 キーで MP3 キャッシュしながら逐次合成・再生する。完成済みのプロジェクト。
+VOICEVOX REST API のラッパー C# Console アプリ。テキストを文単位に分割し、SHA256 キーで Ogg Opus キャッシュしながら逐次合成・再生する。完成済みのプロジェクト。
 
 ## Development Commands
 
@@ -34,22 +34,22 @@ task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube 
 1. **CLI Entry** (`Program.cs`) → `ApplicationBootstrap` で初期化し `CommandRouter` へ
 2. **Command Dispatch** (`CommandRouter.ExecuteCommandAsync` の switch 文) → 各 `XxxCommandHandler` へ
 3. **Segment Processing** (`TextSegmentProcessor`) → 日本語の文単位に分割
-4. **Cache Lookup** (`AudioCacheManager`) → SHA256 キーで MP3 ヒット判定
+4. **Cache Lookup** (`AudioCacheManager`) → SHA256 キーで Opus ヒット判定
 5. **API Generation** (`VoiceVoxApiClient`) → 未キャッシュ分のみ直列で API 呼び出し
 6. **Audio Playback** (`AudioPlayer`) → 順序通り再生、生成待ちの間は filler 音声で繋ぐ
-7. **File Output** → `--out` 指定時に WAV/MP3 で保存
+7. **File Output** → `--out` 指定時に WAV/Opus で保存
 
 ### Critical Implementation Details
 
 **Serial API Calls**: VOICEVOX API は producer 側 (`SegmentProducer.ProduceAsync`) が `foreach` で 1 件ずつ処理することで直列性を担保している。`VoiceVoxApiClient` 自身に明示的なロックは無いので、もし複数スレッドから同時に呼び出すコードを足す場合は呼び出し元で直列化すること。各 speaker は session 内で初回のみ `/initialize_speaker` する (`TextToSpeechProcessor.SynthesizeAndPlayAsync` 側で 1 回だけ呼ぶ)。
 
-**Cache Keys**: `CacheKeyGenerator.Compute` が `SHA256("{text}|{speakerId}|{speed:F2}|{pitch:F2}|{volume:F2}")` (InvariantCulture) を 16 進小文字化したものをファイル名として使用。`{CacheDirectory}/{SHA256_HEX}.mp3` と `{SHA256_HEX}.meta.json` (CreatedAt, Text, SpeakerId, Speed, Pitch, Volume, VoiceParametersApplied) のペアで保存。**SHA256 生成ロジックを変えると既存キャッシュが全て無効化されるため変更禁止**。**Speed/Pitch/Volume は `/audio_query` のクエリでは効かない** (VOICEVOX が無視する) ので、`VoiceVoxApiClient.ApplyVoiceParameters` が返却 JSON の `speedScale`/`pitchScale`/`volumeScale` を書き換えてから `/synthesis` に渡す。値は `CacheKeyGenerator.NormalizeParameter` (F2 書式経由。`Math.Round` は丸め方式が異なるので使わない) で丸め、キーと合成パラメータを一致させる。旧版はパラメータ未反映の音声をキャッシュしていたため、`VoiceParametersApplied` の無い既定値以外のエントリは `DiskCacheStore.IsMetadataValid` で無効扱いになり再合成される。
+**Cache Keys**: `CacheKeyGenerator.Compute` が `SHA256("{text}|{speakerId}|{speed:F2}|{pitch:F2}|{volume:F2}")` (InvariantCulture) を 16 進小文字化したものをファイル名として使用。`{CacheDirectory}/{SHA256_HEX}.opus` と `{SHA256_HEX}.meta.json` (CreatedAt, Text, SpeakerId, Speed, Pitch, Volume) のペアで保存。**SHA256 生成ロジックを変えると既存キャッシュが全て無効化されるため変更禁止**。**Speed/Pitch/Volume は `/audio_query` のクエリでは効かない** (VOICEVOX が無視する) ので、`VoiceVoxApiClient.ApplyVoiceParameters` が返却 JSON の `speedScale`/`pitchScale`/`volumeScale` を書き換えてから `/synthesis` に渡す。値は `CacheKeyGenerator.NormalizeParameter` (F2 書式経由。`Math.Round` は丸め方式が異なるので使わない) で丸め、キーと合成パラメータを一致させる。
 
-**Cache Data Format**: キャッシュ由来の `TextSegment.AudioData` は **MP3**、今回合成したものは **WAV**。両者が混在するため、音声バイト列を読むときは必ず `AudioFormatDetector.CreateWaveStream` で形式判定する (`WaveFileReader` 決め打ち禁止)。
+**Cache Data Format**: キャッシュ由来の `TextSegment.AudioData` は **Ogg Opus**、今回合成したものは **WAV** (VOICEVOX は 24kHz)。両者が混在するため、音声バイト列を読むときは必ず `AudioFormatDetector.CreateWaveStream` で形式判定する (`WaveFileReader` 決め打ち禁止)。Opus はデコード後 **48kHz** になるのでセグメント間でサンプルレートが異なる。再生はセグメントごとに `Init` するので問題ないが、結合する `AudioExportService` は 48kHz mono 16bit に揃えてから書く。
 
 **Streaming Playback**: `TextToSpeechProcessor.SynthesizeAndPlayAsync` で `Channel<TextSegment>` を介した producer (`SegmentProducer.ProduceAsync`) / consumer (`AudioPlayer.PlayStreamingAsync`) を並走させる。キャッシュ済みセグメントは即座に channel に流して再生開始、未キャッシュ分は producer が直列に API を叩きながら順次 channel に流す。consumer 側が `AudioConstants.FillerStartDelayMs` 以内に次セグメントを取れない場合は `FillerManager.GetRandomFillerAudioAsync` で相槌音声を挿入して無音を回避する。片側の例外は linked CTS で双方を停止する。キャッシュ書き込みは channel 書き込みの後で fire-and-forget して producer の次の API 呼び出しを遅らせない (producer 終了時に `finally` 内で `Task.WhenAll` 待機、例外パスでも保証)。`writer.TryComplete()` は `pendingCacheSaves` の `WhenAll` より**前**に呼ぶこと — 順序を逆にすると最終セグメント再生後の `WaitToReadAsync` が `FillerStartDelayMs` を超え、フィラーを誤発火する。
 
-**Audio Format Chain**: API (WAV) → NAudio で変換 → NAudio.Lame で MP3 化 (CBR、`Cache.Mp3BitrateKbps`、既定 64kbps) → `.mp3` + `.meta.json` でキャッシュ。ビットレートはキャッシュキーに含めない (変えても既存キャッシュは流用され、作り直すなら `--clear`)。
+**Audio Format Chain**: API (WAV) → `OpusCodec.EncodeWav` (Concentus, VOIP/VBR、`Cache.OpusBitrateKbps` 既定 32kbps。Opus 非対応レートは 48kHz にリサンプル) → `.opus` + `.meta.json` でキャッシュ。ビットレートはキャッシュキーに含めない (変えても既存キャッシュは流用され、作り直すなら `--clear`)。**デコード (`OpusCodec.DecodeToWav`) は 48kHz 固定** — Concentus 2.2.2 は 24kHz エンコード→24kHz デコードで出力がほぼ無音になる (`OpusCodecTests` が回帰検知)。v2 以前の `.mp3` キャッシュは読まず、`DiskCacheStore.DeleteLegacyFiles` (maintenance / `--clear`) で削除される。
 
 **Engine Lifecycle**: `VoiceVoxEngineManager` が起動済みプロセスを検出してから launch。VOICEVOX / AIVIS Speech 両対応 (設定で切替)。`KeepEngineRunning: true` で常駐、false で終了時に停止。
 
@@ -70,14 +70,14 @@ src_dotnet/
 │   │   ├── Audio/                          # 音声再生・デバイス・フォーマット
 │   │   │   ├── AudioPlayer.cs              # ストリーミング再生
 │   │   │   ├── AudioDeviceManager.cs       # デバイス事前準備 (warm-up)
-│   │   │   ├── AudioFormatDetector.cs      # WAV/MP3 検出
-│   │   │   ├── AudioConversionUtility.cs   # WAV→MP3 変換
-│   │   │   ├── MediaFoundationManager.cs   # MediaFoundation 初期化
+│   │   │   ├── AudioFormatDetector.cs      # WAV/Ogg Opus 検出
+│   │   │   ├── OpusCodec.cs                # WAV ⇔ Ogg Opus (Concentus)
+│   │   │   ├── AudioConversionUtility.cs   # テスト・warm-up 用 WAV 生成
 │   │   │   └── WavePlayerManager.cs        # 共有 IWavePlayer ライフサイクル
 │   │   ├── Cache/                          # キャッシュ層
 │   │   │   ├── AudioCacheManager.cs        # キャッシュ統合ファサード
 │   │   │   ├── CacheKeyGenerator.cs        # SHA256 キー生成 (変更禁止)
-│   │   │   ├── DiskCacheStore.cs           # mp3 + meta の永続化
+│   │   │   ├── DiskCacheStore.cs           # opus + meta の永続化
 │   │   │   ├── CacheEvictionPolicy.cs      # 期限切れ・サイズ超過の eviction
 │   │   │   └── CacheErrorMapper.cs         # I/O 例外 → VoicevoxRunCachedException 変換
 │   │   ├── Synthesis/                      # 合成・再生パイプライン
@@ -130,7 +130,7 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 - **`ErrorHandlingUtility`**: 例外 → ErrorCode → ExitCode 変換。`HandleExceptionAndGetExitCode` がコマンド末尾の定型処理
 - **`RetryPolicyService`**: VOICEVOX API 呼び出しのリトライ (5xx/429/timeout、自前実装の指数バックオフ。Polly は使っていない)
 - **`CancellationManager`**: Ctrl+C の協調キャンセル
-- **`MediaFoundationManager`** (`Services/Audio/`): NAudio の MediaFoundation 初期化を一元管理
+- **`OpusCodec`** (`Services/Audio/`): WAV ⇔ Ogg Opus 変換。キャッシュ・フィラー・`--out .opus` すべてこれ経由
 - **`ConfigurationManager` / `ConfigurationValidationService`**: AppSettings 読込と FluentValidation による検証
 - **`IClock`**: 時刻抽象。`DateTime.UtcNow` を直接呼ばず、テスト容易性のためこのインターフェース経由で取得する
 
@@ -163,7 +163,7 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 
 ### Logging Conventions
 
-**インスタンスクラスは必ずコンストラクタで `Microsoft.Extensions.Logging.ILogger` を受け取り `_logger.LogXxx(...)` で書く** (CommandHandler 系も例外なし)。`Serilog.Log` の static 呼び出しは Serilog 設定そのもの (`LoggingManager`)、ブートストラップ (`Program` / `ApplicationBootstrap`)、static utility (`AudioConversionUtility`, `MediaFoundationManager`) など、DI が使えない箇所のみに残す。
+**インスタンスクラスは必ずコンストラクタで `Microsoft.Extensions.Logging.ILogger` を受け取り `_logger.LogXxx(...)` で書く** (CommandHandler 系も例外なし)。`Serilog.Log` の static 呼び出しは Serilog 設定そのもの (`LoggingManager`)、ブートストラップ (`Program` / `ApplicationBootstrap`)、static utility (`AudioConversionUtility`, `OpusCodec`) など、DI が使えない箇所のみに残す。
 
 `ILogger` と `ConsoleHelper` の使い分け:
 - **`ILogger`** = ログ用途。Serilog の構造化ログ・ファイル/JSON sink に流れる。内部エラー・警告・運用追跡情報はこちらに書く
@@ -211,7 +211,7 @@ Options:
 --volume <value>      Speech volume (default: 1.0)
 --no-cache            Skip cache usage
 --cache-only          Use cache only, don't call API
---out, -o <path>      Save output audio to file (.wav or .mp3)
+--out, -o <path>      Save output audio to file (.wav or .opus)
 --no-play             Do not play audio (useful with --out)
 --verbose             Show detailed timing information
 --log-level <level>   trace|debug|info|warn|error|crit|none

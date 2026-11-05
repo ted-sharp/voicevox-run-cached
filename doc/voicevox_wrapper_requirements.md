@@ -7,12 +7,12 @@
 
 ## 実装サマリ
 
-- **キャッシュ**: 文単位セグメント化 + MP3保存 + 期限/容量管理
+- **キャッシュ**: 文単位セグメント化 + Ogg Opus 保存 + 期限/容量管理
 - **再生**: NAudio (`WaveOutEvent`) ベース、`Channel<TextSegment>` による producer/consumer ストリーミング、デバイス暖気運転（オプション）
 - **エンジン管理**: 自動起動、起動完了待機、永続化（任意）、子プロセス kill による確実な停止
 - **フィラー**: 生成待機時の自然な間つなぎ音声（任意）
 - **CLI**: `speakers`/`devices`/`--init`/`--clear`/`--test`、各種オプション
-- **出力**: `--out` で WAV/MP3 保存、`--no-play` で再生抑止
+- **出力**: `--out` で WAV/Opus 保存、`--no-play` で再生抑止
 - **ログ**: レベル/フォーマット切替、ファイル出力 + ローテーション、`--verbose` で詳細タイミング
 - **エラー処理**: `VoicevoxRunCachedException` + `ErrorCode` で集約、終了コードへマッピング
 
@@ -33,7 +33,7 @@ Options:
   --volume <value>         音量 (default: 1.0)
   --no-cache               キャッシュを使用しない
   --cache-only             キャッシュのみ使用（API呼び出しなし）
-  --out, -o <path>         出力ファイル（.wav/.mp3自動判定）
+  --out, -o <path>         出力ファイル（.wav/.opus。それ以外はエラー）
   --no-play                再生しない（`--out`と併用）
   --verbose                詳細タイミング表示（ログをDebug相当に）
   --log-level <level>      trace|debug|info|warn|error|crit|none
@@ -61,7 +61,7 @@ Options:
     "UseExecutableBaseDirectory": true,
     "ExpirationDays": 30,
     "MaxSizeGB": 1.0,
-    "Mp3BitrateKbps": 64
+    "OpusBitrateKbps": 32
   },
   "Audio": {
     "OutputDevice": -1,
@@ -101,7 +101,7 @@ Options:
 ## 主要設計
 
 - **セグメント化**: 句読点で文分割し、部分変更時もキャッシュを最大活用
-- **キャッシュ形式**: MP3 + `.meta.json`（作成日時/テキスト/話者/各種パラメータ）
+- **キャッシュ形式**: Ogg Opus (VOIP/VBR, 既定 32kbps) + `.meta.json`（作成日時/テキスト/話者/各種パラメータ）
 - **容量制御**: `MaxSizeGB` 超過時に古い順で削除、`ExpirationDays` で期限切れ自動削除
 - **デバイス準備**: 初回音切れ対策として極小音量の事前再生（可変長）
 - **エンジン自動起動**: パス未指定時は既知パス探索、起動完了まで `/version` で待機
@@ -109,7 +109,8 @@ Options:
 
 ## 依存関係
 
-- `NAudio`, `NAudio.Lame` — 音声再生・MP3 エンコード
+- `NAudio` — 音声再生・WAV 処理・リサンプル
+- `Concentus`, `Concentus.OggFile` — Ogg Opus エンコード/デコード
 - `Microsoft.Extensions.Configuration` — `appsettings.json` バインド
 - `Microsoft.Extensions.Logging` — DI 経由のロギング抽象
 - `Serilog` (Console / File sink) — 構造化ロギング
@@ -147,8 +148,8 @@ flowchart TD
 
 ## 移行メモ（初期仕様との差分）
 
-- キャッシュ形式: WAV → MP3 + `.meta.json` ペア
-- キャッシュ層: 単純ディスク → メモリキャッシュ + ディスク二層構成 (`AudioCacheManager` ファサード経由)
+- キャッシュ形式: WAV → MP3 + `.meta.json` ペア → (v3) Ogg Opus + `.meta.json` ペア
+- キャッシュ層: ディスクのみ (`AudioCacheManager` ファサード経由。メモリキャッシュ層は単発 CLI では効かないため削除)
 - 追加コマンド: `devices`, `--init`, `--clear`, `--test`
 - 新オプション: `--out`, `--no-play`, `--log-level`, `--log-format`
 - 新設定: `UseExecutableBaseDirectory`, `EngineType`, `KeepEngineRunning`, `MemoryCacheSizeMb`, `DesiredLatency`, `NumberOfBuffers`, `EnableFileLogging` / `MaxFileSizeMb` / `MaxFileCount`
