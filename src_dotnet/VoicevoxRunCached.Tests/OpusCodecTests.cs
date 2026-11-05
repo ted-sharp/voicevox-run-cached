@@ -51,6 +51,22 @@ public class OpusCodecTests
     }
 
     [Test]
+    public async Task Encode_InParallel_SameAsSequential()
+    {
+        // キャッシュ保存は Task.Run で並走するため、エンコーダ間で状態を共有していないことを確認する。
+        // Ogg のストリームシリアル番号は毎回ランダム (と CRC が変わる) なので、デコード結果で比較する
+        var inputs = Enumerable.Range(0, 8).Select(i => TestAudio.SineWav(24000, 300, frequency: 200 + i * 150)).ToArray();
+        var sequential = inputs.Select(w => OpusCodec.DecodeToWav(OpusCodec.EncodeWav(w))).ToArray();
+
+        var parallel = await Task.WhenAll(inputs.Select(w => Task.Run(() => OpusCodec.DecodeToWav(OpusCodec.EncodeWav(w)))));
+
+        for (var i = 0; i < inputs.Length; i++)
+        {
+            await Assert.That(parallel[i].AsSpan().SequenceEqual(sequential[i])).IsTrue();
+        }
+    }
+
+    [Test]
     public async Task Encode_SmallerThanWav()
     {
         var wav = TestAudio.SineWav(24000, 2000);

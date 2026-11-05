@@ -14,6 +14,9 @@ namespace VoicevoxRunCached.Services.Audio;
 /// <para>エンコード: WAV → mono 16bit → (Opus 非対応レートなら 48kHz にリサンプル) → Ogg Opus (VOIP / VBR / Complexity 10)。</para>
 /// <para>デコード: 常に <see cref="AudioConstants.OpusDecodeSampleRate"/> (48kHz) mono 16bit の WAV を返す。
 /// Concentus 2.2.2 は 24kHz でエンコードしたものを 24kHz でデコードすると出力がほぼ無音になるため、デコードレートは 48kHz 固定。</para>
+/// <para>Concentus.OggFile の writer は OpusHead の pre-skip を 0、最終 granule をパディング込みで書くため、
+/// デコード結果には先頭約 7ms (エンコーダ先読み) と末尾 20ms 以下 (最終フレームのパディング) の無音が付く。
+/// ヘッダから正しく削れず、聴感上も問題ないので許容している。</para>
 /// </remarks>
 public static class OpusCodec
 {

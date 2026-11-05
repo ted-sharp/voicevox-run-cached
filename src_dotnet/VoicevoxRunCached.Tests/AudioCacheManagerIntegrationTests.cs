@@ -43,6 +43,42 @@ public class AudioCacheManagerIntegrationTests
     }
 
     [Test]
+    public async Task SaveThenGet_RoundTripsAsPlayableOpus()
+    {
+        var (mgr, dir) = CreateManager();
+        try
+        {
+            var request = new VoiceRequest("往復", 1, 1.2, 0.0, 1.0);
+            await mgr.SaveAudioCacheAsync(request, AudioConversionUtility.CreateMinimalWavData(300, 24000));
+
+            var cached = await mgr.GetCachedAudioAsync(request);
+
+            await Assert.That(cached).IsNotNull();
+            await Assert.That(AudioFormatDetector.DetectFormat(cached!)).IsEqualTo(AudioFormat.Opus);
+            using var reader = new AudioFormatDetector().CreateWaveStream(cached!);
+            await Assert.That(reader.TotalTime.TotalMilliseconds).IsGreaterThan(250);
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    public async Task ClearAllCache_RemovesOpusAndLegacyMp3()
+    {
+        var (mgr, dir) = CreateManager();
+        try
+        {
+            await mgr.SaveAudioCacheAsync(new VoiceRequest("新", 1), AudioConversionUtility.CreateMinimalWavData(300, 24000));
+            await File.WriteAllBytesAsync(Path.Combine(dir, "legacy.mp3"), [0xFF, 0xFB]);
+            await File.WriteAllTextAsync(Path.Combine(dir, "legacy.meta.json"), "{}");
+
+            await mgr.ClearAllCacheAsync();
+
+            await Assert.That(Directory.GetFiles(dir)).IsEmpty();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
     public async Task GetCachedAudio_OnMiss_ReturnsNull()
     {
         var (mgr, dir) = CreateManager();
