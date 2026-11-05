@@ -7,7 +7,7 @@ using VoicevoxRunCached.Services.Synthesis;
 namespace VoicevoxRunCached.Tests;
 
 /// <summary>
-/// キャッシュヒット (MP3) と新規合成 (WAV) が混在した状態での --out 出力を検証する。
+/// キャッシュヒット (Opus, デコード後 48kHz) と新規合成 (WAV, VOICEVOX は 24kHz) が混在した状態での --out 出力を検証する。
 /// </summary>
 public class AudioExportServiceTests
 {
@@ -16,36 +16,25 @@ public class AudioExportServiceTests
 
     private static TextSegment Segment(byte[] audio) => new() { Text = "x", AudioData = audio };
 
-    [Test]
-    [Arguments(32)]
-    [Arguments(64)]
-    [Arguments(128)]
-    public async Task ConvertWavToMp3_UsesRequestedBitrate(int bitrateKbps)
-    {
-        var mp3 = AudioConversionUtility.ConvertWavToMp3(AudioConversionUtility.CreateMinimalWavData(1000), bitrateKbps);
-
-        using var reader = new Mp3FileReader(new MemoryStream(mp3));
-        var frame = reader.ReadNextFrame();
-
-        await Assert.That(frame).IsNotNull();
-        await Assert.That(frame!.BitRate).IsEqualTo(bitrateKbps * 1000);
-    }
+    private static string TempPath(string extension) => Path.Combine(Path.GetTempPath(), $"export_{Guid.NewGuid():N}{extension}");
 
     [Test]
-    public async Task Export_MixedWavAndMp3_WritesValidWav()
+    public async Task Export_MixedWavAndOpus_WritesWav48k()
     {
-        var wav = AudioConversionUtility.CreateMinimalWavData(500);
-        var mp3 = AudioConversionUtility.ConvertWavToMp3(wav);
-        var outPath = Path.Combine(Path.GetTempPath(), $"export_{Guid.NewGuid():N}.wav");
+        var wav = TestAudio.SineWav(24000, 500);
+        var opus = OpusCodec.EncodeWav(wav);
+        var outPath = TempPath(".wav");
 
         try
         {
-            await CreateService().ExportSegmentsAsync([Segment(mp3), Segment(wav), Segment(mp3)], outPath);
+            await CreateService().ExportSegmentsAsync([Segment(opus), Segment(wav), Segment(opus)], outPath);
 
             await using var reader = new WaveFileReader(outPath);
             await Assert.That(reader.WaveFormat.Encoding).IsEqualTo(WaveFormatEncoding.Pcm);
-            // 3 セグメント × 約 500ms (MP3 はエンコーダ遅延分だけ長くなり得る)
-            await Assert.That(reader.TotalTime.TotalMilliseconds).IsGreaterThanOrEqualTo(1400);
+            await Assert.That(reader.WaveFormat.SampleRate).IsEqualTo(48000);
+            await Assert.That(reader.WaveFormat.Channels).IsEqualTo(1);
+            // 3 セグメント × 約 500ms (Opus はプリスキップ等で前後し得る)
+            await Assert.That(reader.TotalTime.TotalMilliseconds).IsBetween(1400, 1700);
         }
         finally
         {
@@ -54,14 +43,14 @@ public class AudioExportServiceTests
     }
 
     [Test]
-    public async Task Export_SingleCachedMp3ToWav_WritesWavNotMp3()
+    public async Task Export_SingleCachedOpusToWav_WritesWavNotOpus()
     {
-        var mp3 = AudioConversionUtility.ConvertWavToMp3(AudioConversionUtility.CreateMinimalWavData(500));
-        var outPath = Path.Combine(Path.GetTempPath(), $"export_{Guid.NewGuid():N}.wav");
+        var opus = OpusCodec.EncodeWav(TestAudio.SineWav(24000, 500));
+        var outPath = TempPath(".wav");
 
         try
         {
-            await CreateService().ExportSegmentsAsync([Segment(mp3)], outPath);
+            await CreateService().ExportSegmentsAsync([Segment(opus)], outPath);
 
             var written = await File.ReadAllBytesAsync(outPath);
             await Assert.That(AudioFormatDetector.DetectFormat(written)).IsEqualTo(AudioFormat.Wav);
@@ -73,18 +62,21 @@ public class AudioExportServiceTests
     }
 
     [Test]
-    public async Task Export_MixedSegmentsToMp3_WritesMp3()
+    public async Task Export_MixedSegmentsToOpus_WritesDecodableOpus()
     {
-        var wav = AudioConversionUtility.CreateMinimalWavData(500);
-        var mp3 = AudioConversionUtility.ConvertWavToMp3(wav);
-        var outPath = Path.Combine(Path.GetTempPath(), $"export_{Guid.NewGuid():N}.mp3");
+        var wav = TestAudio.SineWav(24000, 500);
+        var opus = OpusCodec.EncodeWav(wav);
+        var outPath = TempPath(".opus");
 
         try
         {
-            await CreateService().ExportSegmentsAsync([Segment(wav), Segment(mp3)], outPath);
+            await CreateService().ExportSegmentsAsync([Segment(wav), Segment(opus)], outPath);
 
             var written = await File.ReadAllBytesAsync(outPath);
-            await Assert.That(AudioFormatDetector.DetectFormat(written)).IsEqualTo(AudioFormat.Mp3);
+            await Assert.That(AudioFormatDetector.DetectFormat(written)).IsEqualTo(AudioFormat.Opus);
+
+            using var reader = new AudioFormatDetector().CreateWaveStream(written);
+            await Assert.That(reader.TotalTime.TotalMilliseconds).IsBetween(900, 1200);
         }
         finally
         {

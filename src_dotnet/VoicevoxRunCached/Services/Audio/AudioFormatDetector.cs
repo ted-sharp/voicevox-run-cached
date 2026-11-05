@@ -33,11 +33,10 @@ public class AudioFormatDetector
         var format = DetectFormat(audioData);
         _logger.LogDebug("音声フォーマットを検出: {Format}", format);
 
-        var audioStream = new MemoryStream(audioData);
         return format switch
         {
-            AudioFormat.Wav => new WaveFileReader(audioStream),
-            AudioFormat.Mp3 => new Mp3FileReader(audioStream),
+            AudioFormat.Wav => new WaveFileReader(new MemoryStream(audioData)),
+            AudioFormat.Opus => new WaveFileReader(new MemoryStream(OpusCodec.DecodeToWav(audioData))),
             _ => throw new AudioProcessingException(
                 ErrorCodes.Audio.AudioFormatError,
                 $"Unknown audio format (size: {audioData.Length} bytes)",
@@ -58,9 +57,9 @@ public class AudioFormatDetector
             return AudioFormat.Wav;
         }
 
-        if (IsMp3Format(headerBuffer))
+        if (IsOggFormat(headerBuffer))
         {
-            return AudioFormat.Mp3;
+            return AudioFormat.Opus;
         }
 
         return AudioFormat.Unknown;
@@ -75,9 +74,13 @@ public class AudioFormatDetector
                headerBuffer[10] == 'V' && headerBuffer[11] == 'E';
     }
 
-    private static bool IsMp3Format(byte[] headerBuffer)
+    /// <summary>
+    /// Ogg コンテナ ("OggS")。本アプリが書く Ogg は Opus のみ。
+    /// </summary>
+    private static bool IsOggFormat(byte[] headerBuffer)
     {
-        return headerBuffer.Length >= 2 &&
-               headerBuffer[0] == 0xFF && (headerBuffer[1] & 0xE0) == 0xE0;
+        return headerBuffer.Length >= 4 &&
+               headerBuffer[0] == 'O' && headerBuffer[1] == 'g' &&
+               headerBuffer[2] == 'g' && headerBuffer[3] == 'S';
     }
 }

@@ -19,11 +19,9 @@ public class SpeakerValidationTests
     [Arguments(0)]
     [Arguments(2)]
     [Arguments(3)]
-    public async Task ExistingStyleId_DoesNotThrow(int speakerId)
+    public void ExistingStyleId_DoesNotThrow(int speakerId)
     {
         TextToSpeechProcessor.EnsureSpeakerExists(Speakers(), speakerId);
-
-        await Assert.That(true).IsTrue();
     }
 
     [Test]

@@ -37,15 +37,26 @@ public static class AudioConstants
     public const int SubsequentSegmentTrailingDelayMs = 100;
 
     /// <summary>
-    /// MP3 エンコード時の既定ビットレート (kbps)。音声合成の 24kHz mono なら 64kbps で聴感上の劣化はほぼ無い。
-    /// キャッシュ保存分は <c>Cache.Mp3BitrateKbps</c> 設定で上書きできる。
+    /// Opus エンコード時の既定ビットレート (kbps, VBR)。音声合成の 24kHz mono なら 32kbps で MP3 64kbps 相当以上。
+    /// キャッシュ保存分は <c>Cache.OpusBitrateKbps</c> 設定で上書きできる。
     /// </summary>
-    public const int Mp3BitrateKbps = 64;
+    public const int OpusBitrateKbps = 32;
 
     /// <summary>
-    /// LAME の CBR (MPEG-1/2 Layer III) で指定可能なビットレート (kbps)。
+    /// <c>Cache.OpusBitrateKbps</c> で許可する範囲 (kbps)。
     /// </summary>
-    public static readonly int[] SupportedMp3BitratesKbps = [32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
+    public const int MinOpusBitrateKbps = 12;
+    public const int MaxOpusBitrateKbps = 128;
+
+    /// <summary>
+    /// Opus デコード時の出力サンプルレート。Concentus は 24kHz デコードで無音化する問題があるため 48kHz 固定。
+    /// </summary>
+    public const int OpusDecodeSampleRate = 48000;
+
+    /// <summary>
+    /// Opus エンコーダが入力として受け付けるサンプルレート。これ以外は 48kHz にリサンプルしてからエンコードする。
+    /// </summary>
+    public static readonly int[] OpusSupportedSampleRates = [8000, 12000, 16000, 24000, 48000];
 
     /// <summary>
     /// デバイス準備のタイムアウト時間（秒）

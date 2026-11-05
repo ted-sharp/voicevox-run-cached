@@ -46,7 +46,7 @@ public class CacheEvictionPolicyTests
 
             await policy.CleanupExpiredAsync();
 
-            await Assert.That(File.Exists(Path.Combine(dir, "recent.mp3"))).IsTrue();
+            await Assert.That(File.Exists(Path.Combine(dir, "recent.opus"))).IsTrue();
             await Assert.That(File.Exists(Path.Combine(dir, "recent.meta.json"))).IsTrue();
         }
         finally { Directory.Delete(dir, true); }
@@ -63,8 +63,8 @@ public class CacheEvictionPolicyTests
 
             await policy.CleanupExpiredAsync();
 
-            await Assert.That(File.Exists(Path.Combine(dir, "fresh.mp3"))).IsTrue();
-            await Assert.That(File.Exists(Path.Combine(dir, "stale.mp3"))).IsFalse();
+            await Assert.That(File.Exists(Path.Combine(dir, "fresh.opus"))).IsTrue();
+            await Assert.That(File.Exists(Path.Combine(dir, "stale.opus"))).IsFalse();
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -81,8 +81,8 @@ public class CacheEvictionPolicyTests
             // 上限 1GB なので 200B では削除されない
             await policy.CleanupByMaxSizeAsync();
 
-            await Assert.That(File.Exists(Path.Combine(dir, "k1.mp3"))).IsTrue();
-            await Assert.That(File.Exists(Path.Combine(dir, "k2.mp3"))).IsTrue();
+            await Assert.That(File.Exists(Path.Combine(dir, "k1.opus"))).IsTrue();
+            await Assert.That(File.Exists(Path.Combine(dir, "k2.opus"))).IsTrue();
         }
         finally { Directory.Delete(dir, true); }
     }
@@ -101,7 +101,7 @@ public class CacheEvictionPolicyTests
             await policy.CleanupByMaxSizeAsync();
 
             // 古いものから削除される
-            await Assert.That(File.Exists(Path.Combine(dir, "old.mp3"))).IsFalse();
+            await Assert.That(File.Exists(Path.Combine(dir, "old.opus"))).IsFalse();
         }
         finally { Directory.Delete(dir, true); }
     }

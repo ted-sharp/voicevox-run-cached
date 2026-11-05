@@ -15,12 +15,21 @@ public class AudioFormatDetectorTests
     }
 
     [Test]
-    public async Task DetectFormat_Mp3FrameSync_ReturnsMp3()
+    public async Task DetectFormat_OggHeader_ReturnsOpus()
     {
-        // 0xFFE0... のフレーム同期
+        // OggS
+        var header = new byte[] { 0x4F, 0x67, 0x67, 0x53, 0, 2, 0, 0, 0, 0, 0, 0 };
+
+        await Assert.That(AudioFormatDetector.DetectFormat(header)).IsEqualTo(AudioFormat.Opus);
+    }
+
+    [Test]
+    public async Task DetectFormat_LegacyMp3FrameSync_ReturnsUnknown()
+    {
+        // MP3 は廃止。旧キャッシュは読まない
         var header = new byte[] { 0xFF, 0xFB, 0x90, 0x00, 0, 0, 0, 0, 0, 0, 0, 0 };
 
-        await Assert.That(AudioFormatDetector.DetectFormat(header)).IsEqualTo(AudioFormat.Mp3);
+        await Assert.That(AudioFormatDetector.DetectFormat(header)).IsEqualTo(AudioFormat.Unknown);
     }
 
     [Test]

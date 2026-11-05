@@ -33,11 +33,11 @@ public class AudioCacheManagerIntegrationTests
             await mgr.SaveAudioCacheAsync(new VoiceRequest("一つ目", 1), wav);
             await mgr.SaveAudioCacheAsync(new VoiceRequest("二つ目", 1), wav);
 
-            await Assert.That(Directory.GetFiles(dir, "*.mp3").Length).IsEqualTo(2);
+            await Assert.That(Directory.GetFiles(dir, "*.opus").Length).IsEqualTo(2);
 
             await mgr.RunMaintenanceAsync();
 
-            await Assert.That(Directory.GetFiles(dir, "*.mp3").Length).IsLessThan(2);
+            await Assert.That(Directory.GetFiles(dir, "*.opus").Length).IsLessThan(2);
         }
         finally { Directory.Delete(dir, true); }
     }

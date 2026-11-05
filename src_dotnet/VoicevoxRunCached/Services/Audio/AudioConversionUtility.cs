@@ -1,42 +1,14 @@
 ﻿using System.Text;
-using NAudio.Lame;
 using NAudio.Wave;
 using VoicevoxRunCached.Constants;
 
 namespace VoicevoxRunCached.Services.Audio;
 
 /// <summary>
-/// 音声フォーマット変換とユーティリティ機能を提供するクラス
+/// 音声ユーティリティ (テスト・デバイス準備用の WAV 生成)。Opus 変換は <see cref="OpusCodec"/>。
 /// </summary>
 public static class AudioConversionUtility
 {
-    /// <summary>
-    /// WAV 音声データを MP3 に変換します。NAudio.Lame による in-memory 変換のため外部プロセス起動を伴いません。
-    /// </summary>
-    /// <param name="wavData">変換元のWAVデータ</param>
-    /// <param name="bitrateKbps">CBR ビットレート (kbps)</param>
-    /// <returns>変換後のMP3データ</returns>
-    public static byte[] ConvertWavToMp3(byte[] wavData, int bitrateKbps = AudioConstants.Mp3BitrateKbps)
-    {
-        try
-        {
-            using var wavStream = new MemoryStream(wavData);
-            using var wavReader = new WaveFileReader(wavStream);
-            using var mp3Stream = new MemoryStream();
-
-            using (var mp3Writer = new LameMP3FileWriter(mp3Stream, wavReader.WaveFormat, bitrateKbps))
-            {
-                wavReader.CopyTo(mp3Writer);
-            }
-
-            return mp3Stream.ToArray();
-        }
-        catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or IOException)
-        {
-            throw new InvalidOperationException($"Failed to convert WAV to MP3: {ex.Message}", ex);
-        }
-    }
-
     /// <summary>
     /// Creates a minimal WAV file with specified parameters
     /// </summary>

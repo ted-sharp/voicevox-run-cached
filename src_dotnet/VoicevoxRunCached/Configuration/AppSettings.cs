@@ -41,9 +41,9 @@ public class CacheSettings
     public bool UseExecutableBaseDirectory { get; set; }
 
     /// <summary>
-    /// キャッシュ保存時の MP3 ビットレート (kbps)。キャッシュキーには含まれないため、変更しても既存キャッシュはそのまま使われる。
+    /// キャッシュ保存時の Opus ビットレート (kbps, VBR)。キャッシュキーには含まれないため、変更しても既存キャッシュはそのまま使われる。
     /// </summary>
-    public int Mp3BitrateKbps { get; set; } = AudioConstants.Mp3BitrateKbps;
+    public int OpusBitrateKbps { get; set; } = AudioConstants.OpusBitrateKbps;
 }
 
 // Audio output settings

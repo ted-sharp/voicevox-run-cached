@@ -7,5 +7,5 @@ public enum AudioFormat
 {
     Unknown,
     Wav,
-    Mp3
+    Opus
 }

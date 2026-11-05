@@ -31,7 +31,7 @@ public class DiskCacheStoreTests
 
             await store.SaveAsync(request, data, key);
 
-            await Assert.That(File.Exists(Path.Combine(dir, $"{key}.mp3"))).IsTrue();
+            await Assert.That(File.Exists(Path.Combine(dir, $"{key}.opus"))).IsTrue();
             await Assert.That(File.Exists(Path.Combine(dir, $"{key}.meta.json"))).IsTrue();
         }
         finally { Directory.Delete(dir, true); }
@@ -93,7 +93,7 @@ public class DiskCacheStoreTests
 
             await Assert.That(loaded).IsNull();
             // 期限切れエントリは削除される
-            await Assert.That(File.Exists(Path.Combine(dir, $"{key}.mp3"))).IsFalse();
+            await Assert.That(File.Exists(Path.Combine(dir, $"{key}.opus"))).IsFalse();
             await Assert.That(File.Exists(metaPath)).IsFalse();
         }
         finally { Directory.Delete(dir, true); }
@@ -111,7 +111,7 @@ public class DiskCacheStoreTests
 
             store.Delete(key);
 
-            await Assert.That(File.Exists(Path.Combine(dir, $"{key}.mp3"))).IsFalse();
+            await Assert.That(File.Exists(Path.Combine(dir, $"{key}.opus"))).IsFalse();
             await Assert.That(File.Exists(Path.Combine(dir, $"{key}.meta.json"))).IsFalse();
         }
         finally { Directory.Delete(dir, true); }
@@ -140,7 +140,6 @@ public class DiskCacheStoreTests
             Text = "ok",
             SpeakerId = 0,
             CreatedAt = DateTime.UtcNow,
-            VoiceParametersApplied = true
         })).IsTrue();
 
         await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
@@ -148,7 +147,6 @@ public class DiskCacheStoreTests
             Text = "ok",
             SpeakerId = 1,
             CreatedAt = default,
-            VoiceParametersApplied = true
         })).IsFalse();
 
         await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
@@ -156,62 +154,46 @@ public class DiskCacheStoreTests
             Text = "ok",
             SpeakerId = 1,
             CreatedAt = DateTime.UtcNow,
-            VoiceParametersApplied = true
         })).IsTrue();
     }
 
     [Test]
-    public async Task IsMetadataValid_LegacyEntry_ValidOnlyWithDefaultParameters()
-    {
-        // 旧版 (VoiceParametersApplied 無し) は Speed/Pitch/Volume を反映せず既定値の音声を保存していた。
-        // 既定値のエントリは正しい音声なので再利用し、既定値以外は作り直させる。
-        await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
-        {
-            Text = "ok",
-            SpeakerId = 1,
-            CreatedAt = DateTime.UtcNow,
-            Speed = 1.0,
-            Pitch = 0.0,
-            Volume = 1.0
-        })).IsTrue();
-
-        await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
-        {
-            Text = "ok",
-            SpeakerId = 1,
-            CreatedAt = DateTime.UtcNow,
-            Speed = 1.5,
-            Pitch = 0.0,
-            Volume = 1.0
-        })).IsFalse();
-
-        await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
-        {
-            Text = "ok",
-            SpeakerId = 1,
-            CreatedAt = DateTime.UtcNow,
-            Speed = 1.0,
-            Pitch = 0.1,
-            Volume = 1.0
-        })).IsFalse();
-    }
-
-    [Test]
-    public async Task LoadAsync_LegacyNonDefaultEntry_IsDeletedAndMisses()
+    public async Task LoadAsync_LegacyMp3Only_Misses()
     {
         var (store, dir) = CreateStore();
         try
         {
-            const string key = "legacy-speed";
-            await File.WriteAllBytesAsync(Path.Combine(dir, $"{key}.mp3"), [0x01]);
-            // 旧版の meta.json (VoiceParametersApplied フィールドが無い)
+            const string key = "legacy";
+            await File.WriteAllBytesAsync(Path.Combine(dir, $"{key}.mp3"), [0xFF, 0xFB]);
             await File.WriteAllTextAsync(Path.Combine(dir, $"{key}.meta.json"),
-                $$"""{"CreatedAt":"{{DateTime.UtcNow:O}}","Text":"旧","SpeakerId":1,"Speed":1.5,"Pitch":0.0,"Volume":1.0}""");
+                $$"""{"CreatedAt":"{{DateTime.UtcNow:O}}","Text":"旧","SpeakerId":1,"Speed":1.0,"Pitch":0.0,"Volume":1.0}""");
 
-            var loaded = await store.LoadAsync(key);
+            await Assert.That(await store.LoadAsync(key)).IsNull();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
 
-            await Assert.That(loaded).IsNull();
-            await Assert.That(File.Exists(Path.Combine(dir, $"{key}.mp3"))).IsFalse();
+    [Test]
+    public async Task DeleteLegacyFiles_RemovesMp3_AndOrphanMetaOnly()
+    {
+        var (store, dir) = CreateStore();
+        try
+        {
+            // orphan: MP3 しか無い → meta も消す
+            await File.WriteAllBytesAsync(Path.Combine(dir, "orphan.mp3"), [0x01]);
+            await File.WriteAllTextAsync(Path.Combine(dir, "orphan.meta.json"), "{}");
+            // migrated: 同じキーで Opus 再合成済み → meta は Opus 側のものなので残す
+            await File.WriteAllBytesAsync(Path.Combine(dir, "migrated.mp3"), [0x01]);
+            await File.WriteAllBytesAsync(Path.Combine(dir, "migrated.opus"), [0x01]);
+            await File.WriteAllTextAsync(Path.Combine(dir, "migrated.meta.json"), "{}");
+
+            var deleted = store.DeleteLegacyFiles();
+
+            await Assert.That(deleted).IsEqualTo(2);
+            await Assert.That(Directory.GetFiles(dir, "*.mp3")).IsEmpty();
+            await Assert.That(File.Exists(Path.Combine(dir, "orphan.meta.json"))).IsFalse();
+            await Assert.That(File.Exists(Path.Combine(dir, "migrated.opus"))).IsTrue();
+            await Assert.That(File.Exists(Path.Combine(dir, "migrated.meta.json"))).IsTrue();
         }
         finally { Directory.Delete(dir, true); }
     }
