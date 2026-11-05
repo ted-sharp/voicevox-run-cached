@@ -127,15 +127,17 @@ public class ArgumentParserTests
     }
 
     [Test]
-    public async Task Parse_LogLevelAndFormat_DoNotProduceWarning()
+    [Arguments("--log-level", "debug", "--log-format", "json")]
+    [Arguments("--log-level=debug", "--log-format=json", "-s", "3")]
+    public async Task Parse_LogLevelAndFormat_DoNotProduceWarning(string a, string b, string c, string d)
     {
-        // --log-level / --log-format は ArgumentParser では skip されるが、未知扱いにはならない
-        var (request, _) = ArgumentParser.Parse(
-            new[] { "text", "--log-level", "debug", "--log-format", "json" },
-            DefaultSettings());
+        // --log-level / --log-format は ConfigurationManager 側で反映するので ArgumentParser では skip する。
+        // = 形式も含め、未知オプション扱いの警告を出さないこと
+        var logger = new WarningCountingLogger();
+        var (request, _) = ArgumentParser.Parse(["text", a, b, c, d], DefaultSettings(), logger);
 
-        await Assert.That(request).IsNotNull();
         await Assert.That(request!.Text).IsEqualTo("text");
+        await Assert.That(logger.WarningCount).IsEqualTo(0);
     }
 
     [Test]

@@ -35,7 +35,7 @@ Options:
   --cache-only             キャッシュのみ使用（API呼び出しなし）
   --out, -o <path>         出力ファイル（.wav/.opus。それ以外はエラー）
   --no-play                再生しない（`--out`と併用）
-  --verbose                詳細タイミング表示（ログをDebug相当に）
+  --verbose                詳細タイミング表示（ログレベルは変えない。`--log-level debug` を併用）
   --log-level <level>      trace|debug|info|warn|error|crit|none
   --log-format <fmt>       simple|json
   --help, -h               ヘルプ表示

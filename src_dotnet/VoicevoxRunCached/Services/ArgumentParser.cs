@@ -149,7 +149,7 @@ public static class ArgumentParser
                     ReadFlag(processedArgs, ref i);
                     break;
                 case "--log-level" or "--log-format" when i + 1 < processedArgs.Length:
-                    // ConfigurationManager.AddCommandLine 経由で LoggingSettings にバインドされる。
+                    // ConfigurationManager.SwitchMappings で Logging:Level / Logging:Format にバインドされる。
                     // ここでは Unknown 警告を出さないために値を読み飛ばす。
                     i += 2;
                     break;
@@ -157,6 +157,12 @@ public static class ArgumentParser
                     if (arg.StartsWith("--out=", StringComparison.Ordinal))
                     {
                         outPath = ValidateOutPath("--out", arg["--out=".Length..]);
+                        i++;
+                        break;
+                    }
+                    if (arg.StartsWith("--log-level=", StringComparison.Ordinal) || arg.StartsWith("--log-format=", StringComparison.Ordinal))
+                    {
+                        // 値は ConfigurationManager.SwitchMappings 経由で反映済み
                         i++;
                         break;
                     }
@@ -286,7 +292,7 @@ Options:
   --out, -o <path>         Save output audio to file (.wav or .opus)
   --no-play                Do not play audio (useful with --out)
   --verbose                Show detailed timing information
-  --log-level <level>      Log level: trace|debug|info|warn|error|crit|none (default: info; verbose=debug)
+  --log-level <level>      Log level: trace|debug|info|warn|error|crit|none (default: appsettings Logging.Level)
   --log-format <fmt>       Log format: simple|json (default: simple)
   --help, -h               Show this help message
 
