@@ -9,14 +9,17 @@ public class FillerManager
 {
     private readonly int _defaultSpeaker;
     private readonly FillerSettings _settings;
+    private readonly int _opusBitrateKbps;
     private readonly ILogger _logger;
     private string? _lastUsedFiller;
 
-    public FillerManager(FillerSettings settings, VoiceVoxSettings voiceVoxSettings, ILogger logger)
+    public FillerManager(FillerSettings settings, VoiceVoxSettings voiceVoxSettings, CacheSettings cacheSettings, ILogger logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         ArgumentNullException.ThrowIfNull(voiceVoxSettings);
         _defaultSpeaker = voiceVoxSettings.DefaultSpeaker;
+        ArgumentNullException.ThrowIfNull(cacheSettings);
+        _opusBitrateKbps = cacheSettings.OpusBitrateKbps;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _logger.LogDebug("FillerManager を初期化しました - 有効: {Enabled}, ディレクトリ: {Directory}",
@@ -69,7 +72,7 @@ public class FillerManager
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(fillerRequest, cancellationToken);
                 var audioData = await apiClient.SynthesizeAudioAsync(audioQuery, fillerRequest.SpeakerId, cancellationToken);
 
-                await File.WriteAllBytesAsync(fillerCachePath, OpusCodec.EncodeWav(audioData), cancellationToken);
+                await File.WriteAllBytesAsync(fillerCachePath, OpusCodec.EncodeWav(audioData, _opusBitrateKbps), cancellationToken);
                 _logger.LogDebug("フィラー音声を生成・保存しました: \"{Text}\"", fillerText);
             }
             catch (OperationCanceledException)

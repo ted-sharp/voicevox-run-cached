@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
 using NAudio.Wave;
 using NAudio.Wave.SampleProviders;
+using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
@@ -22,11 +23,14 @@ public class AudioExportService
     private static readonly WaveFormat OutputFormat = new(AudioConstants.OpusDecodeSampleRate, 16, 1);
 
     private readonly AudioFormatDetector _formatDetector;
+    private readonly int _opusBitrateKbps;
     private readonly ILogger _logger;
 
-    public AudioExportService(AudioFormatDetector formatDetector, ILogger logger)
+    public AudioExportService(AudioFormatDetector formatDetector, CacheSettings cacheSettings, ILogger logger)
     {
         _formatDetector = formatDetector ?? throw new ArgumentNullException(nameof(formatDetector));
+        ArgumentNullException.ThrowIfNull(cacheSettings);
+        _opusBitrateKbps = cacheSettings.OpusBitrateKbps;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -50,7 +54,7 @@ public class AudioExportService
 
             var extension = Path.GetExtension(outPath).ToLowerInvariant();
             byte[] finalAudioData = extension == ".opus"
-                ? OpusCodec.EncodeWav(combinedWavData)
+                ? OpusCodec.EncodeWav(combinedWavData, _opusBitrateKbps)
                 : combinedWavData;
 
             await WriteOutputFileAsync(finalAudioData, outPath, cancellationToken);

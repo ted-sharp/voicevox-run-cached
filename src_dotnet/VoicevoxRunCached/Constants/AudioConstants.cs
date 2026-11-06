@@ -38,7 +38,7 @@ public static class AudioConstants
 
     /// <summary>
     /// Opus エンコード時の既定ビットレート (kbps, VBR)。音声合成の 24kHz mono なら 32kbps で MP3 64kbps 相当以上。
-    /// キャッシュ保存分は <c>Cache.OpusBitrateKbps</c> 設定で上書きできる。
+    /// キャッシュ・フィラー・<c>--out .opus</c> は <c>Cache.OpusBitrateKbps</c> 設定で上書きできる。
     /// </summary>
     public const int OpusBitrateKbps = 32;
 

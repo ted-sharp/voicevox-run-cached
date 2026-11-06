@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging.Abstractions;
 using NAudio.Wave;
+using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Audio;
 using VoicevoxRunCached.Services.Synthesis;
@@ -11,8 +12,8 @@ namespace VoicevoxRunCached.Tests;
 /// </summary>
 public class AudioExportServiceTests
 {
-    private static AudioExportService CreateService()
-        => new(new AudioFormatDetector(NullLogger.Instance), NullLogger.Instance);
+    private static AudioExportService CreateService(int opusBitrateKbps = 32)
+        => new(new AudioFormatDetector(NullLogger.Instance), new CacheSettings { OpusBitrateKbps = opusBitrateKbps }, NullLogger.Instance);
 
     private static TextSegment Segment(byte[] audio) => new() { Text = "x", AudioData = audio };
 
@@ -81,6 +82,28 @@ public class AudioExportServiceTests
         finally
         {
             File.Delete(outPath);
+        }
+    }
+
+    [Test]
+    public async Task Export_ToOpus_UsesConfiguredBitrate()
+    {
+        // 回帰: Cache.OpusBitrateKbps がキャッシュ保存にしか効かず、--out .opus は常に既定値だった
+        var wav = TestAudio.SineWav(24000, 2000, frequency: 3000);
+        var lowPath = TempPath(".opus");
+        var highPath = TempPath(".opus");
+
+        try
+        {
+            await CreateService(opusBitrateKbps: 12).ExportSegmentsAsync([Segment(wav)], lowPath);
+            await CreateService(opusBitrateKbps: 128).ExportSegmentsAsync([Segment(wav)], highPath);
+
+            await Assert.That(new FileInfo(highPath).Length).IsGreaterThan(new FileInfo(lowPath).Length);
+        }
+        finally
+        {
+            File.Delete(lowPath);
+            File.Delete(highPath);
         }
     }
 }

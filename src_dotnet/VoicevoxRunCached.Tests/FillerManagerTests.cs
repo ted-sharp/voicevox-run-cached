@@ -16,7 +16,7 @@ public class FillerManagerTests
             Directory = Path.GetTempPath(),
             FillerTexts = ["a", "b"]
         };
-        var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, NullLogger.Instance);
+        var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, new CacheSettings(), NullLogger.Instance);
 
         var data = await mgr.GetRandomFillerAudioAsync();
 
@@ -32,7 +32,7 @@ public class FillerManagerTests
             Directory = Path.GetTempPath(),
             FillerTexts = []
         };
-        var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, NullLogger.Instance);
+        var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, new CacheSettings(), NullLogger.Instance);
 
         var data = await mgr.GetRandomFillerAudioAsync();
 
@@ -53,7 +53,7 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["えーっと、"]
             };
-            var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, NullLogger.Instance);
+            var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, new CacheSettings(), NullLogger.Instance);
 
             var data = await mgr.GetRandomFillerAudioAsync();
 
@@ -82,7 +82,7 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["a"]
             };
-            var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, NullLogger.Instance);
+            var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, new CacheSettings(), NullLogger.Instance);
 
             await mgr.ClearFillerCacheAsync();
 
@@ -106,7 +106,7 @@ public class FillerManagerTests
             Directory = dir,
             FillerTexts = ["a"]
         };
-        var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, NullLogger.Instance);
+        var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, new CacheSettings(), NullLogger.Instance);
 
         await mgr.ClearFillerCacheAsync();
         // 例外を投げない (no-op で完了)
@@ -128,7 +128,7 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["a"]
             };
-            var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, NullLogger.Instance);
+            var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, new CacheSettings(), NullLogger.Instance);
 
             // FileShare.None で開いたままにすると Windows では File.Delete が共有違反 (IOException) になる
             using (new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None))
@@ -161,7 +161,7 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["a"]
             };
-            var mgr = new FillerManager(settings, engine.CreateSettings(), NullLogger.Instance);
+            var mgr = new FillerManager(settings, engine.CreateSettings(), new CacheSettings(), NullLogger.Instance);
             using var apiClient = engine.CreateApiClient();
 
             SynthesisResult result;

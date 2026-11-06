@@ -52,7 +52,7 @@ public class InitCommandHandlerTests
             var fillerSettings = new FillerSettings { Enabled = true, Directory = dir, FillerTexts = ["a", "b"] };
             using var engineManager = new VoiceVoxEngineManager(voiceVoxSettings, NullLogger.Instance, SystemClock.Instance);
             using var apiClient = engine.CreateApiClient();
-            var fillerManager = new FillerManager(fillerSettings, voiceVoxSettings, NullLogger.Instance);
+            var fillerManager = new FillerManager(fillerSettings, voiceVoxSettings, new CacheSettings(), NullLogger.Instance);
             var handler = new InitCommandHandler(engineManager, apiClient, fillerManager, NullLogger.Instance);
 
             return await handler.HandleInitAsync();
