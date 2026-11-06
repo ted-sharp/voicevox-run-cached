@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Cache;
@@ -13,12 +12,12 @@ public class FillerManager
     private readonly ILogger _logger;
     private string? _lastUsedFiller;
 
-    public FillerManager(FillerSettings settings, VoiceVoxSettings voiceVoxSettings, ILogger? logger = null)
+    public FillerManager(FillerSettings settings, VoiceVoxSettings voiceVoxSettings, ILogger logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         ArgumentNullException.ThrowIfNull(voiceVoxSettings);
         _defaultSpeaker = voiceVoxSettings.DefaultSpeaker;
-        _logger = logger ?? NullLogger.Instance;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _logger.LogInformation("FillerManager を初期化しました - 有効: {Enabled}, ディレクトリ: {Directory}",
             _settings.Enabled, _settings.Directory);

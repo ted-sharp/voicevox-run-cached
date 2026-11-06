@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using NAudio.Wave;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
@@ -13,9 +12,9 @@ public class AudioFormatDetector
 {
     private readonly ILogger _logger;
 
-    public AudioFormatDetector(ILogger? logger = null)
+    public AudioFormatDetector(ILogger logger)
     {
-        _logger = logger ?? NullLogger.Instance;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>

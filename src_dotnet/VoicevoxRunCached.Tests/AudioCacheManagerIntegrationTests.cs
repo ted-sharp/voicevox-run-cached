@@ -1,4 +1,5 @@
-﻿using VoicevoxRunCached.Configuration;
+﻿using Microsoft.Extensions.Logging.Abstractions;
+using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Audio;
@@ -19,7 +20,7 @@ public class AudioCacheManagerIntegrationTests
             MaxSizeGb = maxSizeGb,
             UseExecutableBaseDirectory = false
         };
-        return (new AudioCacheManager(settings), dir);
+        return (new AudioCacheManager(settings, NullLogger.Instance), dir);
     }
 
     [Test]
@@ -56,7 +57,7 @@ public class AudioCacheManagerIntegrationTests
 
             await Assert.That(cached).IsNotNull();
             await Assert.That(AudioFormatDetector.DetectFormat(cached!)).IsEqualTo(AudioFormat.Opus);
-            using var reader = new AudioFormatDetector().CreateWaveStream(cached!);
+            using var reader = new AudioFormatDetector(NullLogger.Instance).CreateWaveStream(cached!);
             await Assert.That(reader.TotalTime.TotalMilliseconds).IsGreaterThan(250);
         }
         finally { Directory.Delete(dir, true); }

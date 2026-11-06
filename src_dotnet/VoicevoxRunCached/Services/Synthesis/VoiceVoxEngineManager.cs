@@ -17,11 +17,11 @@ public class VoiceVoxEngineManager : IDisposable
     private Process? _engineProcess;
     private bool _disposed;
 
-    public VoiceVoxEngineManager(VoiceVoxSettings settings, ILogger logger, IClock? clock = null)
+    public VoiceVoxEngineManager(VoiceVoxSettings settings, ILogger logger, IClock clock)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _clock = clock ?? SystemClock.Instance;
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _httpClient = new HttpClient
         {
             Timeout = TimeSpan.FromSeconds(AudioConstants.EngineHealthCheckTimeoutSeconds)

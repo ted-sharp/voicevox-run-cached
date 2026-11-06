@@ -18,10 +18,10 @@ public class AudioCacheManager
     private readonly ILogger _logger;
     private readonly int _opusBitrateKbps;
 
-    public AudioCacheManager(CacheSettings settings, ILogger? logger = null)
+    public AudioCacheManager(CacheSettings settings, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _opusBitrateKbps = settings.OpusBitrateKbps;
         _disk = new DiskCacheStore(settings, _logger);
