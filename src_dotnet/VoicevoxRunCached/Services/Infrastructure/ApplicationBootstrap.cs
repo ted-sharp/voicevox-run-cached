@@ -48,8 +48,8 @@ public static class ApplicationBootstrap
         });
         var logger = loggerFactory.CreateLogger("VoicevoxRunCached");
 
-        // アプリケーション開始をログ出力
-        logger.LogInformation("VoicevoxRunCached アプリケーションを開始します - バージョン {Version}", AssemblyVersion.Current);
+        // 毎回の起動で出る定型情報なので Debug (Hooks などから繰り返し呼ぶとノイズになる)
+        logger.LogDebug("VoicevoxRunCached アプリケーションを開始します - バージョン {Version}", AssemblyVersion.Current);
 
         return (settings, logger);
     }
@@ -132,7 +132,6 @@ public static class ApplicationBootstrap
     {
         var validationService = new ConfigurationValidationService();
         validationService.ValidateConfiguration(settings);
-        ConsoleHelper.WriteSuccess("✓ 設定の検証が完了しました");
     }
 
     /// <summary>

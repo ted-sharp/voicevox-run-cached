@@ -42,7 +42,8 @@ public partial class TextSegmentProcessor
             })
             .ToList();
 
-        _logger.LogInformation("テキスト処理が完了しました - 元のセグメント数: {OriginalCount}, 最適化後: {OptimizedCount}",
+        // 分割数は呼び出し元 (TextToSpeechProcessor) が Information で出すので、こちらは Debug
+        _logger.LogDebug("テキスト処理が完了しました - 元のセグメント数: {OriginalCount}, 最適化後: {OptimizedCount}",
             rawSegments.Count, optimized.Count);
 
         return Task.FromResult(optimized);

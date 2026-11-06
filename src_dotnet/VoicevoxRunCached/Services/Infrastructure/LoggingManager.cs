@@ -41,8 +41,8 @@ public class LoggingManager
         // グローバルロガーを設定
         Log.Logger = loggerConfiguration.CreateLogger();
 
-        // アプリケーション開始ログ
-        Log.Information("VoicevoxRunCached アプリケーションが開始されました - ログレベル: {LogLevel}, ファイル出力: {FileLogging}",
+        // アプリケーション開始ログ (毎回出る定型情報なので Debug)
+        Log.Debug("VoicevoxRunCached アプリケーションが開始されました - ログレベル: {LogLevel}, ファイル出力: {FileLogging}",
             _settings.Level, _settings.EnableFileLogging);
     }
 

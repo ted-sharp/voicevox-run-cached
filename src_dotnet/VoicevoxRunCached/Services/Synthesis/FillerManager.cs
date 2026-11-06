@@ -19,7 +19,7 @@ public class FillerManager
         _defaultSpeaker = voiceVoxSettings.DefaultSpeaker;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
-        _logger.LogInformation("FillerManager を初期化しました - 有効: {Enabled}, ディレクトリ: {Directory}",
+        _logger.LogDebug("FillerManager を初期化しました - 有効: {Enabled}, ディレクトリ: {Directory}",
             _settings.Enabled, _settings.Directory);
     }
 
