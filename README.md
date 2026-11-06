@@ -120,7 +120,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
   },
   "Audio": {
     "OutputDevice": -1,           // -1 = OS デフォルト, 0+ = WaveOut index
-    "Volume": 1.2,                // 再生音量。1.0 を超える値は 1.0 として扱われる (WaveOut の上限)
+    "Volume": 1.0,                // 再生音量 0.0-1.0 (WaveOut の上限が 1.0)
     "PrepareDevice": false,       // true で起動時に無音再生してデバイスを温める
     "PreparationDurationMs": 200,
     "PreparationVolume": 0.01,

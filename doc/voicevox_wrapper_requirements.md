@@ -65,7 +65,7 @@ Options:
   },
   "Audio": {
     "OutputDevice": -1,
-    "Volume": 1.2,
+    "Volume": 1.0,
     "PrepareDevice": false,
     "PreparationDurationMs": 200,
     "PreparationVolume": 0.01,
