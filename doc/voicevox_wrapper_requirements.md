@@ -115,10 +115,8 @@ Options:
 - `Microsoft.Extensions.Logging` — DI 経由のロギング抽象
 - `Serilog` (Console / File sink) — 構造化ロギング
 - `FluentValidation` — `AppSettings` の検証
-- `Polly` — HTTP / ファイル I/O のリトライ
 - `Jab` — DI コンテナ (Source Generator によるコンパイル時生成)
 - `Aloe.Utils.CommandLine` — CLI 引数処理
-- `BenchmarkDotNet` — `Benchmarks/AudioProcessingBenchmarks` のマイクロベンチマーク
 - `TUnit` (テストプロジェクト) — Microsoft.Testing.Platform ベースのテストランナー
 - `System.Text.Json`
 

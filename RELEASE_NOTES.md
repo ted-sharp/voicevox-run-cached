@@ -13,6 +13,7 @@
   - `IClock` 抽象を導入し、時刻取得のテスト容易性を向上
   - キャッシュ層に `CacheErrorMapper` を集約し、I/O 例外 → `VoicevoxRunCachedException` への変換を一元化
   - `AudioCacheManager` を `Services/Cache/` 配下に移動
+  - DI コンテナを DryIoc から Jab (Source Generator によるコンパイル時 DI) に移行。依存の登録漏れ・循環がビルドエラーで検出される
   - エンジン子プロセスを kill によって確実に停止
   - 例外ハンドリング (`ErrorHandlingUtility`) と Async 呼び出しの統一
 - 改善/修正:
@@ -39,6 +40,7 @@
   - アセンブリバージョンが 1.6.0.0 のまま固定されていた問題を修正
 - 削除:
   - メモリキャッシュ層と `Cache.MemoryCacheSizeMb` 設定 (1 実行ごとに終了する CLI では効果がないため。既存設定に残っていても無視される)
+  - 未使用の NuGet パッケージ: `Microsoft.Extensions.Logging.Console`, `FluentValidation.DependencyInjectionExtensions`, `Serilog.Sinks.Seq`, `Serilog.Settings.Configuration`, `Serilog.Enrichers.Environment`, `Serilog.Enrichers.Thread`
 - 開発環境:
   - `Taskfile.yml` を追加 (`task build` / `task test` / `task check` / `task publish:zip` 等)
   - バージョンを `src_dotnet/Directory.Build.props` の `<Version>` に一元化
