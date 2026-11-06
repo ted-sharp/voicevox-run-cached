@@ -18,14 +18,16 @@ public class AudioCacheManager
     private readonly ILogger _logger;
     private readonly int _opusBitrateKbps;
 
-    public AudioCacheManager(CacheSettings settings, ILogger logger)
+    public AudioCacheManager(CacheSettings settings, ILogger logger, IClock clock)
     {
         ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(clock);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _opusBitrateKbps = settings.OpusBitrateKbps;
-        _disk = new DiskCacheStore(settings, _logger);
-        _eviction = new CacheEvictionPolicy(_disk, settings, _logger);
+        // clock を渡し忘れると DiskCacheStore / CacheEvictionPolicy は SystemClock に黙って落ちるので必ず渡す
+        _disk = new DiskCacheStore(settings, _logger, clock);
+        _eviction = new CacheEvictionPolicy(_disk, settings, _logger, clock);
 
         _logger.LogInformation("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}", _disk.Directory);
     }

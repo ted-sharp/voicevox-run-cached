@@ -4,12 +4,13 @@ using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Audio;
 using VoicevoxRunCached.Services.Cache;
+using VoicevoxRunCached.Services.Infrastructure;
 
 namespace VoicevoxRunCached.Tests;
 
 public class AudioCacheManagerIntegrationTests
 {
-    private static (AudioCacheManager manager, string dir) CreateManager(double maxSizeGb = 1.0)
+    private static (AudioCacheManager manager, string dir) CreateManager(double maxSizeGb = 1.0, IClock? clock = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_acm_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
@@ -20,7 +21,32 @@ public class AudioCacheManagerIntegrationTests
             MaxSizeGb = maxSizeGb,
             UseExecutableBaseDirectory = false
         };
-        return (new AudioCacheManager(settings, NullLogger.Instance), dir);
+        return (new AudioCacheManager(settings, NullLogger.Instance, clock ?? SystemClock.Instance), dir);
+    }
+
+    private sealed class MutableClock(DateTime utcNow) : IClock
+    {
+        public DateTime UtcNow { get; set; } = utcNow;
+    }
+
+    [Test]
+    public async Task GetCachedAudio_UsesInjectedClockForExpiration()
+    {
+        // AudioCacheManager が IClock を受け取らず、期限判定が常に実時刻だった回帰の検知
+        var clock = new MutableClock(DateTime.UtcNow);
+        var (mgr, dir) = CreateManager(clock: clock);
+        try
+        {
+            var request = new VoiceRequest("期限", 1);
+            await mgr.SaveAudioCacheAsync(request, AudioConversionUtility.CreateMinimalWavData(300, 24000));
+
+            clock.UtcNow = clock.UtcNow.AddDays(31); // ExpirationDays = 30
+
+            var cached = await mgr.GetCachedAudioAsync(request);
+
+            await Assert.That(cached).IsNull();
+        }
+        finally { Directory.Delete(dir, true); }
     }
 
     [Test]
