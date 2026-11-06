@@ -120,6 +120,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 1. `Services/Commands/` にハンドラクラス (例: `XxxCommandHandler`) を作成。共通インターフェースは無く、具象クラスで `HandleXxxAsync()` 等の固有メソッドを公開する
 2. `Services/AppServiceProvider.cs` に `[Singleton(typeof(XxxCommandHandler))]` 属性を追加して登録
 3. `CommandRouter` のコンストラクタ引数として受け取り、`ExecuteCommandAsync` の switch 文に分岐を追加
+4. `--xxx` 形式で値を取らないコマンドなら `ArgumentParser.FlagArgs` にも追加する (無いと設定の読み込みで直後の引数がコマンドの値として消費され、`--xxx --log-level debug` 等が効かない。`CommandLineConfigurationTests` に追加)
 
 テキスト読み上げ系の追加機能は、独立したハンドラを作らず `TextToSpeechProcessor` に直接機能追加するか、`AudioExportService` のような単機能ヘルパに分けるのが現状の構成。
 

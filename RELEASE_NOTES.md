@@ -18,6 +18,7 @@
   - 例外ハンドリング (`ErrorHandlingUtility`) と Async 呼び出しの統一
 - 改善/修正:
   - `--log-level` / `--log-format` が一切反映されていなかった問題を修正 (`=` 形式も対応)
+  - `--init` / `--clear` / `--test` の直後に書いたオプション (`--log-level` / `--log-format` / `--Section:Key=値`) が、そのコマンドの値として読まれて無視されていた問題を修正
   - フィラーが既定 6 件 + 設定 6 件の重複 12 件になり、`FillerTexts` で既定を外せなかった問題を修正
   - 存在しない speaker ID を合成前に `/speakers` で検出し即エラーにする (リトライ待ちの十数秒を解消)
   - 入力エラー (`InvalidArguments`) はスタックトレースなしの Warning ログにする
