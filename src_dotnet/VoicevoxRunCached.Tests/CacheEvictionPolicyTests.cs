@@ -9,7 +9,7 @@ namespace VoicevoxRunCached.Tests;
 
 public class CacheEvictionPolicyTests
 {
-    private static (CacheEvictionPolicy policy, DiskCacheStore disk, string dir) Create(int expirationDays = 30, double maxSizeGb = 1.0)
+    private static (CacheEvictionPolicy policy, DiskCacheStore disk, string dir) Create(int expirationDays = 30, double maxSizeGb = 1.0, IClock? clock = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_evict_" + Guid.NewGuid().ToString("N"));
         var settings = new CacheSettings
@@ -19,8 +19,9 @@ public class CacheEvictionPolicyTests
             MaxSizeGb = maxSizeGb,
             UseExecutableBaseDirectory = false
         };
-        var disk = new DiskCacheStore(settings, NullLogger.Instance, SystemClock.Instance);
-        return (new CacheEvictionPolicy(disk, settings, NullLogger.Instance, SystemClock.Instance), disk, dir);
+        clock ??= SystemClock.Instance;
+        var disk = new DiskCacheStore(settings, NullLogger.Instance, clock);
+        return (new CacheEvictionPolicy(disk, settings, NullLogger.Instance, clock), disk, dir);
     }
 
     private static async Task SeedAsync(DiskCacheStore disk, string key, byte[] data, DateTime createdAt, string text = "seed")
@@ -34,7 +35,7 @@ public class CacheEvictionPolicyTests
         meta!.CreatedAt = createdAt;
         await File.WriteAllTextAsync(metaPath, JsonSerializer.Serialize(meta));
 
-        // eviction は meta.json の更新日時で古さを判定するので、実運用と同じく CreatedAt に揃える
+        // eviction は最終利用日時 (meta.json の更新日時) で古さを判定する。保存直後は CreatedAt と同じ
         File.SetLastWriteTimeUtc(metaPath, createdAt);
     }
 
@@ -104,6 +105,31 @@ public class CacheEvictionPolicyTests
 
             // 古いものから削除される
             await Assert.That(File.Exists(Path.Combine(dir, "old.opus"))).IsFalse();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    public async Task CleanupByMaxSize_KeepsRecentlyUsedEntry()
+    {
+        // 回帰: 作成日時の古い順に消していたため、よく使う定型文ほど先に消えていた。
+        // 上限 1500B に 1000B × 2 件 → 1 件消える。作成は "used" が古いが、直前に読んだので "unused" が消える
+        var clock = new MutableClock(DateTime.UtcNow);
+        var (policy, disk, dir) = Create(maxSizeGb: 1500.0 / (1024 * 1024 * 1024), clock: clock);
+        try
+        {
+            var start = clock.UtcNow;
+            await disk.SaveAsync(new VoiceRequest("used", 1), new byte[1000], "used");
+            clock.UtcNow = start.AddDays(1);
+            await disk.SaveAsync(new VoiceRequest("unused", 1), new byte[1000], "unused");
+
+            clock.UtcNow = start.AddDays(2);
+            await Assert.That(await disk.LoadAsync("used")).IsNotNull();
+
+            await policy.CleanupByMaxSizeAsync();
+
+            await Assert.That(File.Exists(Path.Combine(dir, "used.opus"))).IsTrue();
+            await Assert.That(File.Exists(Path.Combine(dir, "unused.opus"))).IsFalse();
         }
         finally { Directory.Delete(dir, true); }
     }

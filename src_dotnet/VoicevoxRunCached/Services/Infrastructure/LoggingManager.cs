@@ -1,5 +1,7 @@
 ﻿using Serilog;
 using Serilog.Events;
+using Serilog.Formatting;
+using Serilog.Formatting.Json;
 using Serilog.Sinks.SystemConsole.Themes;
 using VoicevoxRunCached.Configuration;
 
@@ -41,34 +43,48 @@ public class LoggingManager
         // グローバルロガーを設定
         Log.Logger = loggerConfiguration.CreateLogger();
 
-        // アプリケーション開始ログ
-        Log.Information("VoicevoxRunCached アプリケーションが開始されました - ログレベル: {LogLevel}, ファイル出力: {FileLogging}",
+        // アプリケーション開始ログ (毎回出る定型情報なので Debug)
+        Log.Debug("VoicevoxRunCached アプリケーションが開始されました - ログレベル: {LogLevel}, ファイル出力: {FileLogging}",
             _settings.Level, _settings.EnableFileLogging);
     }
+
+    private const string SimpleConsoleTemplate = "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}";
+    private const string SimpleFileTemplate = "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}";
+
+    private bool IsJsonFormat => _settings.Format.Equals("json", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// <c>Logging.Format = json</c> で使うフォーマッタ。1 イベント 1 行の JSON
+    /// (Timestamp / Level / MessageTemplate / RenderedMessage / Properties / Exception)。
+    /// </summary>
+    /// <remarks>
+    /// Serilog 本体の JsonFormatter を使う (Serilog.Formatting.Compact を追加するほどの要件は無い)。
+    /// </remarks>
+    public static ITextFormatter CreateJsonFormatter() => new JsonFormatter(renderMessage: true);
 
     /// <summary>
     /// コンソール出力の設定
     /// </summary>
+    /// <remarks>
+    /// ログはすべて stderr に出す (stdout は <c>devices --json</c> 等のコマンドの結果だけにする)。
+    /// </remarks>
     private void ConfigureConsoleLogging(LoggerConfiguration config)
     {
-        if (_settings.Format.ToLowerInvariant() == "json")
+        if (IsJsonFormat)
         {
-            // JSON形式の構造化ログ
-            config.WriteTo.Console(
-                outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}",
-                theme: AnsiConsoleTheme.Code);
+            config.WriteTo.Console(CreateJsonFormatter(), standardErrorFromLevel: LogEventLevel.Verbose);
         }
         else
         {
-            // シンプルな形式（デフォルト）
             config.WriteTo.Console(
-                outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}",
+                outputTemplate: SimpleConsoleTemplate,
+                standardErrorFromLevel: LogEventLevel.Verbose,
                 theme: AnsiConsoleTheme.Code);
         }
     }
 
     /// <summary>
-    /// ファイル出力の設定
+    /// ファイル出力の設定 (書式はコンソールと同じく Logging.Format に従う)
     /// </summary>
     private void ConfigureFileLogging(LoggerConfiguration config)
     {
@@ -76,22 +92,38 @@ public class LoggingManager
         Directory.CreateDirectory(logDirectory);
 
         var logFilePath = Path.Combine(logDirectory, "voicevox-run-cached-.log");
+        var fileSizeLimitBytes = _settings.MaxFileSizeMb * 1024L * 1024;
 
-        config.WriteTo.File(
-            path: logFilePath,
-            rollingInterval: RollingInterval.Day,
-            retainedFileCountLimit: _settings.MaxFileCount,
-            fileSizeLimitBytes: _settings.MaxFileSizeMb * 1024 * 1024,
-            rollOnFileSizeLimit: true,
-            outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}",
-            shared: true,
-            flushToDiskInterval: TimeSpan.FromSeconds(1));
+        if (IsJsonFormat)
+        {
+            config.WriteTo.File(
+                CreateJsonFormatter(),
+                path: logFilePath,
+                rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: _settings.MaxFileCount,
+                fileSizeLimitBytes: fileSizeLimitBytes,
+                rollOnFileSizeLimit: true,
+                shared: true,
+                flushToDiskInterval: TimeSpan.FromSeconds(1));
+        }
+        else
+        {
+            config.WriteTo.File(
+                path: logFilePath,
+                rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: _settings.MaxFileCount,
+                fileSizeLimitBytes: fileSizeLimitBytes,
+                rollOnFileSizeLimit: true,
+                outputTemplate: SimpleFileTemplate,
+                shared: true,
+                flushToDiskInterval: TimeSpan.FromSeconds(1));
+        }
     }
 
     /// <summary>
-    /// ログレベルの取得
+    /// <c>Logging.Level</c> の文字列を Serilog のレベルに変換する。<c>none</c> はログを一切出さない。
     /// </summary>
-    private LogEventLevel GetLogLevel(string level)
+    public static LogEventLevel GetLogLevel(string level)
     {
         return level.ToLowerInvariant() switch
         {
@@ -101,7 +133,7 @@ public class LoggingManager
             "warn" => LogEventLevel.Warning,
             "error" => LogEventLevel.Error,
             "crit" => LogEventLevel.Fatal,
-            "none" => LogEventLevel.Fatal,
+            "none" => LevelAlias.Off,
             _ => LogEventLevel.Information
         };
     }

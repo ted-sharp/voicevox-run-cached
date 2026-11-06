@@ -10,7 +10,7 @@ namespace VoicevoxRunCached.Services.Infrastructure;
 /// 以前は開始時の位置へ戻って上書きしていたため、表示中に出たログ (エンジン起動・キャッシュクリアの info、
 /// フィラー生成失敗の Warning など) がスピナーに消されていた。
 /// 描画後はカーソルを行頭に置くので、表示中に出たログは行頭から書かれ、スピナーはその次の行に移って描画を続ける。
-/// 出力がリダイレクトされているとき (Hooks・パイプ) は何も描画しない。
+/// 描画先はログと同じ stderr (stdout はコマンドの結果だけにする)。stderr がリダイレクトされているとき (Hooks・パイプ) は何も描画しない。
 /// </remarks>
 public class ProgressSpinner : IDisposable
 {
@@ -29,7 +29,7 @@ public class ProgressSpinner : IDisposable
     public ProgressSpinner(string message = "")
     {
         _message = message;
-        _animationTask = Console.IsOutputRedirected ? Task.CompletedTask : Task.Run(AnimateAsync);
+        _animationTask = Console.IsErrorRedirected ? Task.CompletedTask : Task.Run(AnimateAsync);
     }
 
     public void Dispose()
@@ -65,8 +65,8 @@ public class ProgressSpinner : IDisposable
                     currentMessage = _message;
                 }
 
-                // 1 回の Write で書く (Console.Out は同期化されているので、他スレッドのログと途中で混ざらない)
-                Console.Write($"\r\e[33m{_frames[frameIndex]}\e[0m {currentMessage}{ClearToEndOfLine}\r");
+                // 1 回の Write で書く (Console.Error は同期化されているので、他スレッドのログと途中で混ざらない)
+                Console.Error.Write($"\r\e[33m{_frames[frameIndex]}\e[0m {currentMessage}{ClearToEndOfLine}\r");
                 frameIndex = (frameIndex + 1) % _frames.Length;
 
                 await Task.Delay(100, _cancellationTokenSource.Token);
@@ -78,7 +78,7 @@ public class ProgressSpinner : IDisposable
         }
         finally
         {
-            Console.Write($"\r{ClearToEndOfLine}");
+            Console.Error.Write($"\r{ClearToEndOfLine}");
             Console.CursorVisible = true;
         }
     }

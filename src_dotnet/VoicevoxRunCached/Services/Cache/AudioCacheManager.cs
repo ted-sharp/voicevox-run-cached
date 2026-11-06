@@ -27,7 +27,7 @@ public class AudioCacheManager
         _disk = new DiskCacheStore(settings, _logger, clock);
         _eviction = new CacheEvictionPolicy(_disk, settings, _logger, clock);
 
-        _logger.LogInformation("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}", _disk.Directory);
+        _logger.LogDebug("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}", _disk.Directory);
     }
 
     /// <summary>

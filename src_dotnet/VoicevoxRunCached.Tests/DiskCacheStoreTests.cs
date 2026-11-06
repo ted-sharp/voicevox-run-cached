@@ -72,7 +72,7 @@ public class DiskCacheStoreTests
     }
 
     [Test]
-    public async Task LoadAsync_ExpiredMetadata_DeletesAndReturnsNull()
+    public async Task LoadAsync_NotUsedWithinExpiration_DeletesAndReturnsNull()
     {
         var (store, dir) = CreateStore(expirationDays: 1);
         try
@@ -83,13 +83,9 @@ public class DiskCacheStoreTests
 
             await store.SaveAsync(request, data, key);
 
-            // メタデータの CreatedAt を 2 日前に書き換える
+            // 最終利用日時 (meta.json の更新日時) を 2 日前にする
             var metaPath = Path.Combine(dir, $"{key}.meta.json");
-            var meta = System.Text.Json.JsonSerializer.Deserialize<CacheMetadata>(await File.ReadAllTextAsync(metaPath));
-            await Assert.That(meta).IsNotNull();
-            meta!.CreatedAt = DateTime.UtcNow.AddDays(-2);
-            await File.WriteAllTextAsync(metaPath,
-                System.Text.Json.JsonSerializer.Serialize(meta));
+            File.SetLastWriteTimeUtc(metaPath, DateTime.UtcNow.AddDays(-2));
 
             var loaded = await store.LoadAsync(key);
 
@@ -97,6 +93,32 @@ public class DiskCacheStoreTests
             // 期限切れエントリは削除される
             await Assert.That(File.Exists(Path.Combine(dir, $"{key}.opus"))).IsFalse();
             await Assert.That(File.Exists(metaPath)).IsFalse();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    public async Task LoadAsync_Hit_UpdatesLastUsed_SoFrequentlyUsedEntriesDoNotExpire()
+    {
+        // 回帰: 期限を作成日時から数えていたため、毎日使う定型文も ExpirationDays ごとに消えて作り直しになっていた
+        var clock = new MutableClock(DateTime.UtcNow);
+        var dir = Path.Combine(Path.GetTempPath(), "vrc_disk_" + Guid.NewGuid().ToString("N"));
+        var settings = new CacheSettings { Directory = dir, ExpirationDays = 30, UseExecutableBaseDirectory = false };
+        var store = new DiskCacheStore(settings, NullLogger.Instance, clock);
+        try
+        {
+            var key = "frequently-used";
+            var metaPath = Path.Combine(dir, $"{key}.meta.json");
+            await store.SaveAsync(new VoiceRequest("作業が完了しました。", 1), [0x01], key);
+            var createdAt = clock.UtcNow;
+
+            clock.UtcNow = createdAt.AddDays(20);
+            await Assert.That(await store.LoadAsync(key)).IsNotNull();
+            await Assert.That(File.GetLastWriteTimeUtc(metaPath)).IsEqualTo(clock.UtcNow);
+
+            // 作成から 40 日経っていても、最後に使ったのが 20 日前なら期限内
+            clock.UtcNow = createdAt.AddDays(40);
+            await Assert.That(await store.LoadAsync(key)).IsNotNull();
         }
         finally { Directory.Delete(dir, true); }
     }

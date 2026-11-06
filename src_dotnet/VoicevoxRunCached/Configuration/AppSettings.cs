@@ -41,7 +41,8 @@ public class CacheSettings
     public bool UseExecutableBaseDirectory { get; set; }
 
     /// <summary>
-    /// キャッシュ保存時の Opus ビットレート (kbps, VBR)。キャッシュキーには含まれないため、変更しても既存キャッシュはそのまま使われる。
+    /// Opus のビットレート (kbps, VBR)。キャッシュ・フィラー (<c>--init</c>)・<c>--out .opus</c> の保存に使う。
+    /// キャッシュキーには含まれないため、変更しても既存キャッシュはそのまま使われる。
     /// </summary>
     public int OpusBitrateKbps { get; set; } = AudioConstants.OpusBitrateKbps;
 }

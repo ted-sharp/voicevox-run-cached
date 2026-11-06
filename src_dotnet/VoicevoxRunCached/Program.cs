@@ -34,15 +34,15 @@ static class Program
 
             if (!String.IsNullOrEmpty(ex.SuggestedSolution))
             {
-                ConsoleHelper.WriteWarning($"解決策: {ex.SuggestedSolution}");
+                ConsoleHelper.WriteErrorDetail($"解決策: {ex.SuggestedSolution}");
             }
 
             if (!String.IsNullOrEmpty(ex.Context))
             {
-                ConsoleHelper.WriteInfo($"コンテキスト: {ex.Context}");
+                ConsoleHelper.WriteErrorDetail($"コンテキスト: {ex.Context}");
             }
 
-            ConsoleHelper.WriteDebug($"エラーコード: {ex.ErrorCode}");
+            ConsoleHelper.WriteErrorDetail($"エラーコード: {ex.ErrorCode}");
             return ErrorCodes.GetExitCode(ex.ErrorCode);
         }
         catch (OperationCanceledException)

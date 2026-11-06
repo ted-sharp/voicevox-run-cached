@@ -59,7 +59,7 @@ VoicevoxRunCached.exe "テストです。" --speaker 2 --speed 1.2 --pitch 0.1
 # ファイル保存 (再生なし)
 VoicevoxRunCached.exe "保存します。" --out out.opus --no-play
 
-# キャッシュのみ (API 呼ばない)
+# キャッシュのみ (API を呼ばない。エンジンが止まっていても再生できる)
 VoicevoxRunCached.exe "既に生成済みのテキスト" --cache-only
 
 # 詳細タイミング表示
@@ -84,12 +84,12 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 | `--pitch <value>` | ピッチ (目安 -0.15–0.15) | 0.0 |
 | `--volume <value>` | 音量。0 以上 (目安 0.0–2.0) | 1.0 |
 | `--no-cache` | キャッシュを使わない | false |
-| `--cache-only` | キャッシュのみ使う (API を呼ばない) | false |
+| `--cache-only` | キャッシュのみ使う (API を呼ばず、エンジンにも接続しない。キャッシュに無い文があれば終了コード 4) | false |
 | `--out, -o <path>` | ファイル保存 (`.wav` / `.opus` を拡張子で判定。それ以外はエラー) | — |
 | `--no-play` | 再生しない (`--out` と併用推奨) | false |
 | `--verbose` | 再生時間と総実行時間を表示 | false |
-| `--log-level <level>` | `trace`/`debug`/`info`/`warn`/`error`/`crit`/`none` | info |
-| `--log-format <fmt>` | `simple` / `json` | simple |
+| `--log-level <level>` | `trace`/`debug`/`info`/`warn`/`error`/`crit`/`none` (`none` はログを一切出さない) | info |
+| `--log-format <fmt>` | `simple` / `json` (`json` は 1 イベント 1 行の JSON。ファイル出力も同じ書式) | simple |
 | `--help, -h` | ヘルプ表示 | — |
 
 `--speed` / `--pitch` / `--volume` は小数第 2 位に丸めて使われる (キャッシュキーも丸めた値で作る)。「目安」は VOICEVOX エディタの調整範囲で、本ツールが検証するのは数値であること・speed が 0 より大きいこと・volume と speaker が 0 以上であることだけ。不正な値はエラーで終了する。
@@ -109,6 +109,13 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 | 130 | Ctrl+C でキャンセル (後片付けが終わらないときにもう一度 Ctrl+C を押すと強制終了する。その場合の終了コードは OS 既定の値) |
 
 2 は使わない (Claude Code の Hooks では終了コード 2 がブロッキングエラーとして扱われるため。[Claude Code Hooks との連携](#claude-code-hooks-との連携) を参照)。
+
+### 出力先と文字コード
+
+- **stdout**: コマンドの結果と進捗 (`speakers` / `devices` の一覧、`Processing segments...` など)。`devices --json` の stdout は JSON だけになる
+- **stderr**: ログ、エラー・警告とその補足 (解決策など)、起動待ちのスピナー
+- 色 (ANSI エスケープ) は、出力先がコンソールのときだけ付く
+- リダイレクト・パイプ時は BOM なし UTF-8 で出力する (コンソールに直接出すときは従来どおりコンソールのコードページ)。Windows PowerShell 5.1 で `$x = VoicevoxRunCached.exe speakers` のように取り込むと、既定ではコンソールのコードページで解釈されて文字化けする。その場合は `[Console]::OutputEncoding = [Text.Encoding]::UTF8` を先に実行する
 
 ## 設定 (`appsettings.json`)
 
@@ -130,14 +137,14 @@ VoicevoxRunCached --clear               # キャッシュ全削除
   "Cache": {
     "Directory": "./cache/audio/",
     "UseExecutableBaseDirectory": true,  // 相対パスを exe 基準で解決
-    "ExpirationDays": 30,
-    "MaxSizeGB": 1.0,             // 上限超過時に古い順に eviction
-    "OpusBitrateKbps": 32         // キャッシュ Opus のビットレート 12-128 (キーに含まれないので既存キャッシュは流用)
+    "ExpirationDays": 30,         // 最後に使ってからこの日数を過ぎたキャッシュを削除 (使うたびに延長)
+    "MaxSizeGB": 1.0,             // 上限超過時は最後に使ったのが古い順に削除
+    "OpusBitrateKbps": 32         // Opus のビットレート 12-128。キャッシュ・フィラー・--out .opus 共通 (キーに含まれないので既存キャッシュは流用)
   },
   "Audio": {
     "OutputDevice": -1,           // -1 = OS デフォルト, 0+ = WaveOut index
     "Volume": 1.0,                // 再生音量 0.0-1.0 (WaveOut の上限が 1.0)
-    "PrepareDevice": false,       // true で起動時に無音再生してデバイスを温める
+    "PrepareDevice": false,       // true で再生前に小音量の音を流してデバイスを温める (読み上げで再生するときだけ)
     "PreparationDurationMs": 200,
     "PreparationVolume": 0.01,
     "DesiredLatency": 100,        // WaveOutEvent の希望レイテンシ (ms)
@@ -151,7 +158,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
   },
   "Logging": {
     "Level": "info",              // trace|debug|info|warn|error|crit|none
-    "Format": "simple",           // simple | json
+    "Format": "simple",           // simple | json (1 イベント 1 行の JSON。コンソール・ファイル共通)
     "EnableFileLogging": false,   // true でファイル出力を有効化
     "MaxFileSizeMb": 10,          // ログファイル単体の最大サイズ (MB)
     "MaxFileCount": 5             // ローテーションで保持するファイル数
@@ -166,7 +173,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 
 ### セグメント単位キャッシュ
 
-入力テキストは文末記号 (`。！？!?`) と改行で文単位に分割される。半角 `.` は直後が空白か文末のときだけ区切る (`3.14` や `Node.js` は割らない)。100 文字を超える文は強制的に分割する。各セグメントはテキスト・スピーカー ID・速度・ピッチ・音量から作る SHA256 をキーに、`.opus` (Ogg Opus) + `.meta.json` として独立にキャッシュされる。v2 以前の `.mp3` キャッシュは使われず、次回の新規合成時か `--clear` で削除される。
+入力テキストは文末記号 (`。！？!?`) と改行で文単位に分割される。半角 `.` は直後が空白か文末のときだけ区切る (`3.14` や `Node.js` は割らない)。100 文字を超える文は、後半にある最後の読点 (`、` `，`) か空白の直後で分割する (無ければ 100 文字目で切るが、絵文字などのサロゲートペアは割らない)。各セグメントはテキスト・スピーカー ID・速度・ピッチ・音量から作る SHA256 をキーに、`.opus` (Ogg Opus) + `.meta.json` として独立にキャッシュされる。v2 以前の `.mp3` キャッシュは使われず、次回の新規合成時か `--clear` で削除される。
 
 - **部分変更でも再利用**: テキストの一部だけ変えても、変更されていない文はキャッシュヒット
 - **即時再生**: キャッシュ済みセグメントは待機なしで再生開始
@@ -185,6 +192,10 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 `Filler.Enabled: true` にすると、セグメント生成待ちの隙間に「えーっと、」「あのー、」などのフィラー音声を再生して無音を回避する (既定は無効)。
 
 フィラーは `--init` で事前生成したキャッシュからしか再生されない。有効にする前に一度 `--init` を実行しておくこと (未生成だとフィラーは鳴らず、Warning ログが出るだけ)。`--clear` はフィラーのキャッシュも消すので、その後は `--init` をやり直す。
+
+### 同時実行
+
+読み上げ (キャッシュ参照・合成・再生・`--out`) は、一時フォルダのロックファイル (`%TEMP%\VoicevoxRunCached.speech.lock`) で 1 プロセスずつに直列化される。同時に起動すると後から来た方は先の読み上げが終わるまで待つので、音声が重ならず、エンジンへの API 呼び出しや自動起動も 1 つずつになる (Ctrl+C で待機を中止できる)。プロセスが強制終了されてもロックは OS が解放する。`speakers` / `devices` / `--init` / `--clear` は対象外。
 
 ### vs `curl` 直叩き
 
@@ -242,8 +253,10 @@ Total execution time: 2445.4ms
 **注意**:
 - Hooks 環境では `PATH` が不十分な場合があるため、`.exe` のフルパスを直接指定すること。`.bat` 経由は `cmd /c "<バッチのフルパス>"` でラップする
 - パスにスペースが含まれる場合はダブルクォートで囲み、Windows パスの `\` は JSON では `\\` にエスケープする
-- 失敗しても終了コード 2 は返さないので、Claude Code の動作は止めない (Hooks では 2 がブロッキングエラーで、Stop フックなら Claude の停止が止められる)。失敗は 0 以外の終了コードとしてユーザーに表示されるだけ
-- 既定 (`AutoStartEngine: true`) ではエンジンが停止していても自動起動されるが、起動を待つ分だけ最初の通知が遅れる。遅延を避けたい場合はエンジンを事前に起動しておく (`KeepEngineRunning: true` (既定) なら一度起動したエンジンは常駐する)
+- 失敗しても終了コード 2 は返さないので、Claude Code の動作は止めない (Hooks では 2 がブロッキングエラーで、Stop フックなら Claude の停止が止められる)。失敗は 0 以外の終了コードとしてユーザーに表示されるだけ。エラーメッセージは stderr に UTF-8 で出るので、その表示で失敗の理由もわかる
+- 複数のフック (複数セッションなど) が同時に発火した場合は、後から来た方が先の読み上げの終了を待ってから読み上げる (音声は重ならない)。待ち時間も Hooks の `timeout` に含まれるので、長い文を続けて読ませる場合は `timeout` を長めにする
+- エンジンに接続するのは合成が必要なときだけ。決まった文言の通知は 2 回目以降キャッシュから再生されるので、エンジンが止まっていても起動を待たずにすぐ鳴る
+- キャッシュに無い文を合成するとき、既定 (`AutoStartEngine: true`) ではエンジンが停止していても自動起動されるが、起動を待つ分だけ通知が遅れる。遅延を避けたい場合はエンジンを事前に起動しておく (`KeepEngineRunning: true` (既定) なら一度起動したエンジンは常駐する)
 
 ## 開発
 

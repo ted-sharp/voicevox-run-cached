@@ -1,4 +1,5 @@
 ﻿using System.Runtime.InteropServices;
+using System.Text;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -13,6 +14,7 @@ namespace VoicevoxRunCached.Services.Infrastructure;
 public static class ApplicationBootstrap
 {
     private const int StdOutputHandle = -11;
+    private const int StdErrorHandle = -12;
     private const uint EnableVirtualTerminalProcessing = 0x0004;
 
     /// <summary>
@@ -22,6 +24,9 @@ public static class ApplicationBootstrap
     /// <returns>初期化された設定とロガー</returns>
     public static async Task<(AppSettings settings, Microsoft.Extensions.Logging.ILogger logger)> InitializeAsync(string[] args)
     {
+        // 何か出力する前に、リダイレクト先の文字コードを UTF-8 にする
+        ConfigureRedirectedOutputEncoding();
+
         // ANSIカラーを有効化
         EnableAnsiColors();
 
@@ -43,8 +48,8 @@ public static class ApplicationBootstrap
         });
         var logger = loggerFactory.CreateLogger("VoicevoxRunCached");
 
-        // アプリケーション開始をログ出力
-        logger.LogInformation("VoicevoxRunCached アプリケーションを開始します - バージョン {Version}", AssemblyVersion.Current);
+        // 毎回の起動で出る定型情報なので Debug (Hooks などから繰り返し呼ぶとノイズになる)
+        logger.LogDebug("VoicevoxRunCached アプリケーションを開始します - バージョン {Version}", AssemblyVersion.Current);
 
         return (settings, logger);
     }
@@ -127,21 +132,48 @@ public static class ApplicationBootstrap
     {
         var validationService = new ConfigurationValidationService();
         validationService.ValidateConfiguration(settings);
-        ConsoleHelper.WriteSuccess("✓ 設定の検証が完了しました");
     }
 
     /// <summary>
-    /// ANSIカラーを有効化します
+    /// リダイレクトされている stdout / stderr を BOM なし UTF-8 で書くようにする。
+    /// </summary>
+    /// <remarks>
+    /// 既定ではコンソールのコードページ (日本語 Windows は CP932) で書かれ、UTF-8 として読む側
+    /// (Claude Code の Hooks・jq・Git Bash) で文字化けする。
+    /// <see cref="Console.OutputEncoding"/> は使わない。内部で SetConsoleOutputCP を呼び、
+    /// 終了後も呼び出し元のコンソールのコードページを変えてしまうため。コンソールに直接出す場合は従来どおり。
+    /// </remarks>
+    private static void ConfigureRedirectedOutputEncoding()
+    {
+        var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
+        if (Console.IsOutputRedirected)
+        {
+            Console.SetOut(TextWriter.Synchronized(new StreamWriter(Console.OpenStandardOutput(), utf8) { AutoFlush = true }));
+        }
+
+        if (Console.IsErrorRedirected)
+        {
+            Console.SetError(TextWriter.Synchronized(new StreamWriter(Console.OpenStandardError(), utf8) { AutoFlush = true }));
+        }
+    }
+
+    /// <summary>
+    /// ANSIカラーを有効化します (エラー・ログは stderr に出すので stdout と stderr の両方)
     /// </summary>
     private static void EnableAnsiColors()
     {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            var handle = GetStdHandle(StdOutputHandle);
+            return;
+        }
+
+        foreach (var stdHandle in (int[])[StdOutputHandle, StdErrorHandle])
+        {
+            var handle = GetStdHandle(stdHandle);
             if (GetConsoleMode(handle, out uint mode))
             {
-                mode |= EnableVirtualTerminalProcessing;
-                SetConsoleMode(handle, mode);
+                SetConsoleMode(handle, mode | EnableVirtualTerminalProcessing);
             }
         }
     }

@@ -44,6 +44,12 @@ public class AudioPlayer : IDisposable
     }
 
     /// <summary>
+    /// 再生デバイスの warm-up (<c>Audio.PrepareDevice</c>) をバックグラウンドで始める。
+    /// 再生することが決まった時点で呼ぶと、合成待ちなどと並行して温められる。呼ばなくても再生開始時に始まる。
+    /// </summary>
+    public void BeginDevicePreparation() => _deviceManager.StartPreparation();
+
+    /// <summary>
     /// セグメントが届くたびに順次再生する。次のセグメントが <see cref="AudioConstants.FillerStartDelayMs"/>
     /// 以内に届かない場合はフィラー音声で隙間を埋める。
     /// </summary>

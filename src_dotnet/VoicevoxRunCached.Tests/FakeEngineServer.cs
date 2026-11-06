@@ -91,7 +91,10 @@ internal sealed class FakeEngineServer : IDisposable
         _ => (HttpStatusCode.NotFound, []),
     };
 
-    private static int GetFreePort()
+    /// <summary>
+    /// 空いているポート番号。待ち受けていない (= エンジンが止まっている) URL を作るのにも使う。
+    /// </summary>
+    public static int GetFreePort()
     {
         using var probe = new TcpListener(IPAddress.Loopback, 0);
         probe.Start();
