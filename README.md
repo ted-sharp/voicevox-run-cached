@@ -94,6 +94,22 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 
 `--speed` / `--pitch` / `--volume` は小数第 2 位に丸めて使われる (キャッシュキーも丸めた値で作る)。「目安」は VOICEVOX エディタの調整範囲で、本ツールが検証するのは数値であること・speed が 0 より大きいこと・volume と speaker が 0 以上であることだけ。不正な値はエラーで終了する。
 
+### 終了コード
+
+| コード | 意味 |
+|---|---|
+| 0 | 成功 |
+| 1 | 一般エラー (不正な引数・想定外の例外など) |
+| 3 | エンジンエラー (エンジンの起動失敗・エンジンに接続できない・エンジンが 500/503 を返した) |
+| 4 | キャッシュエラー (`--clear` で削除できなかった等) |
+| 5 | 音声エラー (全セグメント (`--init` では全フィラー) の合成失敗・音声形式の不正・`--out` の保存失敗) |
+| 6 | API エラー (タイムアウト・不正なリクエスト/レスポンス・レート制限など) |
+| 7 | 設定エラー (`appsettings.json` が無い・JSON の書式が不正・値の型や範囲が不正) |
+| 8 | 一部のセグメントだけ合成に失敗 (再生・保存は成功した分だけ行われる。`--init` では一部のフィラーだけ生成に失敗) |
+| 130 | Ctrl+C でキャンセル (後片付けが終わらないときにもう一度 Ctrl+C を押すと強制終了する。その場合の終了コードは OS 既定の値) |
+
+2 は使わない (Claude Code の Hooks では終了コード 2 がブロッキングエラーとして扱われるため。[Claude Code Hooks との連携](#claude-code-hooks-との連携) を参照)。
+
 ## 設定 (`appsettings.json`)
 
 各セクションは `Configuration/AppSettings.cs` の型にバインドされ、FluentValidation で検証される。下記コメントが各設定の役割を兼ねている。
@@ -191,7 +207,7 @@ Total execution time: 2445.4ms
 → エンジンが起動しているか、`appsettings.json` の `BaseUrl` が正しいか確認。`AutoStartEngine: true` の場合は `EnginePath` 自動検出が失敗していないかも確認。
 
 **音声が再生されない**
-→ `VoicevoxRunCached.exe devices --full` で出力デバイス一覧を確認。`Audio.OutputDevice = -1` (OS デフォルト) を試す。`devices` コマンドは WASAPI endpoint を列挙するが、再生本体は `WaveOutEvent` ベースで `OutputDevice` (WaveOut index) のみで選択する。
+→ まず `Audio.OutputDevice = -1` (OS デフォルト) を試す。特定のデバイスで鳴らすには `VoicevoxRunCached.exe devices` の「Audio.OutputDevice (WaveOut index)」欄の番号を `Audio.OutputDevice` に設定する。上段の WASAPI 一覧 (`--full` の `[n]`) とは番号が一致しないことがあるので注意 (デバイス名は WinMM の制約で 31 文字までに切られる)。
 
 **音声の冒頭が途切れる (USB / Bluetooth デバイスで多発)**
 → `Audio.PrepareDevice: true` にして `PreparationDurationMs` を 300–500 に増やす。
@@ -226,6 +242,7 @@ Total execution time: 2445.4ms
 **注意**:
 - Hooks 環境では `PATH` が不十分な場合があるため、`.exe` のフルパスを直接指定すること。`.bat` 経由は `cmd /c "<バッチのフルパス>"` でラップする
 - パスにスペースが含まれる場合はダブルクォートで囲み、Windows パスの `\` は JSON では `\\` にエスケープする
+- 失敗しても終了コード 2 は返さないので、Claude Code の動作は止めない (Hooks では 2 がブロッキングエラーで、Stop フックなら Claude の停止が止められる)。失敗は 0 以外の終了コードとしてユーザーに表示されるだけ
 - 既定 (`AutoStartEngine: true`) ではエンジンが停止していても自動起動されるが、起動を待つ分だけ最初の通知が遅れる。遅延を避けたい場合はエンジンを事前に起動しておく (`KeepEngineRunning: true` (既定) なら一度起動したエンジンは常駐する)
 
 ## 開発

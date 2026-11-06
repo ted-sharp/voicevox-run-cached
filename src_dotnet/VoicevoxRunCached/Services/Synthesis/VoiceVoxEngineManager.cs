@@ -17,11 +17,11 @@ public class VoiceVoxEngineManager : IDisposable
     private Process? _engineProcess;
     private bool _disposed;
 
-    public VoiceVoxEngineManager(VoiceVoxSettings settings, ILogger logger, IClock? clock = null)
+    public VoiceVoxEngineManager(VoiceVoxSettings settings, ILogger logger, IClock clock)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _clock = clock ?? SystemClock.Instance;
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _httpClient = new HttpClient
         {
             Timeout = TimeSpan.FromSeconds(AudioConstants.EngineHealthCheckTimeoutSeconds)
@@ -155,6 +155,11 @@ public class VoiceVoxEngineManager : IDisposable
 
             _logger.LogError("VOICEVOXエンジンの起動タイムアウトが発生しました");
             return false;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Ctrl+C は起動失敗 (EngineNotAvailable) にせず、キャンセルとして呼び出し元へ伝える
+            throw;
         }
         catch (Exception ex)
         {

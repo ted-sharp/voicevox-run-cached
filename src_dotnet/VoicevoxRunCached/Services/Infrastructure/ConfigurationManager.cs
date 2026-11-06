@@ -14,17 +14,22 @@ public static class ConfigurationManager
         ["--log-format"] = "Logging:Format",
     };
 
-    public static IConfiguration BuildConfigurationWithCommandLine(string[] args)
+    /// <param name="args">コマンドライン引数</param>
+    /// <param name="basePath">appsettings.json を探すディレクトリ。省略時は実行ファイルのディレクトリ</param>
+    public static IConfiguration BuildConfigurationWithCommandLine(string[] args, string? basePath = null)
     {
         var processedArgs = ArgumentParser.PreprocessArgs(args);
 
-        var executablePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
-        var executableDirectory = Path.GetDirectoryName(executablePath) ?? Directory.GetCurrentDirectory();
+        if (basePath is null)
+        {
+            var executablePath = Environment.ProcessPath ?? AppContext.BaseDirectory;
+            basePath = Path.GetDirectoryName(executablePath) ?? Directory.GetCurrentDirectory();
+        }
 
         return new ConfigurationBuilder()
-            .SetBasePath(executableDirectory)
-            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-            .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true)
+            .SetBasePath(basePath)
+            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+            .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: false)
             .AddCommandLine(processedArgs, SwitchMappings.ToDictionary())
             .Build();
     }

@@ -5,28 +5,28 @@ namespace VoicevoxRunCached.Services.Cache;
 
 /// <summary>
 /// キャッシュ I/O 系の例外を <see cref="CacheException"/> に変換する共通ロジック。
-/// 現状は CacheEvictionPolicy / AudioCacheManager.ClearAllCacheAsync など、ユーザーに直接 surface する
+/// 現状は CacheEvictionPolicy / AudioCacheManager.ClearAllCacheAsync / FillerManager.ClearFillerCacheAsync (--clear) など、ユーザーに直接 surface する
 /// 読み取り側の cleanup 経路でのみ使用する (Write 経路は best-effort で握り潰すので mapping 不要)。
 /// </summary>
+/// <remarks>
+/// 対象の処理はどれも同期のファイル操作なので同期版だけを持つ。
+/// </remarks>
 internal static class CacheErrorMapper
 {
-    public static async Task<T> WithMappingAsync<T>(
+    public static void WithMapping(
         string operation,
         string? cacheKey,
         string cacheDirectory,
         ILogger logger,
-        Func<Task<T>> action)
+        Action action)
     {
         try
         {
-            return await action();
-        }
-        catch (CacheException)
-        {
-            throw;
+            action();
         }
         catch (VoicevoxRunCachedException)
         {
+            // CacheException を含むドメイン例外は既に変換済み
             throw;
         }
         catch (OperationCanceledException)

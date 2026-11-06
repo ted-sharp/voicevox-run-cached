@@ -1,7 +1,9 @@
 ﻿using System.Text.Json;
+using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Cache;
+using VoicevoxRunCached.Services.Infrastructure;
 
 namespace VoicevoxRunCached.Tests;
 
@@ -17,8 +19,8 @@ public class CacheEvictionPolicyTests
             MaxSizeGb = maxSizeGb,
             UseExecutableBaseDirectory = false
         };
-        var disk = new DiskCacheStore(settings);
-        return (new CacheEvictionPolicy(disk, settings), disk, dir);
+        var disk = new DiskCacheStore(settings, NullLogger.Instance, SystemClock.Instance);
+        return (new CacheEvictionPolicy(disk, settings, NullLogger.Instance, SystemClock.Instance), disk, dir);
     }
 
     private static async Task SeedAsync(DiskCacheStore disk, string key, byte[] data, DateTime createdAt, string text = "seed")

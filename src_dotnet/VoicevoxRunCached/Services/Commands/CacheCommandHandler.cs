@@ -20,9 +20,13 @@ public class CacheCommandHandler
 
     public async Task<int> HandleClearCacheAsync()
     {
-        using var spinner = new ProgressSpinner("Clearing audio cache...");
-        await _cacheManager.ClearAllCacheAsync();
-        _fillerManager.ClearFillerCache();
+        // スピナーは Dispose 時に自分の行を空白で消すので、成功メッセージより先に破棄する
+        // (using var のままだとメッセージを書いた後に消されて表示されない)
+        using (new ProgressSpinner("Clearing audio cache..."))
+        {
+            await _cacheManager.ClearAllCacheAsync();
+            await _fillerManager.ClearFillerCacheAsync();
+        }
 
         _logger.LogInformation("キャッシュをクリアしました");
         ConsoleHelper.WriteSuccess("Cache cleared successfully!");

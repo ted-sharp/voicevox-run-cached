@@ -18,14 +18,14 @@ public class AudioCacheManager
     private readonly ILogger _logger;
     private readonly int _opusBitrateKbps;
 
-    public AudioCacheManager(CacheSettings settings, ILogger? logger = null)
+    public AudioCacheManager(CacheSettings settings, ILogger logger, IClock clock)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger.Instance;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _opusBitrateKbps = settings.OpusBitrateKbps;
-        _disk = new DiskCacheStore(settings, _logger);
-        _eviction = new CacheEvictionPolicy(_disk, settings, _logger);
+        _disk = new DiskCacheStore(settings, _logger, clock);
+        _eviction = new CacheEvictionPolicy(_disk, settings, _logger, clock);
 
         _logger.LogInformation("AudioCacheManager を初期化しました - キャッシュディレクトリ: {CacheDir}", _disk.Directory);
     }
@@ -80,17 +80,13 @@ public class AudioCacheManager
 
     public Task ClearAllCacheAsync(CancellationToken cancellationToken = default)
     {
-        return CacheErrorMapper.WithMappingAsync<object?>("キャッシュのクリア", null, _disk.Directory, _logger, () =>
+        CacheErrorMapper.WithMapping("キャッシュのクリア", null, _disk.Directory, _logger, () =>
         {
             cancellationToken.ThrowIfCancellationRequested();
-            foreach (var file in _disk.GetAudioFiles())
-            {
-                _disk.Delete(Path.GetFileNameWithoutExtension(file));
-            }
-            _disk.DeleteLegacyFiles();
-            _logger.LogInformation("すべてのキャッシュをクリアしました");
-            return Task.FromResult<object?>(null);
+            var deleted = _disk.DeleteAll();
+            _logger.LogInformation("すべてのキャッシュをクリアしました - 削除ファイル数: {Count}", deleted);
         });
+        return Task.CompletedTask;
     }
 
     /// <summary>

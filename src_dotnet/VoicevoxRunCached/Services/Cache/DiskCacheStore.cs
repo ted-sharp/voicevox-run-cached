@@ -1,6 +1,5 @@
 ﻿using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Utilities;
@@ -23,12 +22,12 @@ public class DiskCacheStore
     private readonly ILogger _logger;
     private readonly IClock _clock;
 
-    public DiskCacheStore(CacheSettings settings, ILogger? logger = null, IClock? clock = null)
+    public DiskCacheStore(CacheSettings settings, ILogger logger, IClock clock)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _expiration = TimeSpan.FromDays(settings.ExpirationDays);
-        _logger = logger ?? NullLogger.Instance;
-        _clock = clock ?? SystemClock.Instance;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         // パスの正規化は ApplicationBootstrap.BuildAppSettings 側で完了済み
         EnsureDirectoryExists();
     }
@@ -70,6 +69,11 @@ public class DiskCacheStore
             var audioData = await File.ReadAllBytesAsync(audioPath, cancellationToken);
             _logger.LogDebug("ディスクキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, audioData.Length);
             return audioData;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Ctrl+C で読み込みが中断されただけなので、壊れたファイル扱いで削除しない
+            throw;
         }
         catch (Exception ex)
         {
@@ -127,19 +131,29 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// キャッシュディレクトリ内の音声ファイル一覧を取得。
+    /// --clear 用。キャッシュディレクトリ内の音声 (Opus / 旧 MP3) と meta.json をすべて削除する。
     /// </summary>
-    public string[] GetAudioFiles()
+    /// <remarks>
+    /// best-effort の <see cref="Delete"/> と違い失敗を握りつぶさない。呼び出し元
+    /// (<see cref="AudioCacheManager.ClearAllCacheAsync"/>) が CacheErrorMapper で CacheException に変換する。
+    /// </remarks>
+    /// <returns>削除したファイル数</returns>
+    public int DeleteAll()
     {
-        try
+        if (!System.IO.Directory.Exists(_settings.Directory))
+            return 0;
+
+        string[] patterns = [$"*{AudioExtension}", "*.meta.json", $"*{LegacyAudioExtension}"];
+        int deleted = 0;
+        foreach (var pattern in patterns)
         {
-            return System.IO.Directory.GetFiles(_settings.Directory, $"*{AudioExtension}");
+            foreach (var path in System.IO.Directory.EnumerateFiles(_settings.Directory, pattern))
+            {
+                File.Delete(path);
+                deleted++;
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "ファイル一覧の取得に失敗: {Directory}", _settings.Directory);
-            return Array.Empty<string>();
-        }
+        return deleted;
     }
 
     /// <summary>

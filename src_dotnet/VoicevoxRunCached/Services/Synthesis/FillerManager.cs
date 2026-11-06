@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Cache;
@@ -13,29 +12,30 @@ public class FillerManager
     private readonly ILogger _logger;
     private string? _lastUsedFiller;
 
-    public FillerManager(FillerSettings settings, VoiceVoxSettings voiceVoxSettings, ILogger? logger = null)
+    public FillerManager(FillerSettings settings, VoiceVoxSettings voiceVoxSettings, ILogger logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         ArgumentNullException.ThrowIfNull(voiceVoxSettings);
         _defaultSpeaker = voiceVoxSettings.DefaultSpeaker;
-        _logger = logger ?? NullLogger.Instance;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _logger.LogInformation("FillerManager を初期化しました - 有効: {Enabled}, ディレクトリ: {Directory}",
             _settings.Enabled, _settings.Directory);
     }
 
-    public async Task InitializeFillerCacheAsync(VoiceVoxApiClient apiClient, CancellationToken cancellationToken = default)
+    /// <returns>生成を試みた件数と成否。生成済みでスキップしたフィラーは数えない</returns>
+    public async Task<SynthesisResult> InitializeFillerCacheAsync(VoiceVoxApiClient apiClient, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(apiClient);
 
         if (!_settings.Enabled)
         {
             _logger.LogInformation("フィラー機能が無効化されているため、初期化をスキップします");
-            return;
+            return default;
         }
 
         Directory.CreateDirectory(_settings.Directory);
-        DeleteFiles($"*{DiskCacheStore.LegacyAudioExtension}");
+        DeleteLegacyFiles();
         _logger.LogInformation("フィラーキャッシュの初期化を開始します - テキスト数: {Count}", _settings.FillerTexts.Length);
 
         using var spinner = new ProgressSpinner("Initializing filler cache...");
@@ -43,6 +43,8 @@ public class FillerManager
         await apiClient.InitializeSpeakerAsync(_defaultSpeaker, cancellationToken);
 
         int processed = 0;
+        int attempted = 0;
+        int failed = 0;
         int total = _settings.FillerTexts.Length;
 
         foreach (var fillerText in _settings.FillerTexts)
@@ -61,6 +63,7 @@ public class FillerManager
                 continue;
             }
 
+            attempted++;
             try
             {
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(fillerRequest, cancellationToken);
@@ -75,11 +78,33 @@ public class FillerManager
             }
             catch (Exception ex)
             {
+                failed++;
                 _logger.LogWarning(ex, "フィラー音声の生成に失敗: \"{Text}\"", fillerText);
             }
         }
 
-        _logger.LogInformation("フィラーキャッシュの初期化が完了しました - 項目数: {Count}", _settings.FillerTexts.Length);
+        _logger.LogInformation("フィラーキャッシュの初期化が完了しました - 生成: {Success}, 失敗: {Failure}, 生成済み: {Skipped}",
+            attempted - failed, failed, total - attempted);
+        return new SynthesisResult(attempted, attempted - failed, failed);
+    }
+
+    /// <summary>
+    /// v2 以前の MP3 フィラーを削除する。もう読まれないファイルなので、削除できなくてもフィラーの生成は続ける
+    /// (本体キャッシュの <see cref="DiskCacheStore.DeleteLegacyFiles"/> と同じく best-effort)。
+    /// </summary>
+    private void DeleteLegacyFiles()
+    {
+        foreach (var file in Directory.GetFiles(_settings.Directory, $"*{DiskCacheStore.LegacyAudioExtension}"))
+        {
+            try
+            {
+                File.Delete(file);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "旧形式フィラーの削除に失敗: {Path}", file);
+            }
+        }
     }
 
     public async Task<byte[]?> GetRandomFillerAudioAsync(CancellationToken cancellationToken = default)
@@ -144,24 +169,21 @@ public class FillerManager
     }
 
     /// <summary>
-    /// フィラーキャッシュを削除する (旧形式の MP3 も含む)。
+    /// フィラーキャッシュを削除する (旧形式の MP3 も含む)。失敗は CacheException として呼び出し元に伝える。
     /// </summary>
-    public void ClearFillerCache()
+    public Task ClearFillerCacheAsync()
     {
-        DeleteFiles($"*{DiskCacheStore.AudioExtension}");
-        DeleteFiles($"*{DiskCacheStore.LegacyAudioExtension}");
-    }
-
-    private void DeleteFiles(string searchPattern)
-    {
-        if (!Directory.Exists(_settings.Directory))
-            return;
-
-        foreach (var file in Directory.GetFiles(_settings.Directory, searchPattern))
+        string[] searchPatterns = [$"*{DiskCacheStore.AudioExtension}", $"*{DiskCacheStore.LegacyAudioExtension}"];
+        CacheErrorMapper.WithMapping("フィラーキャッシュのクリア", null, _settings.Directory, _logger, () =>
         {
-            try
-            { File.Delete(file); }
-            catch (Exception ex) { _logger.LogDebug(ex, "Failed to delete file: {File}", file); }
-        }
+            if (!Directory.Exists(_settings.Directory))
+                return;
+
+            foreach (var file in searchPatterns.SelectMany(p => Directory.GetFiles(_settings.Directory, p)))
+            {
+                File.Delete(file);
+            }
+        });
+        return Task.CompletedTask;
     }
 }

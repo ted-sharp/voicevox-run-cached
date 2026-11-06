@@ -49,6 +49,11 @@ public class ConfigurationException : VoicevoxRunCachedException
         : base(errorCode, message, userMessage, suggestedSolution, "Configuration")
     {
     }
+
+    public ConfigurationException(string errorCode, string message, string userMessage, Exception innerException, string? suggestedSolution = null)
+        : base(errorCode, message, userMessage, innerException, suggestedSolution, "Configuration")
+    {
+    }
 }
 
 /// <summary>

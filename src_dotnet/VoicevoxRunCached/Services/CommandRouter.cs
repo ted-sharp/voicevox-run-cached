@@ -83,7 +83,7 @@ public class CommandRouter
         {
             _logger.LogInformation("コマンド実行がキャンセルされました: {Command}", command);
             ConsoleHelper.WriteLine("操作がキャンセルされました。");
-            return 0;
+            return ErrorCodes.CancelledExitCode;
         }
         catch (Exception ex)
         {

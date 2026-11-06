@@ -21,9 +21,14 @@ public record TextToSpeechOptions(
 public static class ArgumentParser
 {
     // フラグ引数の定義（--flag → --flag true）
+    // 値を取らないコマンド (--init 等) も含める。含めないと IConfiguration の読み込みで直後の引数が
+    // そのコマンドの値として消費され、--init --log-level debug のログレベルが効かない
     // S3887対応: FrozenSetを使用して不変コレクションに
     public static readonly FrozenSet<string> FlagArgs = new[]
     {
+        "--init",
+        "--clear",
+        "--test",
         "--verbose",
         "--no-cache",
         "--cache-only",

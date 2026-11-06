@@ -47,9 +47,9 @@ task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube 
 
 **Cache Data Format**: キャッシュ由来の `TextSegment.AudioData` は **Ogg Opus**、今回合成したものは **WAV** (VOICEVOX は 24kHz)。両者が混在するため、音声バイト列を読むときは必ず `AudioFormatDetector.CreateWaveStream` で形式判定する (`WaveFileReader` 決め打ち禁止)。Opus はデコード後 **48kHz** になるのでセグメント間でサンプルレートが異なる。再生はセグメントごとに `Init` するので問題ないが、結合する `AudioExportService` は 48kHz mono 16bit に揃えてから書く。
 
-**Streaming Playback**: `TextToSpeechProcessor.SynthesizeAndPlayAsync` で `Channel<TextSegment>` を介した producer (`SegmentProducer.ProduceAsync`) / consumer (`AudioPlayer.PlayStreamingAsync`) を並走させる。キャッシュ済みセグメントは即座に channel に流して再生開始、未キャッシュ分は producer が直列に API を叩きながら順次 channel に流す。consumer 側が `AudioConstants.FillerStartDelayMs` 以内に次セグメントを取れない場合は `FillerManager.GetRandomFillerAudioAsync` で相槌音声を挿入して無音を回避する。片側の例外は linked CTS で双方を停止する。キャッシュ書き込みは channel 書き込みの後で fire-and-forget して producer の次の API 呼び出しを遅らせない (producer 終了時に `finally` 内で `Task.WhenAll` 待機、例外パスでも保証)。`writer.TryComplete()` は `pendingCacheSaves` の `WhenAll` より**前**に呼ぶこと — 順序を逆にすると最終セグメント再生後の `WaitToReadAsync` が `FillerStartDelayMs` を超え、フィラーを誤発火する。
+**Streaming Playback**: `TextToSpeechProcessor.SynthesizeAndPlayAsync` で `Channel<TextSegment>` を介した producer (`SegmentProducer.ProduceAsync`) / consumer (`AudioPlayer.PlayStreamingAsync`) を並走させる。キャッシュ済みセグメントは即座に channel に流して再生開始、未キャッシュ分は producer が直列に API を叩きながら順次 channel に流す。consumer 側が `AudioConstants.FillerStartDelayMs` 以内に次セグメントを取れない場合は `FillerManager.GetRandomFillerAudioAsync` で相槌音声を挿入して無音を回避する。片側の例外は `WhenAllOrCancelOnFaultAsync` が linked CTS をキャンセルしてもう一方も即座に止める (`Task.WhenAll` だけで待つと両方が終わるまで戻らず、再生が落ちても残りの合成を続けてしまう)。キャッシュ書き込みは channel 書き込みの後で fire-and-forget して producer の次の API 呼び出しを遅らせない (producer 終了時に `finally` 内で `Task.WhenAll` 待機、例外パスでも保証)。`writer.TryComplete()` は `pendingCacheSaves` の `WhenAll` より**前**に呼ぶこと — 順序を逆にすると最終セグメント再生後の `WaitToReadAsync` が `FillerStartDelayMs` を超え、フィラーを誤発火する。
 
-**Audio Format Chain**: API (WAV) → `OpusCodec.EncodeWav` (Concentus, VOIP/VBR、`Cache.OpusBitrateKbps` 既定 32kbps。Opus 非対応レートは 48kHz にリサンプル) → `.opus` + `.meta.json` でキャッシュ。ビットレートはキャッシュキーに含めない (変えても既存キャッシュは流用され、作り直すなら `--clear`)。**デコード (`OpusCodec.DecodeToWav`) は 48kHz 固定** — Concentus 2.2.2 は 24kHz エンコード→24kHz デコードで出力がほぼ無音になる (`OpusCodecTests` が回帰検知)。v2 以前の `.mp3` キャッシュは読まず、`DiskCacheStore.DeleteLegacyFiles` (maintenance / `--clear`) で削除される。
+**Audio Format Chain**: API (WAV) → `OpusCodec.EncodeWav` (Concentus, VOIP/VBR、`Cache.OpusBitrateKbps` 既定 32kbps。Opus 非対応レートは 48kHz にリサンプル) → `.opus` + `.meta.json` でキャッシュ。ビットレートはキャッシュキーに含めない (変えても既存キャッシュは流用され、作り直すなら `--clear`)。**デコード (`OpusCodec.DecodeToWav`) は 48kHz 固定** — Concentus 2.2.2 は 24kHz エンコード→24kHz デコードで出力がほぼ無音になる (`OpusCodecTests` が回帰検知)。v2 以前の `.mp3` キャッシュは読まず、`DiskCacheStore.DeleteLegacyFiles` (maintenance) と `DiskCacheStore.DeleteAll` (`--clear`) で削除される。
 
 **Engine Lifecycle**: `VoiceVoxEngineManager` が起動済みプロセスを検出してから launch。VOICEVOX / AIVIS Speech 両対応 (設定で切替)。`KeepEngineRunning: true` で常駐、false で終了時に停止。
 
@@ -120,6 +120,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 1. `Services/Commands/` にハンドラクラス (例: `XxxCommandHandler`) を作成。共通インターフェースは無く、具象クラスで `HandleXxxAsync()` 等の固有メソッドを公開する
 2. `Services/AppServiceProvider.cs` に `[Singleton(typeof(XxxCommandHandler))]` 属性を追加して登録
 3. `CommandRouter` のコンストラクタ引数として受け取り、`ExecuteCommandAsync` の switch 文に分岐を追加
+4. `--xxx` 形式で値を取らないコマンドなら `ArgumentParser.FlagArgs` にも追加する (無いと設定の読み込みで直後の引数がコマンドの値として消費され、`--xxx --log-level debug` 等が効かない。`CommandLineConfigurationTests` に追加)
 
 テキスト読み上げ系の追加機能は、独立したハンドラを作らず `TextToSpeechProcessor` に直接機能追加するか、`AudioExportService` のような単機能ヘルパに分けるのが現状の構成。
 
@@ -140,6 +141,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 - SHA256 生成ロジックは**変更禁止** (既存キャッシュが全て無効化される)
 - 期限切れは `ExpirationDays`、容量上限は `MaxSizeGB` で eviction。`AudioCacheManager.RunMaintenanceAsync` で両方まとめて実行し、`SegmentProducer` が新規保存のあった実行の最後に 1 回だけ呼ぶ (保存ごとに全走査しない)
 - 期限切れは読み込み時 (`DiskCacheStore.LoadAsync`) にも判定され、該当ファイルは削除される
+- 読み込み時・eviction の削除 (`DiskCacheStore.Delete`) は best-effort で失敗を Warning に留めるが、`--clear` (`DiskCacheStore.DeleteAll` / `FillerManager.ClearFillerCacheAsync`) は削除そのものが目的なので、失敗を握りつぶさず `CacheErrorMapper` で `CacheException` にする (削除できていないのに成功表示しないため)。`--init` の旧形式 (`.mp3`) フィラー削除は、もう読まれないファイルの後片付けなので best-effort (Warning を出してフィラー生成を続ける)
 - キャッシュは executable と同じディレクトリに保存される (`UseExecutableBaseDirectory: true`)
 - `.meta.json` の検証 (`DiskCacheStore.IsMetadataValid`) は Text 非空・SpeakerId >= 0 (speaker 0 は実在)・CreatedAt 設定済みのみ。パラメータ一致はキー自体が保証するので照合しない
 
@@ -160,11 +162,13 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 - 現状 `SegmentProducer.ProduceAsync` の `foreach` で 1 件ずつ処理されているため OK
 - 並列化を試みる場合は VOICEVOX エンジン側の制約を実機で確認してから、クライアント内に lock を入れること
 - speaker 初期化 (`/initialize_speaker`) は `TextToSpeechProcessor.SynthesizeAndPlayAsync` 側からセッション内 1 回だけ呼ぶ
-- リトライ・エラー変換は `VoiceVoxApiClient.ExecuteApiAsync` の単一 catch ブロック (`MapToApiException` ヘルパ) でまとめて適用 (各メソッドは生の HTTP 呼び出しだけ書く)
+- リトライ・エラー変換は `VoiceVoxApiClient.ExecuteApiAsync` の単一 catch ブロック (`MapToApiException` ヘルパ) でまとめて適用 (各メソッドは生の HTTP 呼び出しだけ書く)。エラーコードは `MapToErrorCode` が決める: HTTP ステータスがあればステータス別、無ければ (接続拒否・応答の途中切断) `EngineNotAvailable`
 
 ### Logging Conventions
 
 **インスタンスクラスは必ずコンストラクタで `Microsoft.Extensions.Logging.ILogger` を受け取り `_logger.LogXxx(...)` で書く** (CommandHandler 系も例外なし)。`Serilog.Log` の static 呼び出しは Serilog 設定そのもの (`LoggingManager`)、ブートストラップ (`Program` / `ApplicationBootstrap`)、static utility (`AudioConversionUtility`, `OpusCodec`) など、DI が使えない箇所のみに残す。
+
+DI 登録クラスのコンストラクタでは `ILogger` / `IClock` などのサービスを省略可能 (`ILogger? logger = null` + `?? NullLogger.Instance`) にしない。Jab は既定値付き引数を未登録でも黙って既定値で生成するため、JAB0002 による登録漏れ検出が効かなくなる。DI 外で手組みするクラス (`DiskCacheStore` / `CacheEvictionPolicy`) も同じく必須にする (渡し忘れると黙ってログ無し・実時刻になる)。テストでは `NullLogger.Instance` / `SystemClock.Instance` を明示的に渡す。
 
 `ILogger` と `ConsoleHelper` の使い分け:
 - **`ILogger`** = ログ用途。Serilog の構造化ログ・ファイル/JSON sink に流れる。内部エラー・警告・運用追跡情報はこちらに書く
@@ -181,7 +185,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 
 ## Configuration
 
-`appsettings.json` で `VoiceVox` / `Cache` / `Audio` / `Filler` / `Logging` / `Test` セクションを定義。各セクションは `Configuration/AppSettings.cs` の型にバインドされ `Validators.cs` (FluentValidation) で検証される。Serilog は `LoggingManager` が `LoggingSettings` を使ってプログラム的に構成 (`appsettings.json` から `Serilog:*` セクションを直接読み込んでいるわけではない)。詳細プロパティは appsettings.json と AppSettings.cs を直接参照。
+`appsettings.json` で `VoiceVox` / `Cache` / `Audio` / `Filler` / `Logging` / `Test` セクションを定義。各セクションは `Configuration/AppSettings.cs` の型にバインドされ `Validators.cs` (FluentValidation) で検証される。読み込み・バインドの失敗 (JSON の構文エラー・型の不一致・ファイル無し) も `ApplicationBootstrap.LoadSettings` が `ConfigurationException` (終了コード 7) にする。Serilog は `LoggingManager` が `LoggingSettings` を使ってプログラム的に構成 (`appsettings.json` から `Serilog:*` セクションを直接読み込んでいるわけではない)。詳細プロパティは appsettings.json と AppSettings.cs を直接参照。
 
 ## Pre-Commit Hooks and Code Quality
 
@@ -224,11 +228,13 @@ Options:
 
 **API**: 全呼び出し直列。Connection timeout はデフォルト 30 秒で全 HTTP リクエストに適用。CLI 引数は `ArgumentParser` で検証し、数値でない値・負の speaker/volume・0 以下の speed は `InvalidArguments` で即エラーにする (黙ってデフォルト値で続行しない)。範囲判定は F2 に丸めた後の値で行う。`--out` 等の値に `--xxx` が来た場合も値の指定漏れとしてエラー。本文 (`args[0]`) は `PreprocessArgs` にかけない (`-sample` が `-s ample` に割られるため)。speaker ID の存在は合成が必要なときだけ `TextToSpeechProcessor.EnsureSpeakerExists` が `/speakers` で事前確認し、無ければ `InvalidArguments` (VOICEVOX は `/initialize_speaker` で 500 を返しリトライで十数秒待たされるため)。全セグメントがキャッシュヒットなら照会しない。`InvalidArguments` は CommandRouter でスタックトレースなしの Warning ログになる。
 
+**Exit Codes**: `ErrorCodes.GetExitCode` がエラーコードの prefix から決める (ENGINE=3, CACHE=4, AUDIO=5, API=6, CONFIG=7, その他=1)。一部セグメントの合成失敗は `ErrorCodes.PartialFailureExitCode` (8)、全セグメント失敗は `AudioGenerationFailed` (5)。`--init` のフィラー生成も同じ (`InitCommandHandler`)。**終了コード 2 は使わない** — Claude Code の Hooks では 2 がブロッキングエラーで、Stop フックから呼ばれた本ツールの失敗が Claude の停止を止めてしまう (`ErrorCodesTests` が回帰検知)。Ctrl+C は `ErrorCodes.CancelledExitCode` (130) で、`CommandRouter` と `Program` の `OperationCanceledException` catch の両方で返す。`CancellationManager` は 1 回目の Ctrl+C だけ握ってキャンセルを要求し (`CancelAsync` でコールバックをハンドラのスレッドで実行しない)、2 回目以降は既定の強制終了に任せる。途中に `catch (Exception)` を書くときは、その前に `catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }` を置いてキャンセルを素通しする (握ると別のエラー扱いになったり、キャッシュを破損扱いで消したりする)。README の「終了コード」表と揃えること。
+
 **Text Processing**: `。！？!?` と改行 (半角 `.` は直後が空白・文末のとき) で文単位に分割。空セグメントは除外。各セグメントが独立にキャッシュされる。
 
 **Engine Management**: 起動時に既存 VOICEVOX プロセスを検査してから launch。`EnginePath` 空なら一般的なインストール場所から自動検出。
 
-**Audio Device**: `OutputDevice = -1` で OS デフォルト、`0+` で specific index。`PrepareDevice: true` で起動時に無音再生してデバイスを温め、最初のセグメントの取りこぼしを防ぐ。
+**Audio Device**: `OutputDevice = -1` で OS デフォルト、`0+` で WaveOut index (`WaveOutEvent.DeviceNumber`)。`devices` は WASAPI 一覧に加えて WaveOut index 一覧を出す (netstandard 版 NAudio には `WaveOut.GetCapabilities` が無いため `WaveInterop.waveOutGetDevCaps` で取得)。両者の番号は一致しないことがある。`PrepareDevice: true` で起動時に無音再生してデバイスを温め、最初のセグメントの取りこぼしを防ぐ。
 
 ## Code Standards
 

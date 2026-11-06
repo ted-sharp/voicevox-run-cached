@@ -1,6 +1,7 @@
 ﻿using System.Threading.Channels;
 using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services;
 using VoicevoxRunCached.Services.Audio;
@@ -43,6 +44,30 @@ public class AppServiceProviderTests
                 var router = provider.GetService<CommandRouter>();
 
                 await Assert.That(router).IsNotNull();
+            }
+        }
+        finally
+        {
+            DeleteDirectory(dir);
+        }
+    }
+
+    [Test]
+    public async Task CancelledCommand_ReturnsCancelledExitCode()
+    {
+        // Ctrl+C 相当。キャンセル済みトークンなのでエンジンへの HTTP は送られる前に打ち切られる (エンジン不要)
+        var (provider, dir) = CreateProvider();
+        try
+        {
+            using (provider)
+            {
+                var router = provider.GetService<CommandRouter>();
+                using var cts = new CancellationTokenSource();
+                await cts.CancelAsync();
+
+                var exitCode = await router.ExecuteCommandAsync(["speakers"], cts.Token);
+
+                await Assert.That(exitCode).IsEqualTo(ErrorCodes.CancelledExitCode);
             }
         }
         finally

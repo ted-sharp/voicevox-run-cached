@@ -110,7 +110,7 @@ public class TextToSpeechProcessor
         }
 
         LogElapsedIfVerbose(options.Verbose, totalStartTime);
-        return hasPartialFailure ? 2 : 0;
+        return hasPartialFailure ? ErrorCodes.PartialFailureExitCode : 0;
     }
 
     private async Task<List<TextSegment>> LoadSegmentsAsync(VoiceRequest request, bool noCache, CancellationToken cancellationToken)
@@ -165,7 +165,7 @@ public class TextToSpeechProcessor
             SingleReader = true,
         });
 
-        // 一方が落ちたらもう一方も止める。Linked CTS は finally でキャンセル伝播に使う。
+        // 一方が落ちたらもう一方も止めるための Linked CTS
         using var sharedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
         var producerTask = _producer.ProduceAsync(segments, channel.Writer, request, noCache, sharedCts.Token);
@@ -173,22 +173,37 @@ public class TextToSpeechProcessor
             ? Task.CompletedTask
             : RunPlaybackAsync(channel.Reader, verbose, sharedCts.Token);
 
+        await WhenAllOrCancelOnFaultAsync(producerTask, playbackTask, sharedCts);
+        return await producerTask;
+    }
+
+    /// <summary>
+    /// 2 つの Task の完了を待つ。先に終わった側が失敗していたら、その時点で <paramref name="cts"/> をキャンセルして
+    /// もう一方を止め、その終了を待ってから最初の例外を投げる。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Task.WhenAll(Task[])"/> だけだと両方が終わるまで戻らないため、再生がデバイスエラーで落ちても
+    /// producer が残りの全セグメントを合成し終えるまでエラーにならない。
+    /// </remarks>
+    public static async Task WhenAllOrCancelOnFaultAsync(Task first, Task second, CancellationTokenSource cts)
+    {
+        ArgumentNullException.ThrowIfNull(cts);
+
         try
         {
-            await Task.WhenAll(producerTask, playbackTask);
+            var finished = await Task.WhenAny(first, second);
+            await finished; // 先に終わった側が失敗していればここで例外になる
+            await Task.WhenAll(first, second);
         }
         catch
         {
-            // 片側の例外でもう一方が終わるよう CTS をキャンセルし、両 Task の終了を待ってから rethrow
-            sharedCts.Cancel();
+            cts.Cancel();
             try
-            { await Task.WhenAll(producerTask, playbackTask); }
+            { await Task.WhenAll(first, second); }
             catch
-            { /* 二次例外は既出例外を上書きしないよう握る */ }
+            { /* キャンセルで起きる二次例外は、先に起きた例外を上書きしないよう握る */ }
             throw;
         }
-
-        return await producerTask;
     }
 
     /// <summary>

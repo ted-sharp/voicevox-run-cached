@@ -1,5 +1,4 @@
 ﻿using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
 
@@ -16,13 +15,13 @@ public class CacheEvictionPolicy
     private readonly ILogger _logger;
     private readonly IClock _clock;
 
-    public CacheEvictionPolicy(DiskCacheStore disk, CacheSettings settings, ILogger? logger = null, IClock? clock = null)
+    public CacheEvictionPolicy(DiskCacheStore disk, CacheSettings settings, ILogger logger, IClock clock)
     {
         _disk = disk ?? throw new ArgumentNullException(nameof(disk));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _expiration = TimeSpan.FromDays(settings.ExpirationDays);
-        _logger = logger ?? NullLogger.Instance;
-        _clock = clock ?? SystemClock.Instance;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
     }
 
     /// <summary>
@@ -35,7 +34,7 @@ public class CacheEvictionPolicy
     /// </remarks>
     public Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
-        return CacheErrorMapper.WithMappingAsync<object?>(
+        CacheErrorMapper.WithMapping(
             "キャッシュクリーンアップ",
             null,
             _settings.Directory,
@@ -43,7 +42,7 @@ public class CacheEvictionPolicy
             () =>
             {
                 if (!Directory.Exists(_settings.Directory))
-                    return Task.FromResult<object?>(null);
+                    return;
 
                 var now = _clock.UtcNow;
                 var expiredKeys = new List<string>();
@@ -67,9 +66,8 @@ public class CacheEvictionPolicy
                 {
                     _logger.LogInformation("期限切れキャッシュをクリーンアップしました - {Count} ファイル", expiredKeys.Count);
                 }
-
-                return Task.FromResult<object?>(null);
             });
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -81,7 +79,7 @@ public class CacheEvictionPolicy
     /// </remarks>
     public Task CleanupByMaxSizeAsync(CancellationToken cancellationToken = default)
     {
-        return CacheErrorMapper.WithMappingAsync<object?>(
+        CacheErrorMapper.WithMapping(
             "サイズ制限によるキャッシュクリーンアップ",
             null,
             _settings.Directory,
@@ -91,7 +89,7 @@ public class CacheEvictionPolicy
                 cancellationToken.ThrowIfCancellationRequested();
 
                 if (!Directory.Exists(_settings.Directory))
-                    return Task.FromResult<object?>(null);
+                    return;
 
                 var entries = new DirectoryInfo(_settings.Directory).GetFiles($"*{DiskCacheStore.AudioExtension}", SearchOption.TopDirectoryOnly);
 
@@ -99,7 +97,7 @@ public class CacheEvictionPolicy
                 long maxBytes = (long)(Math.Max(0.0, _settings.MaxSizeGb) * 1024 * 1024 * 1024);
 
                 if (maxBytes <= 0 || totalBytes <= maxBytes)
-                    return Task.FromResult<object?>(null);
+                    return;
 
                 var ordered = entries.OrderBy(ResolveTimestamp).ToList();
 
@@ -120,8 +118,8 @@ public class CacheEvictionPolicy
                 {
                     _logger.LogInformation("サイズ制限によるキャッシュクリーンアップが完了しました - {Count} ファイル削除", deleted);
                 }
-                return Task.FromResult<object?>(null);
             });
+        return Task.CompletedTask;
     }
 
     /// <summary>

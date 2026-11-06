@@ -12,7 +12,7 @@ namespace VoicevoxRunCached.Tests;
 public class AudioExportServiceTests
 {
     private static AudioExportService CreateService()
-        => new(new AudioFormatDetector(), NullLogger.Instance);
+        => new(new AudioFormatDetector(NullLogger.Instance), NullLogger.Instance);
 
     private static TextSegment Segment(byte[] audio) => new() { Text = "x", AudioData = audio };
 
@@ -75,7 +75,7 @@ public class AudioExportServiceTests
             var written = await File.ReadAllBytesAsync(outPath);
             await Assert.That(AudioFormatDetector.DetectFormat(written)).IsEqualTo(AudioFormat.Opus);
 
-            using var reader = new AudioFormatDetector().CreateWaveStream(written);
+            using var reader = new AudioFormatDetector(NullLogger.Instance).CreateWaveStream(written);
             await Assert.That(reader.TotalTime.TotalMilliseconds).IsBetween(900, 1200);
         }
         finally

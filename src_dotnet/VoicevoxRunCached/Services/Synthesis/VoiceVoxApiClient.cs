@@ -142,7 +142,7 @@ public class VoiceVoxApiClient : IDisposable
     ///   1. <see cref="VoicevoxRunCachedException"/> およびその派生 (<see cref="VoiceVoxApiException"/> 等) は素通し。
     ///      二重 wrap を防ぐ — 既にドメイン例外なら呼び出し元はそれを期待してハンドルする。
     ///   2. ユーザーキャンセル (<see cref="CancellationToken.IsCancellationRequested"/> = true) も素通し。
-    ///      <see cref="CommandRouter"/> 側で exit code 0 として処理する。
+    ///      <see cref="CommandRouter"/> 側で終了コード <see cref="ErrorCodes.CancelledExitCode"/> (130) として処理する。
     ///   3. その他 (HTTP/JSON/タイムアウト等) は <see cref="MapToApiException"/> で <see cref="VoiceVoxApiException"/> に変換。
     /// </remarks>
     private async Task<T> ExecuteApiAsync<T>(string operationName, Func<CancellationToken, Task<T>> apiCall, CancellationToken cancellationToken)
@@ -175,24 +175,29 @@ public class VoiceVoxApiClient : IDisposable
     /// </remarks>
     private VoiceVoxApiException MapToApiException(string operationName, Exception ex)
     {
-        var (code, statusCode) = ex switch
-        {
-            HttpRequestException httpEx when httpEx.StatusCode.HasValue
-                => (MapHttpStatusToErrorCode(httpEx.StatusCode.Value), (HttpStatusCode?)httpEx.StatusCode.Value),
-            TaskCanceledException => (ErrorCodes.Api.ApiTimeout, (HttpStatusCode?)null),
-            JsonException => (ErrorCodes.Api.ApiResponseInvalid, (HttpStatusCode?)null),
-            _ => (ErrorCodes.General.UnknownError, (HttpStatusCode?)null),
-        };
-
-        _logger.LogError(ex, "{OperationName} に失敗しました (StatusCode: {StatusCode})", operationName, statusCode);
+        _logger.LogError(ex, "{OperationName} に失敗しました (StatusCode: {StatusCode})",
+            operationName, (ex as HttpRequestException)?.StatusCode);
 
         // message は内部 (Exception.Message / ログ) 用、userMessage は CLI 表示用
         return new VoiceVoxApiException(
-            code,
+            MapToErrorCode(ex),
             ex.Message,
             $"{operationName} に失敗しました: {ex.Message}",
             ex);
     }
+
+    /// <summary>
+    /// リトライ後に残った例外をエラーコードに対応付ける純粋関数 (テスト容易性のために分離)。
+    /// </summary>
+    public static string MapToErrorCode(Exception ex) => ex switch
+    {
+        HttpRequestException { StatusCode: { } statusCode } => MapHttpStatusToErrorCode(statusCode),
+        // ステータスが無い = 接続できない・応答が途中で切れた (HttpIOException) など、エンジンから HTTP の応答を得られなかった
+        HttpRequestException or IOException => ErrorCodes.Engine.EngineNotAvailable,
+        TaskCanceledException => ErrorCodes.Api.ApiTimeout,
+        JsonException => ErrorCodes.Api.ApiResponseInvalid,
+        _ => ErrorCodes.General.UnknownError,
+    };
 
     private static string MapHttpStatusToErrorCode(HttpStatusCode statusCode) => statusCode switch
     {

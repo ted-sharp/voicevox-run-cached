@@ -1,13 +1,16 @@
-﻿using VoicevoxRunCached.Configuration;
+﻿using Microsoft.Extensions.Logging.Abstractions;
+using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Audio;
 using VoicevoxRunCached.Services.Cache;
+using VoicevoxRunCached.Services.Infrastructure;
 
 namespace VoicevoxRunCached.Tests;
 
 public class AudioCacheManagerIntegrationTests
 {
-    private static (AudioCacheManager manager, string dir) CreateManager(double maxSizeGb = 1.0)
+    private static (AudioCacheManager manager, string dir) CreateManager(double maxSizeGb = 1.0, IClock? clock = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_acm_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(dir);
@@ -18,7 +21,32 @@ public class AudioCacheManagerIntegrationTests
             MaxSizeGb = maxSizeGb,
             UseExecutableBaseDirectory = false
         };
-        return (new AudioCacheManager(settings), dir);
+        return (new AudioCacheManager(settings, NullLogger.Instance, clock ?? SystemClock.Instance), dir);
+    }
+
+    private sealed class MutableClock(DateTime utcNow) : IClock
+    {
+        public DateTime UtcNow { get; set; } = utcNow;
+    }
+
+    [Test]
+    public async Task GetCachedAudio_UsesInjectedClockForExpiration()
+    {
+        // AudioCacheManager が IClock を受け取らず、期限判定が常に実時刻だった回帰の検知
+        var clock = new MutableClock(DateTime.UtcNow);
+        var (mgr, dir) = CreateManager(clock: clock);
+        try
+        {
+            var request = new VoiceRequest("期限", 1);
+            await mgr.SaveAudioCacheAsync(request, AudioConversionUtility.CreateMinimalWavData(300, 24000));
+
+            clock.UtcNow = clock.UtcNow.AddDays(31); // ExpirationDays = 30
+
+            var cached = await mgr.GetCachedAudioAsync(request);
+
+            await Assert.That(cached).IsNull();
+        }
+        finally { Directory.Delete(dir, true); }
     }
 
     [Test]
@@ -55,7 +83,7 @@ public class AudioCacheManagerIntegrationTests
 
             await Assert.That(cached).IsNotNull();
             await Assert.That(AudioFormatDetector.DetectFormat(cached!)).IsEqualTo(AudioFormat.Opus);
-            using var reader = new AudioFormatDetector().CreateWaveStream(cached!);
+            using var reader = new AudioFormatDetector(NullLogger.Instance).CreateWaveStream(cached!);
             await Assert.That(reader.TotalTime.TotalMilliseconds).IsGreaterThan(250);
         }
         finally { Directory.Delete(dir, true); }
@@ -74,6 +102,25 @@ public class AudioCacheManagerIntegrationTests
             await mgr.ClearAllCacheAsync();
 
             await Assert.That(Directory.GetFiles(dir)).IsEmpty();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    public async Task ClearAllCache_LockedFile_ThrowsCacheException()
+    {
+        // 削除できないファイルがあるのに --clear が成功表示になっていた回帰の検知
+        var (mgr, dir) = CreateManager();
+        try
+        {
+            await mgr.SaveAudioCacheAsync(new VoiceRequest("ロック", 1), AudioConversionUtility.CreateMinimalWavData(300, 24000));
+            var lockedPath = Directory.GetFiles(dir, "*.opus").Single();
+
+            // FileShare.None で開いたままにすると Windows では File.Delete が共有違反 (IOException) になる
+            using (new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                await Assert.ThrowsAsync<CacheException>(() => mgr.ClearAllCacheAsync());
+            }
         }
         finally { Directory.Delete(dir, true); }
     }

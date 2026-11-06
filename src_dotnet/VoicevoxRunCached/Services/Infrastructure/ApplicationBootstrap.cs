@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Serilog;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Services.Infrastructure;
 
@@ -25,8 +26,7 @@ public static class ApplicationBootstrap
         EnableAnsiColors();
 
         // 設定を構築
-        var configuration = ConfigurationManager.BuildConfigurationWithCommandLine(args);
-        var settings = BuildAppSettings(configuration);
+        var settings = LoadSettings(args);
 
         // 設定を検証
         ValidateConfiguration(settings);
@@ -47,6 +47,44 @@ public static class ApplicationBootstrap
         logger.LogInformation("VoicevoxRunCached アプリケーションを開始します - バージョン {Version}", AssemblyVersion.Current);
 
         return (settings, logger);
+    }
+
+    /// <summary>
+    /// 設定ファイルとコマンドライン引数を読み込み、<see cref="AppSettings"/> にバインドする。
+    /// 読み込みやバインドに失敗したら <see cref="ConfigurationException"/> (終了コード 7) にする。
+    /// 値の範囲などの検証は別 (<see cref="ConfigurationValidationService"/>)。
+    /// </summary>
+    /// <param name="args">コマンドライン引数</param>
+    /// <param name="basePath">appsettings.json を探すディレクトリ。省略時は実行ファイルのディレクトリ</param>
+    public static AppSettings LoadSettings(string[] args, string? basePath = null)
+    {
+        try
+        {
+            var configuration = ConfigurationManager.BuildConfigurationWithCommandLine(args, basePath);
+            return BuildAppSettings(configuration);
+        }
+        // InvalidDataException: JSON の構文エラー (FileConfigurationProvider がパーサの例外を包む)
+        // FileNotFoundException: appsettings.json が無い
+        // InvalidOperationException: 値をプロパティの型に変換できない (ConfigurationBinder。"Volume": "abc" など)
+        catch (Exception ex) when (ex is InvalidDataException or FileNotFoundException or InvalidOperationException)
+        {
+            // 外側の例外は「読み込みに失敗した」としか言わず、どこが悪いかは内側 (行番号・キー名) にあるので全部並べる
+            var details = String.Join(Environment.NewLine, ExceptionChain(ex).Select(e => $"- {e.Message}"));
+            throw new ConfigurationException(
+                ErrorCodes.Configuration.InvalidSettings,
+                $"Failed to load configuration: {ex.Message}",
+                $"設定の読み込みに失敗しました。{Environment.NewLine}{details}",
+                ex,
+                suggestedSolution: "appsettings.json (またはコマンドラインの --Section:Key=値) を確認してエラー箇所を修正してください。");
+        }
+    }
+
+    private static IEnumerable<Exception> ExceptionChain(Exception ex)
+    {
+        for (Exception? current = ex; current != null; current = current.InnerException)
+        {
+            yield return current;
+        }
     }
 
     /// <summary>
