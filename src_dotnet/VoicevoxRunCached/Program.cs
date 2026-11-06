@@ -62,7 +62,8 @@ static class Program
     private static async Task<int> RunAsync(string[] args, AppSettings settings, ILogger logger)
     {
         // CancellationManager は services より先に作り、後に破棄する。
-        // 終了処理 (エンジン停止の待機など) の間に押された Ctrl+C も受け止め、プロセスを途中で落とさない
+        // 終了処理 (エンジン停止の待機など) の間に押された 1 回目の Ctrl+C も受け止め、プロセスを途中で落とさない
+        // (2 回目は強制終了させる)
         using var cancellationManager = new CancellationManager(logger);
 
         // DI コンテナ構築 (Jab のコンパイル時生成プロバイダ)
