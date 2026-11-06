@@ -49,6 +49,9 @@ public class LoggingManager
     /// <summary>
     /// コンソール出力の設定
     /// </summary>
+    /// <remarks>
+    /// ログはすべて stderr に出す (stdout は <c>devices --json</c> 等のコマンドの結果だけにする)。
+    /// </remarks>
     private void ConfigureConsoleLogging(LoggerConfiguration config)
     {
         if (_settings.Format.ToLowerInvariant() == "json")
@@ -56,6 +59,7 @@ public class LoggingManager
             // JSON形式の構造化ログ
             config.WriteTo.Console(
                 outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}",
+                standardErrorFromLevel: LogEventLevel.Verbose,
                 theme: AnsiConsoleTheme.Code);
         }
         else
@@ -63,6 +67,7 @@ public class LoggingManager
             // シンプルな形式（デフォルト）
             config.WriteTo.Console(
                 outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj}{NewLine}{Exception}",
+                standardErrorFromLevel: LogEventLevel.Verbose,
                 theme: AnsiConsoleTheme.Code);
         }
     }

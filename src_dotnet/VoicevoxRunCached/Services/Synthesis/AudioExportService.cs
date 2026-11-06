@@ -60,7 +60,7 @@ public class AudioExportService
         }
         catch (OperationCanceledException)
         {
-            ConsoleHelper.WriteLine("Output export was cancelled");
+            ConsoleHelper.WriteWarning("Output export was cancelled");
             throw;
         }
         catch (VoicevoxRunCachedException)

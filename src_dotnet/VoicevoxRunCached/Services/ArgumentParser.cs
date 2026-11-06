@@ -309,9 +309,9 @@ Commands:
   --clear                  Clear audio and filler cache files
 
 Enhanced Features:
-  • Standalone flags: --verbose → --verbose true
-  • Concatenated options: -s1 → -s 1
-  • Priority: Command-line > appsettings.Development.json > appsettings.json
+  - Standalone flags: --verbose → --verbose true
+  - Concatenated options: -s1 → -s 1
+  - Priority: Command-line > appsettings.Development.json > appsettings.json
 """);
     }
 }

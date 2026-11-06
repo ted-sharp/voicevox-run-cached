@@ -110,6 +110,13 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 
 2 は使わない (Claude Code の Hooks では終了コード 2 がブロッキングエラーとして扱われるため。[Claude Code Hooks との連携](#claude-code-hooks-との連携) を参照)。
 
+### 出力先と文字コード
+
+- **stdout**: コマンドの結果と進捗 (`speakers` / `devices` の一覧、`Processing segments...` など)。`devices --json` の stdout は JSON だけになる
+- **stderr**: ログ、エラー・警告とその補足 (解決策など)、起動待ちのスピナー
+- 色 (ANSI エスケープ) は、出力先がコンソールのときだけ付く
+- リダイレクト・パイプ時は BOM なし UTF-8 で出力する (コンソールに直接出すときは従来どおりコンソールのコードページ)。Windows PowerShell 5.1 で `$x = VoicevoxRunCached.exe speakers` のように取り込むと、既定ではコンソールのコードページで解釈されて文字化けする。その場合は `[Console]::OutputEncoding = [Text.Encoding]::UTF8` を先に実行する
+
 ## 設定 (`appsettings.json`)
 
 各セクションは `Configuration/AppSettings.cs` の型にバインドされ、FluentValidation で検証される。下記コメントが各設定の役割を兼ねている。
@@ -242,7 +249,7 @@ Total execution time: 2445.4ms
 **注意**:
 - Hooks 環境では `PATH` が不十分な場合があるため、`.exe` のフルパスを直接指定すること。`.bat` 経由は `cmd /c "<バッチのフルパス>"` でラップする
 - パスにスペースが含まれる場合はダブルクォートで囲み、Windows パスの `\` は JSON では `\\` にエスケープする
-- 失敗しても終了コード 2 は返さないので、Claude Code の動作は止めない (Hooks では 2 がブロッキングエラーで、Stop フックなら Claude の停止が止められる)。失敗は 0 以外の終了コードとしてユーザーに表示されるだけ
+- 失敗しても終了コード 2 は返さないので、Claude Code の動作は止めない (Hooks では 2 がブロッキングエラーで、Stop フックなら Claude の停止が止められる)。失敗は 0 以外の終了コードとしてユーザーに表示されるだけ。エラーメッセージは stderr に UTF-8 で出るので、その表示で失敗の理由もわかる
 - 既定 (`AutoStartEngine: true`) ではエンジンが停止していても自動起動されるが、起動を待つ分だけ最初の通知が遅れる。遅延を避けたい場合はエンジンを事前に起動しておく (`KeepEngineRunning: true` (既定) なら一度起動したエンジンは常駐する)
 
 ## 開発

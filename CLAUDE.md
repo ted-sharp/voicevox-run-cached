@@ -128,7 +128,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 
 `Services/Infrastructure/` 配下に共通ユーティリティが揃っている。新しい関数を作る前に再利用を検討する:
 
-- **`ConsoleHelper`**: 色付き出力、エラー表示。`Console.WriteLine` を直接使わず原則これ経由
+- **`ConsoleHelper`**: 色付き出力、エラー表示。`Console.WriteLine` を直接使わず原則これ経由 (stdout / stderr の振り分けと、リダイレクト時に色を外す処理を持つ)
 - **`ErrorHandlingUtility`**: 例外 → ErrorCode → ExitCode 変換。`HandleExceptionAndGetExitCode` がコマンド末尾の定型処理
 - **`RetryPolicyService`**: VOICEVOX API 呼び出しのリトライ (5xx/429/timeout、自前実装の指数バックオフ。Polly は使っていない)
 - **`CancellationManager`**: Ctrl+C の協調キャンセル
@@ -171,8 +171,11 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 DI 登録クラスのコンストラクタでは `ILogger` / `IClock` などのサービスを省略可能 (`ILogger? logger = null` + `?? NullLogger.Instance`) にしない。Jab は既定値付き引数を未登録でも黙って既定値で生成するため、JAB0002 による登録漏れ検出が効かなくなる。DI 外で手組みするクラス (`DiskCacheStore` / `CacheEvictionPolicy`) も同じく必須にする (渡し忘れると黙ってログ無し・実時刻になる)。テストでは `NullLogger.Instance` / `SystemClock.Instance` を明示的に渡す。
 
 `ILogger` と `ConsoleHelper` の使い分け:
-- **`ILogger`** = ログ用途。Serilog の構造化ログ・ファイル/JSON sink に流れる。内部エラー・警告・運用追跡情報はこちらに書く
-- **`ConsoleHelper`** = ユーザー向け UI 出力。色付き、TTY のみ。コマンド成功/失敗の人向けメッセージはこちら
+- **`ILogger`** = ログ用途。Serilog の構造化ログ・ファイル/JSON sink に流れる。内部エラー・警告・運用追跡情報はこちらに書く。コンソールへのログは**すべて stderr** (`standardErrorFromLevel: Verbose`)
+- **`ConsoleHelper`** = ユーザー向け UI 出力。コマンド成功/失敗の人向けメッセージはこちら。出力先は役割で決まる:
+  - stdout: `WriteSuccess` / `WriteLine` (コマンドの結果・進捗)。stdout は `devices --json` 等の結果だけにし、ログや警告を混ぜない
+  - stderr: `WriteError` / `WriteWarning` / `WriteErrorDetail` (エラー・警告と、続く解決策などの補足)。Claude Code の Hooks は終了コードが 0 / 2 以外のとき stderr を表示するので、失敗理由は必ずこちら
+  - 色は出力先がリダイレクトされていないときだけ付く。リダイレクト時は `ApplicationBootstrap.ConfigureRedirectedOutputEncoding` が BOM なし UTF-8 にする (`Console.OutputEncoding` は呼び出し元コンソールのコードページを変えるので使わない)
 - 両方残したい場合 (例: `Cache cleared!`) は `_logger.LogInformation` + `ConsoleHelper.WriteSuccess` を併記
 - **内部エラーを `ConsoleHelper.WriteWarning` に流すのは誤用** — JSON ログに残らないので運用追跡が壊れる
 

@@ -74,7 +74,7 @@ public class CommandRouter
 
             if (!String.IsNullOrEmpty(ex.SuggestedSolution))
             {
-                ConsoleHelper.WriteLine($"解決策: {ex.SuggestedSolution}");
+                ConsoleHelper.WriteErrorDetail($"解決策: {ex.SuggestedSolution}");
             }
 
             return ErrorCodes.GetExitCode(ex.ErrorCode);
@@ -82,7 +82,7 @@ public class CommandRouter
         catch (OperationCanceledException)
         {
             _logger.LogInformation("コマンド実行がキャンセルされました: {Command}", command);
-            ConsoleHelper.WriteLine("操作がキャンセルされました。");
+            ConsoleHelper.WriteWarning("操作がキャンセルされました。");
             return ErrorCodes.CancelledExitCode;
         }
         catch (Exception ex)
