@@ -83,12 +83,8 @@ public class AudioCacheManager
         return CacheErrorMapper.WithMappingAsync<object?>("キャッシュのクリア", null, _disk.Directory, _logger, () =>
         {
             cancellationToken.ThrowIfCancellationRequested();
-            foreach (var file in _disk.GetAudioFiles())
-            {
-                _disk.Delete(Path.GetFileNameWithoutExtension(file));
-            }
-            _disk.DeleteLegacyFiles();
-            _logger.LogInformation("すべてのキャッシュをクリアしました");
+            var deleted = _disk.DeleteAll();
+            _logger.LogInformation("すべてのキャッシュをクリアしました - 削除ファイル数: {Count}", deleted);
             return Task.FromResult<object?>(null);
         });
     }

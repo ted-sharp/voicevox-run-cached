@@ -1,4 +1,5 @@
 ﻿using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Services.Synthesis;
 
 namespace VoicevoxRunCached.Tests;
@@ -82,7 +83,7 @@ public class FillerManagerTests
             };
             var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 });
 
-            mgr.ClearFillerCache();
+            await mgr.ClearFillerCacheAsync();
 
             await Assert.That(File.Exists(Path.Combine(dir, "x.mp3"))).IsFalse();
             await Assert.That(File.Exists(Path.Combine(dir, "y.opus"))).IsFalse();
@@ -106,7 +107,37 @@ public class FillerManagerTests
         };
         var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 });
 
-        mgr.ClearFillerCache();
+        await mgr.ClearFillerCacheAsync();
         // 例外を投げない (no-op で完了)
+    }
+
+    [Test]
+    public async Task ClearFillerCache_LockedFile_ThrowsCacheException()
+    {
+        // 削除できないファイルがあるのに --clear が成功表示になっていた回帰の検知
+        var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var lockedPath = Path.Combine(dir, "y.opus");
+            await File.WriteAllBytesAsync(lockedPath, new byte[] { 0xFF });
+            var settings = new FillerSettings
+            {
+                Enabled = true,
+                Directory = dir,
+                FillerTexts = ["a"]
+            };
+            var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 });
+
+            // FileShare.None で開いたままにすると Windows では File.Delete が共有違反 (IOException) になる
+            using (new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                await Assert.ThrowsAsync<CacheException>(() => mgr.ClearFillerCacheAsync());
+            }
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
     }
 }

@@ -140,6 +140,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 - SHA256 生成ロジックは**変更禁止** (既存キャッシュが全て無効化される)
 - 期限切れは `ExpirationDays`、容量上限は `MaxSizeGB` で eviction。`AudioCacheManager.RunMaintenanceAsync` で両方まとめて実行し、`SegmentProducer` が新規保存のあった実行の最後に 1 回だけ呼ぶ (保存ごとに全走査しない)
 - 期限切れは読み込み時 (`DiskCacheStore.LoadAsync`) にも判定され、該当ファイルは削除される
+- 読み込み時・eviction の削除 (`DiskCacheStore.Delete`) は best-effort で失敗を Warning に留めるが、`--clear` (`DiskCacheStore.DeleteAll` / `FillerManager.ClearFillerCacheAsync`) は失敗を握りつぶさず `CacheErrorMapper` で `CacheException` にする (削除できていないのに成功表示しないため)
 - キャッシュは executable と同じディレクトリに保存される (`UseExecutableBaseDirectory: true`)
 - `.meta.json` の検証 (`DiskCacheStore.IsMetadataValid`) は Text 非空・SpeakerId >= 0 (speaker 0 は実在)・CreatedAt 設定済みのみ。パラメータ一致はキー自体が保証するので照合しない
 

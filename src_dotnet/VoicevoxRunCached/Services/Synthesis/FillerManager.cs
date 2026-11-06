@@ -144,12 +144,16 @@ public class FillerManager
     }
 
     /// <summary>
-    /// フィラーキャッシュを削除する (旧形式の MP3 も含む)。
+    /// フィラーキャッシュを削除する (旧形式の MP3 も含む)。失敗は CacheException として呼び出し元に伝える。
     /// </summary>
-    public void ClearFillerCache()
+    public Task ClearFillerCacheAsync()
     {
-        DeleteFiles($"*{DiskCacheStore.AudioExtension}");
-        DeleteFiles($"*{DiskCacheStore.LegacyAudioExtension}");
+        return CacheErrorMapper.WithMappingAsync<object?>("フィラーキャッシュのクリア", null, _settings.Directory, _logger, () =>
+        {
+            DeleteFiles($"*{DiskCacheStore.AudioExtension}");
+            DeleteFiles($"*{DiskCacheStore.LegacyAudioExtension}");
+            return Task.FromResult<object?>(null);
+        });
     }
 
     private void DeleteFiles(string searchPattern)
@@ -159,9 +163,7 @@ public class FillerManager
 
         foreach (var file in Directory.GetFiles(_settings.Directory, searchPattern))
         {
-            try
-            { File.Delete(file); }
-            catch (Exception ex) { _logger.LogDebug(ex, "Failed to delete file: {File}", file); }
+            File.Delete(file);
         }
     }
 }

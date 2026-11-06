@@ -1,4 +1,5 @@
 ﻿using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Audio;
 using VoicevoxRunCached.Services.Cache;
@@ -74,6 +75,25 @@ public class AudioCacheManagerIntegrationTests
             await mgr.ClearAllCacheAsync();
 
             await Assert.That(Directory.GetFiles(dir)).IsEmpty();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    public async Task ClearAllCache_LockedFile_ThrowsCacheException()
+    {
+        // 削除できないファイルがあるのに --clear が成功表示になっていた回帰の検知
+        var (mgr, dir) = CreateManager();
+        try
+        {
+            await mgr.SaveAudioCacheAsync(new VoiceRequest("ロック", 1), AudioConversionUtility.CreateMinimalWavData(300, 24000));
+            var lockedPath = Directory.GetFiles(dir, "*.opus").Single();
+
+            // FileShare.None で開いたままにすると Windows では File.Delete が共有違反 (IOException) になる
+            using (new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                await Assert.ThrowsAsync<CacheException>(() => mgr.ClearAllCacheAsync());
+            }
         }
         finally { Directory.Delete(dir, true); }
     }
