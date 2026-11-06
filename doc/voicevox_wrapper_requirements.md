@@ -13,7 +13,7 @@
 - **フィラー**: 生成待機時の自然な間つなぎ音声（任意）
 - **CLI**: `speakers`/`devices`/`--init`/`--clear`/`--test`、各種オプション
 - **出力**: `--out` で WAV/Opus 保存、`--no-play` で再生抑止
-- **ログ**: レベル/フォーマット切替、ファイル出力 + ローテーション、`--verbose` で詳細タイミング
+- **ログ**: レベル/フォーマット切替、ファイル出力 + ローテーション、`--verbose` で再生時間・総実行時間を表示
 - **エラー処理**: `VoicevoxRunCachedException` + `ErrorCode` で集約、終了コードへマッピング
 
 ## コマンド/オプション仕様
@@ -27,7 +27,7 @@ VoicevoxRunCached --init
 VoicevoxRunCached --clear
 
 Options:
-  --speaker, -s <id>       話者ID (default: 1)
+  --speaker, -s <id>       話者ID (default: VoiceVox.DefaultSpeaker = 1)
   --speed <value>          話速 (default: 1.0)
   --pitch <value>          音高 (default: 0.0)
   --volume <value>         音量 (default: 1.0)
@@ -35,7 +35,7 @@ Options:
   --cache-only             キャッシュのみ使用（API呼び出しなし）
   --out, -o <path>         出力ファイル（.wav/.opus。それ以外はエラー）
   --no-play                再生しない（`--out`と併用）
-  --verbose                詳細タイミング表示（ログレベルは変えない。`--log-level debug` を併用）
+  --verbose                再生時間・総実行時間を表示（ログレベルは変えない。処理の詳細は `--log-level debug` を併用）
   --log-level <level>      trace|debug|info|warn|error|crit|none
   --log-format <fmt>       simple|json
   --help, -h               ヘルプ表示
@@ -65,7 +65,7 @@ Options:
   },
   "Audio": {
     "OutputDevice": -1,
-    "Volume": 1.2,
+    "Volume": 1.0,
     "PrepareDevice": false,
     "PreparationDurationMs": 200,
     "PreparationVolume": 0.01,
@@ -100,7 +100,7 @@ Options:
 
 ## 主要設計
 
-- **セグメント化**: 句読点で文分割し、部分変更時もキャッシュを最大活用
+- **セグメント化**: 文末記号 (`。！？!?`) と改行で文分割 (半角 `.` は直後が空白か文末のときのみ、100 文字超は強制分割) し、部分変更時もキャッシュを最大活用
 - **キャッシュ形式**: Ogg Opus (VOIP/VBR, 既定 32kbps) + `.meta.json`（作成日時/テキスト/話者/各種パラメータ）
 - **容量制御**: `MaxSizeGB` 超過時に古い順で削除、`ExpirationDays` で期限切れ自動削除
 - **デバイス準備**: 初回音切れ対策として極小音量の事前再生（可変長）
@@ -115,10 +115,8 @@ Options:
 - `Microsoft.Extensions.Logging` — DI 経由のロギング抽象
 - `Serilog` (Console / File sink) — 構造化ロギング
 - `FluentValidation` — `AppSettings` の検証
-- `Polly` — HTTP / ファイル I/O のリトライ
-- `DryIoc` — DI コンテナ
+- `Jab` — DI コンテナ (Source Generator によるコンパイル時生成)
 - `Aloe.Utils.CommandLine` — CLI 引数処理
-- `BenchmarkDotNet` — `Benchmarks/AudioProcessingBenchmarks` のマイクロベンチマーク
 - `TUnit` (テストプロジェクト) — Microsoft.Testing.Platform ベースのテストランナー
 - `System.Text.Json`
 
@@ -144,7 +142,7 @@ flowchart TD
 
 - エンジン未接続: BaseUrl確認、`AutoStartEngine` 利用、`EnginePath` 設定
 - 音切れ: `Audio.PrepareDevice=true`、`PreparationDurationMs`/`PreparationVolume` 調整
-- デバイス選択: `devices --full` で確認、`OutputDeviceId` 設定
+- デバイス選択: `devices --full` で確認し、`Audio.OutputDevice` に WaveOut index を設定 (`devices` は WASAPI endpoint の一覧なので、番号が WaveOut index と一致するとは限らない)
 
 ## 移行メモ（初期仕様との差分）
 
@@ -152,6 +150,6 @@ flowchart TD
 - キャッシュ層: ディスクのみ (`AudioCacheManager` ファサード経由。メモリキャッシュ層は単発 CLI では効かないため削除)
 - 追加コマンド: `devices`, `--init`, `--clear`, `--test`
 - 新オプション: `--out`, `--no-play`, `--log-level`, `--log-format`
-- 新設定: `UseExecutableBaseDirectory`, `EngineType`, `KeepEngineRunning`, `MemoryCacheSizeMb`, `DesiredLatency`, `NumberOfBuffers`, `EnableFileLogging` / `MaxFileSizeMb` / `MaxFileCount`
-- 削除: `Audio.OutputDeviceId` (再生本体は `WaveOutEvent` 一本化のため、index 指定のみ)
-- アーキテクチャ: DryIoc による DI 化、`SegmentProducer` 切り出し、`Channel<TextSegment>` による producer/consumer 並走
+- 新設定: `UseExecutableBaseDirectory`, `EngineType`, `KeepEngineRunning`, `OpusBitrateKbps`, `DesiredLatency`, `NumberOfBuffers`, `EnableFileLogging` / `MaxFileSizeMb` / `MaxFileCount`
+- 削除: `Audio.OutputDeviceId` (再生本体は `WaveOutEvent` 一本化のため、index 指定のみ)、`Cache.MemoryCacheSizeMb` (メモリキャッシュ層の削除に伴い)、`--benchmark` コマンド
+- アーキテクチャ: Jab (コンパイル時 DI) による DI 化、`SegmentProducer` 切り出し、`Channel<TextSegment>` による producer/consumer 並走

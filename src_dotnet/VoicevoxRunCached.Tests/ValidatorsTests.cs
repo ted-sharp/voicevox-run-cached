@@ -173,7 +173,16 @@ public class ValidatorsTests
     {
         var validator = new AudioSettingsValidator();
         await Assert.That(validator.Validate(new AudioSettings { Volume = -0.01 }).IsValid).IsFalse();
-        await Assert.That(validator.Validate(new AudioSettings { Volume = 2.01 }).IsValid).IsFalse();
+        // WaveOut の音量上限は 1.0。それを超える値は効かないので設定エラーにする
+        await Assert.That(validator.Validate(new AudioSettings { Volume = 1.01 }).IsValid).IsFalse();
+    }
+
+    [Test]
+    public async Task AudioSettings_VolumeBoundaries_Pass()
+    {
+        var validator = new AudioSettingsValidator();
+        await Assert.That(validator.Validate(new AudioSettings { Volume = 0.0 }).IsValid).IsTrue();
+        await Assert.That(validator.Validate(new AudioSettings { Volume = 1.0 }).IsValid).IsTrue();
     }
 
     [Test]

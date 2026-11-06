@@ -79,18 +79,20 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 
 | Option | 説明 | デフォルト |
 |---|---|---|
-| `--speaker, -s <id>` | スピーカー ID | 1 |
-| `--speed <value>` | 速度 (0.5–2.0) | 1.0 |
-| `--pitch <value>` | ピッチ (-0.15–0.15) | 0.0 |
-| `--volume <value>` | 音量 (0.0–2.0) | 1.0 |
+| `--speaker, -s <id>` | スピーカー ID (0 以上) | `VoiceVox.DefaultSpeaker` (1) |
+| `--speed <value>` | 速度。0 より大きい値 (目安 0.5–2.0) | 1.0 |
+| `--pitch <value>` | ピッチ (目安 -0.15–0.15) | 0.0 |
+| `--volume <value>` | 音量。0 以上 (目安 0.0–2.0) | 1.0 |
 | `--no-cache` | キャッシュを使わない | false |
 | `--cache-only` | キャッシュのみ使う (API を呼ばない) | false |
 | `--out, -o <path>` | ファイル保存 (`.wav` / `.opus` を拡張子で判定。それ以外はエラー) | — |
 | `--no-play` | 再生しない (`--out` と併用推奨) | false |
-| `--verbose` | 詳細タイミングを表示 | false |
+| `--verbose` | 再生時間と総実行時間を表示 | false |
 | `--log-level <level>` | `trace`/`debug`/`info`/`warn`/`error`/`crit`/`none` | info |
 | `--log-format <fmt>` | `simple` / `json` | simple |
 | `--help, -h` | ヘルプ表示 | — |
+
+`--speed` / `--pitch` / `--volume` は小数第 2 位に丸めて使われる (キャッシュキーも丸めた値で作る)。「目安」は VOICEVOX エディタの調整範囲で、本ツールが検証するのは数値であること・speed が 0 より大きいこと・volume と speaker が 0 以上であることだけ。不正な値はエラーで終了する。
 
 ## 設定 (`appsettings.json`)
 
@@ -118,7 +120,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
   },
   "Audio": {
     "OutputDevice": -1,           // -1 = OS デフォルト, 0+ = WaveOut index
-    "Volume": 1.2,
+    "Volume": 1.0,                // 再生音量 0.0-1.0 (WaveOut の上限が 1.0)
     "PrepareDevice": false,       // true で起動時に無音再生してデバイスを温める
     "PreparationDurationMs": 200,
     "PreparationVolume": 0.01,
@@ -148,7 +150,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 
 ### セグメント単位キャッシュ
 
-入力テキストは `。 ! ?` で文単位に分割され、各セグメントが `SHA256(speaker_id + text + speed + pitch + volume)` をキーに `.opus` (Ogg Opus) + `.meta.json` として独立にキャッシュされる。v2 以前の `.mp3` キャッシュは使われず、次回の新規合成時か `--clear` で削除される。
+入力テキストは文末記号 (`。！？!?`) と改行で文単位に分割される。半角 `.` は直後が空白か文末のときだけ区切る (`3.14` や `Node.js` は割らない)。100 文字を超える文は強制的に分割する。各セグメントはテキスト・スピーカー ID・速度・ピッチ・音量から作る SHA256 をキーに、`.opus` (Ogg Opus) + `.meta.json` として独立にキャッシュされる。v2 以前の `.mp3` キャッシュは使われず、次回の新規合成時か `--clear` で削除される。
 
 - **部分変更でも再利用**: テキストの一部だけ変えても、変更されていない文はキャッシュヒット
 - **即時再生**: キャッシュ済みセグメントは待機なしで再生開始
@@ -164,7 +166,9 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 
 ### フィラー音声
 
-セグメント生成待ちの隙間に「えーっと、」「あのー、」などのフィラー音声を自動再生して無音を回避する。`--init` で全フィラーを事前にキャッシュしておくと初回再生時の遅延も無くなる。
+`Filler.Enabled: true` にすると、セグメント生成待ちの隙間に「えーっと、」「あのー、」などのフィラー音声を再生して無音を回避する (既定は無効)。
+
+フィラーは `--init` で事前生成したキャッシュからしか再生されない。有効にする前に一度 `--init` を実行しておくこと (未生成だとフィラーは鳴らず、Warning ログが出るだけ)。`--clear` はフィラーのキャッシュも消すので、その後は `--init` をやり直す。
 
 ### vs `curl` 直叩き
 
@@ -172,19 +176,18 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 
 ## パフォーマンス計測
 
-`--verbose` で各フェーズの所要時間を表示する。
+`--verbose` で再生にかかった時間と全体の実行時間を表示する (`--no-play` 時は全体の実行時間のみ)。
 
 ```
-Engine check completed in 38.7ms
-Segment processing completed in 25.6ms
-Generating 1 segments in background...
 Audio playback completed in 2376.1ms
 Total execution time: 2445.4ms
 ```
 
+処理の詳細 (HTTP リクエストやキャッシュヒットなど) を見たい場合は `--log-level debug` を併用する。
+
 ## トラブルシューティング
 
-**「VOICEVOX エンジンに接続できません」**
+**「VOICEVOXエンジンが利用できません。」と表示される**
 → エンジンが起動しているか、`appsettings.json` の `BaseUrl` が正しいか確認。`AutoStartEngine: true` の場合は `EnginePath` 自動検出が失敗していないかも確認。
 
 **音声が再生されない**
@@ -194,7 +197,7 @@ Total execution time: 2445.4ms
 → `Audio.PrepareDevice: true` にして `PreparationDurationMs` を 300–500 に増やす。
 
 **キャッシュをクリアしたい**
-→ `VoicevoxRunCached.exe --clear` (または `Cache.Directory` のフォルダを手動削除)。
+→ `VoicevoxRunCached.exe --clear` (または `Cache.Directory` のフォルダを手動削除)。`--clear` はフィラーのキャッシュも削除するので、フィラーを使う場合は `--init` を再実行する。
 
 ## Claude Code Hooks との連携
 
@@ -223,15 +226,16 @@ Total execution time: 2445.4ms
 **注意**:
 - Hooks 環境では `PATH` が不十分な場合があるため、`.exe` のフルパスを直接指定すること。`.bat` 経由は `cmd /c "<バッチのフルパス>"` でラップする
 - パスにスペースが含まれる場合はダブルクォートで囲み、Windows パスの `\` は JSON では `\\` にエスケープする
-- VOICEVOX エンジンが事前に起動している必要あり (`AutoStartEngine: true` でも初回起動分の遅延は発生)
+- 既定 (`AutoStartEngine: true`) ではエンジンが停止していても自動起動されるが、起動を待つ分だけ最初の通知が遅れる。遅延を避けたい場合はエンジンを事前に起動しておく (`KeepEngineRunning: true` (既定) なら一度起動したエンジンは常駐する)
 
 ## 開発
 
-- **.NET 10 / C# 14** (primary constructors, collection expressions, ref readonly 等を活用)
+- **.NET 10 / C# 14** (primary constructors, collection expressions 等を活用)
 - **NAudio**: 再生・WAV 処理・リサンプル
 - **Concentus + Concentus.OggFile**: Ogg Opus のエンコード/デコード (純 C#、ネイティブ依存なし)
 - **Serilog**: 構造化ログ (Console + File sink)
 - **FluentValidation**: 設定検証
+- **Jab**: DI コンテナ (Source Generator によるコンパイル時 DI。登録漏れはビルドエラー)
 - **TUnit**: ユニットテスト
 
 リポジトリ直下の `Taskfile.yml` でよく使う操作をまとめている (`task` で一覧表示)。

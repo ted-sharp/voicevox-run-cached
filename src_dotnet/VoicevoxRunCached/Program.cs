@@ -1,5 +1,4 @@
-﻿using DryIoc;
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Services;
 
@@ -17,11 +16,11 @@ static class Program
             // アプリケーションの初期化 (設定ロード + Serilog 設定)
             var (settings, logger) = await ApplicationBootstrap.InitializeAsync(args);
 
-            // DI コンテナ構築
-            using var container = ServiceRegistration.Build(settings, logger);
+            // DI コンテナ構築 (Jab のコンパイル時生成プロバイダ)
+            using var services = new AppServiceProvider { Settings = settings, Logger = logger };
 
             using var cancellationManager = new CancellationManager(logger);
-            var commandRouter = container.Resolve<CommandRouter>();
+            var commandRouter = services.GetService<CommandRouter>();
 
             try
             {

@@ -283,17 +283,17 @@ Arguments:
   <text>                    The text to convert to speech
 
 Options:
-  --speaker, -s <id>        Speaker ID (default: 1)
-  --speed <value>           Speech speed (default: 1.0)
-  --pitch <value>           Speech pitch (default: 0.0)
-  --volume <value>          Speech volume (default: 1.0)
+  --speaker, -s <id>       Speaker ID (default: appsettings VoiceVox.DefaultSpeaker)
+  --speed <value>          Speech speed (default: 1.0)
+  --pitch <value>          Speech pitch (default: 0.0)
+  --volume <value>         Speech volume (default: 1.0)
   --no-cache               Skip cache usage
   --cache-only             Use cache only, don't call API
   --out, -o <path>         Save output audio to file (.wav or .opus)
   --no-play                Do not play audio (useful with --out)
-  --verbose                Show detailed timing information
+  --verbose                Show playback time and total execution time
   --log-level <level>      Log level: trace|debug|info|warn|error|crit|none (default: appsettings Logging.Level)
-  --log-format <fmt>       Log format: simple|json (default: simple)
+  --log-format <fmt>       Log format: simple|json (default: appsettings Logging.Format)
   --help, -h               Show this help message
 
 Commands:
@@ -301,13 +301,12 @@ Commands:
   devices                  List audio output devices
   --test                   Play the configured test message (Test.Message)
   --init                   Initialize filler audio cache
-  --clear                  Clear all audio cache files
+  --clear                  Clear audio and filler cache files
 
 Enhanced Features:
   • Standalone flags: --verbose → --verbose true
   • Concatenated options: -s1 → -s 1
-  • Configuration integration: Planned for future versions
-  • Priority: Command-line > Environment > appsettings.json
+  • Priority: Command-line > appsettings.Development.json > appsettings.json
 """);
     }
 }

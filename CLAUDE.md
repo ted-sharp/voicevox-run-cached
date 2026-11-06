@@ -62,11 +62,11 @@ src_dotnet/
 │   ├── GlobalUsings.cs                # Services.{Audio,Cache,Commands,Infrastructure,Synthesis} を global using
 │   ├── Configuration/                 # AppSettings + FluentValidation Validators
 │   ├── Constants/                     # AudioConstants 等のマジックナンバー集約
-│   ├── Models/                        # VoiceRequest, TextSegment, AudioFormat
+│   ├── Models/                        # VoiceRequest, TextSegment, AudioFormat, CacheMetadata
 │   ├── Services/                      # コア実装
 │   │   ├── CommandRouter.cs                # コマンドルーティング
 │   │   ├── ArgumentParser.cs               # CLI 引数解析
-│   │   ├── ServiceRegistration.cs          # DryIoc コンテナ構築
+│   │   ├── AppServiceProvider.cs           # Jab (コンパイル時 DI) のプロバイダ
 │   │   ├── Audio/                          # 音声再生・デバイス・フォーマット
 │   │   │   ├── AudioPlayer.cs              # ストリーミング再生
 │   │   │   ├── AudioDeviceManager.cs       # デバイス事前準備 (warm-up)
@@ -94,7 +94,7 @@ src_dotnet/
 │   │   │   ├── InitCommandHandler.cs           # --init
 │   │   │   └── CacheCommandHandler.cs          # --clear
 │   │   └── Infrastructure/                 # 横断的ユーティリティ
-│   │       ├── ApplicationBootstrap.cs     # 設定 + Serilog + MF 初期化
+│   │       ├── ApplicationBootstrap.cs     # 設定の構築・検証 + Serilog 構成 + ANSI カラー有効化
 │   │       ├── ConfigurationManager.cs / ConfigurationValidationService.cs
 │   │       ├── LoggingManager.cs           # Serilog 構成
 │   │       ├── RetryPolicyService.cs       # HTTP リトライ (自前実装の指数バックオフ)
@@ -105,11 +105,12 @@ src_dotnet/
 │   │       ├── IClock.cs                   # 時刻抽象 (テスト用に差し替え可)
 │   │       └── AssemblyVersion.cs          # アセンブリバージョン参照
 │   ├── Exceptions/                    # VoicevoxRunCachedException, ErrorCodes
+│   ├── Utilities/                     # JsonSerializerOptionsCache (meta.json / devices --json の日本語非エスケープ設定)
 │   └── appsettings.json
 └── VoicevoxRunCached.Tests/           # TUnit ベースのユニットテスト
 ```
 
-DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する。新しいクラスを singleton 登録する箇所はここに集約されている。
+DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs` の `[Singleton(typeof(Xxx))]` 属性に登録を集約している。依存の登録漏れは JAB0002、循環依存は JAB0008 としてビルドエラーになる。設定・`ILogger`・`IClock` は `Instance = nameof(...)` でプロバイダのプロパティから渡す (`Program.cs` で `new AppServiceProvider { Settings = ..., Logger = ... }`)。IDisposable な singleton はプロバイダの `Dispose()` が登録順に破棄する。
 `GlobalUsings.cs` で `Services.{Audio,Cache,Commands,Infrastructure,Synthesis}` を global using しているため、各ファイルでの個別 using は不要。
 
 ## Common Development Patterns
@@ -117,7 +118,7 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 ### Adding a New Command
 
 1. `Services/Commands/` にハンドラクラス (例: `XxxCommandHandler`) を作成。共通インターフェースは無く、具象クラスで `HandleXxxAsync()` 等の固有メソッドを公開する
-2. `Services/ServiceRegistration.cs` に `container.Register<XxxCommandHandler>(Reuse.Singleton)` で登録
+2. `Services/AppServiceProvider.cs` に `[Singleton(typeof(XxxCommandHandler))]` 属性を追加して登録
 3. `CommandRouter` のコンストラクタ引数として受け取り、`ExecuteCommandAsync` の switch 文に分岐を追加
 
 テキスト読み上げ系の追加機能は、独立したハンドラを作らず `TextToSpeechProcessor` に直接機能追加するか、`AudioExportService` のような単機能ヘルパに分けるのが現状の構成。
@@ -205,7 +206,7 @@ VoicevoxRunCached --clear
 VoicevoxRunCached --test
 
 Options:
---speaker, -s <id>    Speaker ID (default: 1)
+--speaker, -s <id>    Speaker ID (default: VoiceVox.DefaultSpeaker = 1)
 --speed <value>       Speech speed (default: 1.0)
 --pitch <value>       Speech pitch (default: 0.0)
 --volume <value>      Speech volume (default: 1.0)
@@ -213,7 +214,7 @@ Options:
 --cache-only          Use cache only, don't call API
 --out, -o <path>      Save output audio to file (.wav or .opus)
 --no-play             Do not play audio (useful with --out)
---verbose             Show detailed timing information
+--verbose             Show playback time and total execution time
 --log-level <level>   trace|debug|info|warn|error|crit|none
 --log-format <fmt>    simple|json
 --help, -h            Show help message

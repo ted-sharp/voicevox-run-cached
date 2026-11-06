@@ -89,7 +89,7 @@ public class AudioSettingsValidator : AbstractValidator<AudioSettings>
             .GreaterThanOrEqualTo(-1).WithMessage("OutputDeviceは-1以上である必要があります");
 
         RuleFor(x => x.Volume)
-            .InclusiveBetween(0.0, 2.0).WithMessage("Volumeは0.0-2.0の範囲である必要があります");
+            .InclusiveBetween(0.0, 1.0).WithMessage("Volumeは0.0-1.0の範囲である必要があります");
 
         RuleFor(x => x.PreparationDurationMs)
             .InclusiveBetween(50, 5000).WithMessage("PreparationDurationMsは50-5000ミリ秒の範囲である必要があります");

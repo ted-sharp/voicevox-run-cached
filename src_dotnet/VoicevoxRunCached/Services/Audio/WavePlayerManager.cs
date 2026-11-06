@@ -72,7 +72,8 @@ public class WavePlayerManager : IDisposable
             waveOut.DeviceNumber = _settings.OutputDevice;
         }
 
-        waveOut.Volume = (float)Math.Max(0.0, Math.Min(1.0, _settings.Volume));
+        // 範囲 (0.0-1.0) は AudioSettingsValidator で保証済み
+        waveOut.Volume = (float)_settings.Volume;
 
         _logger.LogDebug("WavePlayer を作成しました - デバイス: {Device}, ボリューム: {Volume}",
             _settings.OutputDevice, _settings.Volume);
