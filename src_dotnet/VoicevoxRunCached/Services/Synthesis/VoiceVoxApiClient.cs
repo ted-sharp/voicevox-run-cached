@@ -175,24 +175,29 @@ public class VoiceVoxApiClient : IDisposable
     /// </remarks>
     private VoiceVoxApiException MapToApiException(string operationName, Exception ex)
     {
-        var (code, statusCode) = ex switch
-        {
-            HttpRequestException httpEx when httpEx.StatusCode.HasValue
-                => (MapHttpStatusToErrorCode(httpEx.StatusCode.Value), (HttpStatusCode?)httpEx.StatusCode.Value),
-            TaskCanceledException => (ErrorCodes.Api.ApiTimeout, (HttpStatusCode?)null),
-            JsonException => (ErrorCodes.Api.ApiResponseInvalid, (HttpStatusCode?)null),
-            _ => (ErrorCodes.General.UnknownError, (HttpStatusCode?)null),
-        };
-
-        _logger.LogError(ex, "{OperationName} に失敗しました (StatusCode: {StatusCode})", operationName, statusCode);
+        _logger.LogError(ex, "{OperationName} に失敗しました (StatusCode: {StatusCode})",
+            operationName, (ex as HttpRequestException)?.StatusCode);
 
         // message は内部 (Exception.Message / ログ) 用、userMessage は CLI 表示用
         return new VoiceVoxApiException(
-            code,
+            MapToErrorCode(ex),
             ex.Message,
             $"{operationName} に失敗しました: {ex.Message}",
             ex);
     }
+
+    /// <summary>
+    /// リトライ後に残った例外をエラーコードに対応付ける純粋関数 (テスト容易性のために分離)。
+    /// </summary>
+    public static string MapToErrorCode(Exception ex) => ex switch
+    {
+        HttpRequestException { StatusCode: { } statusCode } => MapHttpStatusToErrorCode(statusCode),
+        // ステータスが無い = 接続できない・応答が途中で切れた (HttpIOException) など、エンジンから HTTP の応答を得られなかった
+        HttpRequestException or IOException => ErrorCodes.Engine.EngineNotAvailable,
+        TaskCanceledException => ErrorCodes.Api.ApiTimeout,
+        JsonException => ErrorCodes.Api.ApiResponseInvalid,
+        _ => ErrorCodes.General.UnknownError,
+    };
 
     private static string MapHttpStatusToErrorCode(HttpStatusCode statusCode) => statusCode switch
     {
