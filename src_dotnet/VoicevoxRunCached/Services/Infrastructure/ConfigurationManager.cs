@@ -23,8 +23,8 @@ public static class ConfigurationManager
 
         return new ConfigurationBuilder()
             .SetBasePath(executableDirectory)
-            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-            .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: true)
+            .AddJsonFile("appsettings.json", optional: false, reloadOnChange: false)
+            .AddJsonFile("appsettings.Development.json", optional: true, reloadOnChange: false)
             .AddCommandLine(processedArgs, SwitchMappings.ToDictionary())
             .Build();
     }
