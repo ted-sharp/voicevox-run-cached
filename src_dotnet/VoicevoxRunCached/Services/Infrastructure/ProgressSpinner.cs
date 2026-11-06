@@ -2,14 +2,26 @@
 
 namespace VoicevoxRunCached.Services.Infrastructure;
 
+/// <summary>
+/// 現在の行に回転アニメーションとメッセージを表示する。
+/// </summary>
+/// <remarks>
+/// 描画は <c>\r</c> で現在行の先頭に戻って書き直すだけで、カーソル位置を保存して戻ることはしない。
+/// 以前は開始時の位置へ戻って上書きしていたため、表示中に出たログ (エンジン起動・キャッシュクリアの info、
+/// フィラー生成失敗の Warning など) がスピナーに消されていた。
+/// 描画後はカーソルを行頭に置くので、表示中に出たログは行頭から書かれ、スピナーはその次の行に移って描画を続ける。
+/// 出力がリダイレクトされているとき (Hooks・パイプ) は何も描画しない。
+/// </remarks>
 public class ProgressSpinner : IDisposable
 {
+    // カーソル位置から行末までを消す ANSI エスケープ (前回の長いメッセージの残りを消す)
+    private const string ClearToEndOfLine = "\e[K";
+
     private readonly Task _animationTask;
     private readonly CancellationTokenSource _cancellationTokenSource = new();
 
     private readonly string[] _frames = ["|", "/", "-", "\\"];
 
-    // Use .NET 9 C# 13 System.Threading.Lock for better lock semantics/perf
     private readonly Lock _lock = new();
     private bool _isDisposed;
     private string _message;
@@ -17,7 +29,7 @@ public class ProgressSpinner : IDisposable
     public ProgressSpinner(string message = "")
     {
         _message = message;
-        _animationTask = Task.Run(AnimateAsync);
+        _animationTask = Console.IsOutputRedirected ? Task.CompletedTask : Task.Run(AnimateAsync);
     }
 
     public void Dispose()
@@ -25,14 +37,7 @@ public class ProgressSpinner : IDisposable
         if (_isDisposed)
             return;
         _cancellationTokenSource.Cancel();
-        try
-        {
-            _animationTask.Wait(AudioConstants.ProgressSpinnerStopWaitTimeoutMs);
-        }
-        catch (AggregateException)
-        {
-            // アニメーションループの OperationCanceledException を握る (cancel 時の既知例外)
-        }
+        _animationTask.Wait(AudioConstants.ProgressSpinnerStopWaitTimeoutMs);
         _cancellationTokenSource.Dispose();
         _isDisposed = true;
     }
@@ -48,13 +53,10 @@ public class ProgressSpinner : IDisposable
     private async Task AnimateAsync()
     {
         int frameIndex = 0;
-        var originalCursorLeft = Console.CursorLeft;
-        var originalCursorTop = Console.CursorTop;
+        Console.CursorVisible = false;
 
         try
         {
-            Console.CursorVisible = false;
-
             while (!_cancellationTokenSource.Token.IsCancellationRequested)
             {
                 string currentMessage;
@@ -63,17 +65,8 @@ public class ProgressSpinner : IDisposable
                     currentMessage = _message;
                 }
 
-                Console.SetCursorPosition(originalCursorLeft, originalCursorTop);
-                Console.Write($"\e[33m{_frames[frameIndex]}\e[0m {currentMessage}");
-
-                // Clear any remaining characters from previous longer messages
-                var currentLength = _frames[frameIndex].Length + 1 + currentMessage.Length;
-                var consoleWidth = Console.WindowWidth;
-                if (currentLength < consoleWidth)
-                {
-                    Console.Write(new string(' ', Math.Min(20, consoleWidth - currentLength - 1)));
-                }
-
+                // 1 回の Write で書く (Console.Out は同期化されているので、他スレッドのログと途中で混ざらない)
+                Console.Write($"\r\e[33m{_frames[frameIndex]}\e[0m {currentMessage}{ClearToEndOfLine}\r");
                 frameIndex = (frameIndex + 1) % _frames.Length;
 
                 await Task.Delay(100, _cancellationTokenSource.Token);
@@ -81,14 +74,11 @@ public class ProgressSpinner : IDisposable
         }
         catch (OperationCanceledException)
         {
-            // Expected when cancellation is requested
+            // Dispose による停止
         }
         finally
         {
-            // Clear the spinner line
-            Console.SetCursorPosition(originalCursorLeft, originalCursorTop);
-            Console.Write(new string(' ', Math.Min(Console.WindowWidth - 1, 80)));
-            Console.SetCursorPosition(originalCursorLeft, originalCursorTop);
+            Console.Write($"\r{ClearToEndOfLine}");
             Console.CursorVisible = true;
         }
     }
