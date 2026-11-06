@@ -1,4 +1,4 @@
-using VoicevoxRunCached.Services.Infrastructure;
+﻿using VoicevoxRunCached.Services.Infrastructure;
 
 namespace VoicevoxRunCached.Tests;
 
