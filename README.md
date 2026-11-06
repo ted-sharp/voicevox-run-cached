@@ -191,7 +191,7 @@ Total execution time: 2445.4ms
 → エンジンが起動しているか、`appsettings.json` の `BaseUrl` が正しいか確認。`AutoStartEngine: true` の場合は `EnginePath` 自動検出が失敗していないかも確認。
 
 **音声が再生されない**
-→ `VoicevoxRunCached.exe devices --full` で出力デバイス一覧を確認。`Audio.OutputDevice = -1` (OS デフォルト) を試す。`devices` コマンドは WASAPI endpoint を列挙するが、再生本体は `WaveOutEvent` ベースで `OutputDevice` (WaveOut index) のみで選択する。
+→ まず `Audio.OutputDevice = -1` (OS デフォルト) を試す。特定のデバイスで鳴らすには `VoicevoxRunCached.exe devices` の「Audio.OutputDevice (WaveOut index)」欄の番号を `Audio.OutputDevice` に設定する。上段の WASAPI 一覧 (`--full` の `[n]`) とは番号が一致しないことがあるので注意 (デバイス名は WinMM の制約で 31 文字までに切られる)。
 
 **音声の冒頭が途切れる (USB / Bluetooth デバイスで多発)**
 → `Audio.PrepareDevice: true` にして `PreparationDurationMs` を 300–500 に増やす。

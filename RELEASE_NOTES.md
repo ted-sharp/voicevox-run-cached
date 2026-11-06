@@ -42,6 +42,7 @@
   - `--help` の記載を実装に合わせて修正 (`--speaker` / `--log-format` の既定値は設定値、`--clear` はフィラーのキャッシュも削除、設定の優先順位に環境変数は含まれない)
   - `--clear` でファイルを削除できなかった場合も「Cache cleared successfully!」と表示していた問題を修正 (エラーとして終了コード 4 を返す)
   - 終了時の後片付け (エンジン停止・再生デバイスの破棄) で出たログが、Serilog を閉じた後に書かれて失われることがあった問題を修正
+  - `devices` に `Audio.OutputDevice` に指定する WaveOut index の一覧を追加 (`--json` では `waveOutDevices`)。これまでは WASAPI の一覧しか出ず、番号が WaveOut index と一致しないため設定値が分からなかった
 - 削除:
   - メモリキャッシュ層と `Cache.MemoryCacheSizeMb` 設定 (1 実行ごとに終了する CLI では効果がないため。既存設定に残っていても無視される)
   - `--benchmark` コマンド (BenchmarkDotNet によるベンチマークと合わせて廃止)

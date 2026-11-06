@@ -1,7 +1,10 @@
-﻿using System.Text.Json;
+﻿using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
+using NAudio;
 using NAudio.CoreAudioApi;
+using NAudio.Wave;
 using VoicevoxRunCached.Utilities;
 
 namespace VoicevoxRunCached.Services.Commands;
@@ -16,11 +19,19 @@ public sealed record AudioDeviceInfo(
     [property: JsonPropertyName("state")] string State);
 
 /// <summary>
+/// Audio.OutputDevice に指定する WaveOut デバイス (再生は WaveOutEvent.DeviceNumber = Index で選ぶ)。
+/// </summary>
+public sealed record WaveOutDeviceInfo(
+    [property: JsonPropertyName("index")] int Index,
+    [property: JsonPropertyName("name")] string Name);
+
+/// <summary>
 /// devices --json コマンドの出力ペイロード形状。
 /// </summary>
 internal sealed record AudioDeviceListPayload(
     [property: JsonPropertyName("default")] AudioDeviceInfo Default,
-    [property: JsonPropertyName("devices")] IReadOnlyList<AudioDeviceInfo> Devices);
+    [property: JsonPropertyName("devices")] IReadOnlyList<AudioDeviceInfo> Devices,
+    [property: JsonPropertyName("waveOutDevices")] IReadOnlyList<WaveOutDeviceInfo> WaveOutDevices);
 
 /// <summary>
 /// デバイス関連のコマンド処理を行うクラス
@@ -43,15 +54,37 @@ public class DeviceCommandHandler
 
         var (defaultName, defaultId) = GetDefaultAudioEndpoint(enumerator);
         var deviceList = full ? EnumerateDevices(enumerator) : new List<AudioDeviceInfo>();
+        var waveOutDevices = EnumerateWaveOutDevices();
 
         if (outputJson)
         {
-            OutputJson(defaultName, defaultId, deviceList);
+            OutputJson(defaultName, defaultId, deviceList, waveOutDevices);
             return 0;
         }
 
         OutputConsole(defaultName, defaultId, deviceList, full);
+        OutputWaveOutDevices(waveOutDevices);
         return 0;
+    }
+
+    /// <summary>
+    /// 再生デバイスの選択 (Audio.OutputDevice) に使う WaveOut の index 一覧。
+    /// WASAPI の一覧とは並び・件数が一致するとは限らないので別に列挙する。
+    /// </summary>
+    /// <remarks>
+    /// net10.0 (非 -windows) では NAudio の netstandard 版が使われ <c>WaveOut.GetCapabilities</c> が無いため、
+    /// 同じ処理を WinMM ラッパー (<see cref="WaveInterop"/>) で行う。WinMM の制約で ProductName は最大 31 文字に切られる。
+    /// </remarks>
+    private static List<WaveOutDeviceInfo> EnumerateWaveOutDevices()
+    {
+        var capsSize = Marshal.SizeOf<WaveOutCapabilities>();
+        return Enumerable.Range(0, WaveInterop.waveOutGetNumDevs())
+            .Select(i =>
+            {
+                MmException.Try(WaveInterop.waveOutGetDevCaps(i, out var caps, capsSize), nameof(WaveInterop.waveOutGetDevCaps));
+                return new WaveOutDeviceInfo(i, caps.ProductName);
+            })
+            .ToList();
     }
 
     private (string? Name, string? Id) GetDefaultAudioEndpoint(MMDeviceEnumerator enumerator)
@@ -93,11 +126,13 @@ public class DeviceCommandHandler
         return list;
     }
 
-    private static void OutputJson(string? defaultName, string? defaultId, IReadOnlyList<AudioDeviceInfo> deviceList)
+    private static void OutputJson(
+        string? defaultName, string? defaultId, IReadOnlyList<AudioDeviceInfo> deviceList, IReadOnlyList<WaveOutDeviceInfo> waveOutDevices)
     {
         var payload = new AudioDeviceListPayload(
             new AudioDeviceInfo(defaultId ?? "", defaultName ?? "", ""),
-            deviceList);
+            deviceList,
+            waveOutDevices);
         var json = JsonSerializer.Serialize(payload, JsonSerializerOptionsCache.Indented);
         Console.WriteLine(json);
     }
@@ -137,6 +172,17 @@ public class DeviceCommandHandler
         {
             var d = deviceList[idx];
             ConsoleHelper.WriteLine($"  [{idx}] \"{d.Name}\" (ID: {d.Id}) State: {d.State}");
+        }
+    }
+
+    private static void OutputWaveOutDevices(IReadOnlyList<WaveOutDeviceInfo> waveOutDevices)
+    {
+        ConsoleHelper.WriteLine("");
+        ConsoleHelper.WriteLine("Audio.OutputDevice (WaveOut index):");
+        ConsoleHelper.WriteLine("  -1: OS default");
+        foreach (var d in waveOutDevices)
+        {
+            ConsoleHelper.WriteLine($"  {d.Index,2}: \"{d.Name}\"");
         }
     }
 }

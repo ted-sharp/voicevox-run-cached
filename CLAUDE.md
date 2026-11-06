@@ -231,7 +231,7 @@ Options:
 
 **Engine Management**: 起動時に既存 VOICEVOX プロセスを検査してから launch。`EnginePath` 空なら一般的なインストール場所から自動検出。
 
-**Audio Device**: `OutputDevice = -1` で OS デフォルト、`0+` で specific index。`PrepareDevice: true` で起動時に無音再生してデバイスを温め、最初のセグメントの取りこぼしを防ぐ。
+**Audio Device**: `OutputDevice = -1` で OS デフォルト、`0+` で WaveOut index (`WaveOutEvent.DeviceNumber`)。`devices` は WASAPI 一覧に加えて WaveOut index 一覧を出す (netstandard 版 NAudio には `WaveOut.GetCapabilities` が無いため `WaveInterop.waveOutGetDevCaps` で取得)。両者の番号は一致しないことがある。`PrepareDevice: true` で起動時に無音再生してデバイスを温め、最初のセグメントの取りこぼしを防ぐ。
 
 ## Code Standards
 

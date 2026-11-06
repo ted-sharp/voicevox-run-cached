@@ -142,7 +142,7 @@ flowchart TD
 
 - エンジン未接続: BaseUrl確認、`AutoStartEngine` 利用、`EnginePath` 設定
 - 音切れ: `Audio.PrepareDevice=true`、`PreparationDurationMs`/`PreparationVolume` 調整
-- デバイス選択: `devices --full` で確認し、`Audio.OutputDevice` に WaveOut index を設定 (`devices` は WASAPI endpoint の一覧なので、番号が WaveOut index と一致するとは限らない)
+- デバイス選択: `devices` の「Audio.OutputDevice (WaveOut index)」欄 (`--json` では `waveOutDevices`) の番号を `Audio.OutputDevice` に設定 (WASAPI 一覧の番号とは一致するとは限らない)
 
 ## 移行メモ（初期仕様との差分）
 
