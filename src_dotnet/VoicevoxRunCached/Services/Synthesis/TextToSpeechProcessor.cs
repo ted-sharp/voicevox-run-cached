@@ -110,7 +110,7 @@ public class TextToSpeechProcessor
         }
 
         LogElapsedIfVerbose(options.Verbose, totalStartTime);
-        return hasPartialFailure ? 2 : 0;
+        return hasPartialFailure ? ErrorCodes.PartialFailureExitCode : 0;
     }
 
     private async Task<List<TextSegment>> LoadSegmentsAsync(VoiceRequest request, bool noCache, CancellationToken cancellationToken)

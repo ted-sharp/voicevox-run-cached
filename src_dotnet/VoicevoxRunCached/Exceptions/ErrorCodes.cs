@@ -3,6 +3,11 @@
 /// <summary>
 /// エラーコードの定義
 /// </summary>
+/// <remarks>
+/// 終了コード 2 は使わない。Claude Code の Hooks は終了コード 2 を「ブロッキングエラー」として扱い、
+/// Stop フックなら Claude の停止を止めて作業を続けさせる。通知用に呼ばれる本ツールの失敗で
+/// Claude の動作が変わらないよう、2 以外の値に割り当てる。
+/// </remarks>
 public static class ErrorCodes
 {
     /// <summary>
@@ -10,6 +15,12 @@ public static class ErrorCodes
     /// 呼び出し側 (Hooks・スクリプト) が正常終了と区別できるようにする。
     /// </summary>
     public const int CancelledExitCode = 130;
+
+    /// <summary>
+    /// 一部のセグメントだけ合成に失敗したときの終了コード (再生・保存は成功した分だけ行われる)。
+    /// 全セグメントが失敗した場合は AUDIO エラー (5)。
+    /// </summary>
+    public const int PartialFailureExitCode = 8;
 
     /// <summary>
     /// エラーコードに対応するプロセス終了コードを返す。カテゴリ (prefix) ごとに値を割り当てる。
@@ -22,7 +33,7 @@ public static class ErrorCodes
         var prefix = errorCode.Split('_')[0];
         return prefix switch
         {
-            "CONFIG" => 2,
+            "CONFIG" => 7,
             "ENGINE" => 3,
             "CACHE" => 4,
             "AUDIO" => 5,
