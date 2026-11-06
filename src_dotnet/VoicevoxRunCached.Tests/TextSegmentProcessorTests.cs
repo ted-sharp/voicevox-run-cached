@@ -94,6 +94,52 @@ public class TextSegmentProcessorTests
     }
 
     [Test]
+    public async Task ProcessText_OverlongSentence_SplitsAfterReadingComma()
+    {
+        // 上限 (10) で機械的に切ると「あいうえお、かきくけ」「こさし。」になり、語の途中で読み上げが途切れていた
+        var processor = CreateProcessor(maxSegmentLength: 10);
+
+        var result = await processor.ProcessTextAsync("あいうえお、かきくけこさし。");
+
+        await Assert.That(String.Join("|", result.Select(s => s.Text))).IsEqualTo("あいうえお、|かきくけこさし。");
+    }
+
+    [Test]
+    public async Task ProcessText_OverlongSentence_DoesNotSplitEnglishWords()
+    {
+        var processor = CreateProcessor(maxSegmentLength: 20);
+        const string text = "The quick brown fox jumps over the lazy dog and keeps running";
+
+        var result = await processor.ProcessTextAsync(text);
+
+        await Assert.That(result.Count).IsGreaterThanOrEqualTo(2);
+        // 単語の途中で切れていれば、空白で連結しても元の文に戻らない
+        await Assert.That(String.Join(" ", result.Select(s => s.Text))).IsEqualTo(text);
+    }
+
+    [Test]
+    public async Task ProcessText_OverlongSentence_DoesNotSplitSurrogatePair()
+    {
+        // 上限位置に絵文字 (サロゲートペア) の前半が来ても割らない。割ると不正な UTF-16 が API に送られる
+        var processor = CreateProcessor(maxSegmentLength: 10);
+
+        var result = await processor.ProcessTextAsync("あいうえおかきくけ😀こ");
+
+        await Assert.That(String.Join("|", result.Select(s => s.Text))).IsEqualTo("あいうえおかきくけ|😀こ");
+    }
+
+    [Test]
+    public async Task ProcessText_OverlongSentence_IgnoresBreakInFirstHalf()
+    {
+        // 前半の読点まで戻ると極端に短いセグメントができるので、上限位置で切る
+        var processor = CreateProcessor(maxSegmentLength: 10);
+
+        var result = await processor.ProcessTextAsync("あ、いうえおかきくけこ");
+
+        await Assert.That(String.Join("|", result.Select(s => s.Text))).IsEqualTo("あ、いうえおかきくけ|こ");
+    }
+
+    [Test]
     public async Task ProcessText_AssignsSpeakerIdToAllSegments()
     {
         var processor = CreateProcessor();

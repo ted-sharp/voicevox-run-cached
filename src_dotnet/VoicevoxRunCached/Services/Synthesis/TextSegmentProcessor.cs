@@ -13,6 +13,9 @@ public partial class TextSegmentProcessor
     private static readonly char[] SentenceEndings = ['。', '！', '？', '!', '?'];
     private static readonly char[] LineBreaks = ['\n', '\r'];
 
+    /// <summary>上限を超えた文を切る位置の候補 (この直後で切る)。空白は <see cref="Char.IsWhiteSpace(char)"/> で別に判定する。</summary>
+    private static readonly char[] SoftBreaks = ['、', '，'];
+
     private readonly int _maxSegmentLength;
     private readonly ILogger _logger;
 
@@ -61,15 +64,50 @@ public partial class TextSegmentProcessor
 
             if (SentenceEndings.Contains(c)
                 || LineBreaks.Contains(c)
-                || IsSentenceEndingPeriod(text, i)
-                || currentSegment.Length >= _maxSegmentLength)
+                || IsSentenceEndingPeriod(text, i))
             {
                 AddSegmentIfNotEmpty(segments, currentSegment);
+            }
+            else if (currentSegment.Length >= _maxSegmentLength)
+            {
+                SplitOverlongSegment(segments, currentSegment);
             }
         }
 
         AddSegmentIfNotEmpty(segments, currentSegment);
         return segments;
+    }
+
+    /// <summary>
+    /// 上限に達したバッファを区切りの良い位置で切ってセグメントにし、残りはバッファに持ち越す。
+    /// </summary>
+    private static void SplitOverlongSegment(List<string> segments, StringBuilder buffer)
+    {
+        int cut = FindSplitPosition(buffer);
+        var rest = buffer.ToString(cut, buffer.Length - cut);
+        buffer.Length = cut;
+        AddSegmentIfNotEmpty(segments, buffer);
+        buffer.Append(rest);
+    }
+
+    /// <summary>
+    /// 後半にある最後の読点・空白の直後を返す (単語や文節の途中で切ると読み上げが不自然になるため)。
+    /// 無ければ末尾で切るが、末尾が high surrogate (絵文字などの前半) ならペアを割らないよう 1 文字手前で切る。
+    /// </summary>
+    /// <remarks>
+    /// 前半の区切りまで戻ると極端に短いセグメントができるので、後半だけを探す。
+    /// 半角 <c>,</c> は「1,980」を割るので区切りに含めない。
+    /// </remarks>
+    private static int FindSplitPosition(StringBuilder buffer)
+    {
+        for (int i = buffer.Length - 1; i >= buffer.Length / 2; i--)
+        {
+            if (SoftBreaks.Contains(buffer[i]) || Char.IsWhiteSpace(buffer[i]))
+            {
+                return i + 1;
+            }
+        }
+        return Char.IsHighSurrogate(buffer[^1]) ? buffer.Length - 1 : buffer.Length;
     }
 
     /// <summary>
