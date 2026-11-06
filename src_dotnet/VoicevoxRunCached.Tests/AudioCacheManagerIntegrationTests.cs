@@ -24,11 +24,6 @@ public class AudioCacheManagerIntegrationTests
         return (new AudioCacheManager(settings, NullLogger.Instance, clock ?? SystemClock.Instance), dir);
     }
 
-    private sealed class MutableClock(DateTime utcNow) : IClock
-    {
-        public DateTime UtcNow { get; set; } = utcNow;
-    }
-
     [Test]
     public async Task GetCachedAudio_UsesInjectedClockForExpiration()
     {

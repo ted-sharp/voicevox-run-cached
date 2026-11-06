@@ -137,8 +137,8 @@ VoicevoxRunCached --clear               # キャッシュ全削除
   "Cache": {
     "Directory": "./cache/audio/",
     "UseExecutableBaseDirectory": true,  // 相対パスを exe 基準で解決
-    "ExpirationDays": 30,
-    "MaxSizeGB": 1.0,             // 上限超過時に古い順に eviction
+    "ExpirationDays": 30,         // 最後に使ってからこの日数を過ぎたキャッシュを削除 (使うたびに延長)
+    "MaxSizeGB": 1.0,             // 上限超過時は最後に使ったのが古い順に削除
     "OpusBitrateKbps": 32         // キャッシュ Opus のビットレート 12-128 (キーに含まれないので既存キャッシュは流用)
   },
   "Audio": {

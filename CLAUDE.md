@@ -144,6 +144,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 
 - SHA256 生成ロジックは**変更禁止** (既存キャッシュが全て無効化される)
 - 期限切れは `ExpirationDays`、容量上限は `MaxSizeGB` で eviction。`AudioCacheManager.RunMaintenanceAsync` で両方まとめて実行し、`SegmentProducer` が新規保存のあった実行の最後に 1 回だけ呼ぶ (保存ごとに全走査しない)
+- 期限・容量超過の古さは**最終利用日時 = meta.json の更新日時**で判定する (LRU)。`DiskCacheStore.SaveAsync` が CreatedAt (IClock) に設定し、`LoadAsync` がヒットのたびに `_clock.UtcNow` に更新する。作成日時で数えると、よく使う定型文ほど定期的に消えて作り直しになるため。meta.json の中身 (CreatedAt) は判定に使わない
 - 期限切れは読み込み時 (`DiskCacheStore.LoadAsync`) にも判定され、該当ファイルは削除される
 - 読み込み時・eviction の削除 (`DiskCacheStore.Delete`) は best-effort で失敗を Warning に留めるが、`--clear` (`DiskCacheStore.DeleteAll` / `FillerManager.ClearFillerCacheAsync`) は削除そのものが目的なので、失敗を握りつぶさず `CacheErrorMapper` で `CacheException` にする (削除できていないのに成功表示しないため)。`--init` の旧形式 (`.mp3`) フィラー削除は、もう読まれないファイルの後片付けなので best-effort (Warning を出してフィラー生成を続ける)
 - キャッシュは executable と同じディレクトリに保存される (`UseExecutableBaseDirectory: true`)

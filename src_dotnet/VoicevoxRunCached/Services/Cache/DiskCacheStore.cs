@@ -36,7 +36,13 @@ public class DiskCacheStore
 
     /// <summary>
     /// ディスクキャッシュから音声データを読み込む。期限切れ・メタデータ不整合の場合は削除して null を返す。
+    /// ヒットしたら最終利用日時を今に更新する。
     /// </summary>
+    /// <remarks>
+    /// 最終利用日時は meta.json の更新日時で表す (保存時に CreatedAt を設定し、ヒットのたびに更新する)。
+    /// 期限 (<c>ExpirationDays</c>) はここから数え、容量超過時の削除 (<see cref="CacheEvictionPolicy"/>) も古い順に使う。
+    /// 作成日時で数えると、よく使う定型文ほど定期的に消えて作り直しになるため。
+    /// </remarks>
     public async Task<byte[]?> LoadAsync(string cacheKey, CancellationToken cancellationToken = default)
     {
         var (audioPath, metaPath) = ResolvePaths(cacheKey);
@@ -59,14 +65,16 @@ public class DiskCacheStore
                 return null;
             }
 
-            if (_clock.UtcNow - metadata.CreatedAt > _expiration)
+            var lastUsedAt = File.GetLastWriteTimeUtc(metaPath);
+            if (_clock.UtcNow - lastUsedAt > _expiration)
             {
-                _logger.LogDebug("キャッシュミス: {CacheKey} - メタデータが期限切れ", cacheKey);
+                _logger.LogDebug("キャッシュミス: {CacheKey} - 期限切れ (最終利用: {LastUsedAt:O})", cacheKey, lastUsedAt);
                 Delete(cacheKey);
                 return null;
             }
 
             var audioData = await File.ReadAllBytesAsync(audioPath, cancellationToken);
+            MarkUsed(cacheKey, metaPath);
             _logger.LogDebug("ディスクキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, audioData.Length);
             return audioData;
         }
@@ -104,8 +112,25 @@ public class DiskCacheStore
 
         var metaJson = JsonSerializer.Serialize(metadata, JsonSerializerOptionsCache.Indented);
         await File.WriteAllTextAsync(metaPath, metaJson, cancellationToken);
+        // 最終利用日時 (meta.json の更新日時) を IClock の時刻に揃える (期限・eviction の判定は IClock と比べるため)
+        File.SetLastWriteTimeUtc(metaPath, metadata.CreatedAt);
 
         _logger.LogDebug("キャッシュファイルを保存しました: {CacheKey}, サイズ: {Size} bytes", cacheKey, audioData.Length);
+    }
+
+    /// <summary>
+    /// 最終利用日時 (meta.json の更新日時) を今にする。失敗しても再生には影響しないので Warning で続行する。
+    /// </summary>
+    private void MarkUsed(string cacheKey, string metaPath)
+    {
+        try
+        {
+            File.SetLastWriteTimeUtc(metaPath, _clock.UtcNow);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "キャッシュの最終利用日時を更新できませんでした: {CacheKey}", cacheKey);
+        }
     }
 
     /// <summary>

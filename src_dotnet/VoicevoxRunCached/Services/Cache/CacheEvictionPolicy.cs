@@ -25,12 +25,12 @@ public class CacheEvictionPolicy
     }
 
     /// <summary>
-    /// 期限切れキャッシュを削除する。
+    /// 最終利用から <c>ExpirationDays</c> を過ぎたキャッシュを削除する。
     /// </summary>
     /// <remarks>
-    /// 新規保存のある実行ごとに全件走査するため、meta.json の中身は読まずファイル更新日時で判定する
-    /// (meta.json は CreatedAt 記録時に書かれるので同義。数万件でも stat のみで済む)。
-    /// 読み込み時の厳密な期限判定は <see cref="DiskCacheStore.LoadAsync"/> が CreatedAt で行う。
+    /// 最終利用日時は meta.json の更新日時 (保存時に CreatedAt を設定し、<see cref="DiskCacheStore.LoadAsync"/> が
+    /// ヒットのたびに更新する)。新規保存のある実行ごとに全件走査するが、meta.json の中身は読まないので数万件でも stat のみで済む。
+    /// 読み込み時も <see cref="DiskCacheStore.LoadAsync"/> が同じ基準で判定する。
     /// </remarks>
     public Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
     {
@@ -71,11 +71,11 @@ public class CacheEvictionPolicy
     }
 
     /// <summary>
-    /// MaxSizeGb を超えていれば古いものから削除する。
+    /// MaxSizeGb を超えていれば、最後に使われたのが古いものから削除する (LRU)。
     /// </summary>
     /// <remarks>
-    /// 上限に達したキャッシュでは毎回ここを通るため、古さは meta.json を読まずファイル更新日時で判定する
-    /// (<see cref="CleanupExpiredAsync"/> と同じ理由)。
+    /// 上限に達したキャッシュでは毎回ここを通るため、meta.json は読まず更新日時 (= 最終利用日時) で判定する
+    /// (<see cref="CleanupExpiredAsync"/> と同じ理由)。よく使う定型文はヒットのたびに新しくなるので残る。
     /// </remarks>
     public Task CleanupByMaxSizeAsync(CancellationToken cancellationToken = default)
     {
@@ -123,7 +123,7 @@ public class CacheEvictionPolicy
     }
 
     /// <summary>
-    /// エントリの古さ。meta.json があればその更新日時 (= CreatedAt 記録時刻)、無ければ音声ファイルの更新日時。
+    /// エントリの古さ。meta.json があればその更新日時 (= 最終利用日時)、無ければ音声ファイルの更新日時。
     /// </summary>
     private static DateTime ResolveTimestamp(FileInfo audio)
     {
