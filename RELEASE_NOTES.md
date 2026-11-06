@@ -22,7 +22,6 @@
   - 存在しない speaker ID を合成前に `/speakers` で検出し即エラーにする (リトライ待ちの十数秒を解消)
   - 入力エラー (`InvalidArguments`) はスタックトレースなしの Warning ログにする
   - `-sample` のようにハイフンで始まる本文がオプションとして分解されていた問題を修正
-  - キャッシュ I/O エラー時に API へ fallback する経路を追加
   - 浮動小数粒度バグ修正 (キャッシュキーの揺らぎ防止)
   - `ConsoleHelper` のログ二重出力を解消
   - MediaFoundation API 呼び出しを統一、`WavePlayer` の状態二重持ちを解消
@@ -40,6 +39,9 @@
   - アセンブリバージョンが 1.6.0.0 のまま固定されていた問題を修正
 - 削除:
   - メモリキャッシュ層と `Cache.MemoryCacheSizeMb` 設定 (1 実行ごとに終了する CLI では効果がないため。既存設定に残っていても無視される)
+  - `--benchmark` コマンド (BenchmarkDotNet によるベンチマークと合わせて廃止)
+  - `Audio.OutputDeviceId` 設定 (実装されておらず効果が無かったため。出力デバイスは `Audio.OutputDevice` の WaveOut index で指定する。既存設定に残っていても無視される)
+  - 未使用だった Polly 依存 (リトライは `RetryPolicyService` の自前実装)
   - 未使用の NuGet パッケージ: `Microsoft.Extensions.Logging.Console`, `FluentValidation.DependencyInjectionExtensions`, `Serilog.Sinks.Seq`, `Serilog.Settings.Configuration`, `Serilog.Enrichers.Environment`, `Serilog.Enrichers.Thread`
 - 開発環境:
   - `Taskfile.yml` を追加 (`task build` / `task test` / `task check` / `task publish:zip` 等)

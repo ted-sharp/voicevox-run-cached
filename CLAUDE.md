@@ -62,7 +62,7 @@ src_dotnet/
 │   ├── GlobalUsings.cs                # Services.{Audio,Cache,Commands,Infrastructure,Synthesis} を global using
 │   ├── Configuration/                 # AppSettings + FluentValidation Validators
 │   ├── Constants/                     # AudioConstants 等のマジックナンバー集約
-│   ├── Models/                        # VoiceRequest, TextSegment, AudioFormat
+│   ├── Models/                        # VoiceRequest, TextSegment, AudioFormat, CacheMetadata
 │   ├── Services/                      # コア実装
 │   │   ├── CommandRouter.cs                # コマンドルーティング
 │   │   ├── ArgumentParser.cs               # CLI 引数解析
@@ -94,7 +94,7 @@ src_dotnet/
 │   │   │   ├── InitCommandHandler.cs           # --init
 │   │   │   └── CacheCommandHandler.cs          # --clear
 │   │   └── Infrastructure/                 # 横断的ユーティリティ
-│   │       ├── ApplicationBootstrap.cs     # 設定 + Serilog + MF 初期化
+│   │       ├── ApplicationBootstrap.cs     # 設定の構築・検証 + Serilog 構成 + ANSI カラー有効化
 │   │       ├── ConfigurationManager.cs / ConfigurationValidationService.cs
 │   │       ├── LoggingManager.cs           # Serilog 構成
 │   │       ├── RetryPolicyService.cs       # HTTP リトライ (自前実装の指数バックオフ)
@@ -105,6 +105,7 @@ src_dotnet/
 │   │       ├── IClock.cs                   # 時刻抽象 (テスト用に差し替え可)
 │   │       └── AssemblyVersion.cs          # アセンブリバージョン参照
 │   ├── Exceptions/                    # VoicevoxRunCachedException, ErrorCodes
+│   ├── Utilities/                     # JsonSerializerOptionsCache (meta.json / devices --json の日本語非エスケープ設定)
 │   └── appsettings.json
 └── VoicevoxRunCached.Tests/           # TUnit ベースのユニットテスト
 ```
@@ -205,7 +206,7 @@ VoicevoxRunCached --clear
 VoicevoxRunCached --test
 
 Options:
---speaker, -s <id>    Speaker ID (default: 1)
+--speaker, -s <id>    Speaker ID (default: VoiceVox.DefaultSpeaker = 1)
 --speed <value>       Speech speed (default: 1.0)
 --pitch <value>       Speech pitch (default: 0.0)
 --volume <value>      Speech volume (default: 1.0)
@@ -213,7 +214,7 @@ Options:
 --cache-only          Use cache only, don't call API
 --out, -o <path>      Save output audio to file (.wav or .opus)
 --no-play             Do not play audio (useful with --out)
---verbose             Show detailed timing information
+--verbose             Show playback time and total execution time
 --log-level <level>   trace|debug|info|warn|error|crit|none
 --log-format <fmt>    simple|json
 --help, -h            Show help message
