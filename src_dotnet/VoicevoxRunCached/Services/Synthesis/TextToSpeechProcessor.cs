@@ -53,8 +53,8 @@ public class TextToSpeechProcessor
     {
         var totalStartTime = _clock.UtcNow;
 
-        await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
-
+        // エンジンの確認・起動はここではしない。全セグメントがキャッシュ済み (--cache-only を含む) なら
+        // エンジンは不要なので、合成が必要なときだけ SynthesizeAndPlayAsync で行う
         var segments = await LoadSegmentsAsync(request, options.NoCache, cancellationToken);
         if (segments.Count == 0)
         {
@@ -153,6 +153,10 @@ public class TextToSpeechProcessor
         var anyMissing = segments.Any(s => !s.IsCached);
         if (anyMissing)
         {
+            // 合成が必要なときだけエンジンを確認する (停止中で AutoStartEngine なら起動を待つ)。
+            // 全部キャッシュ済みならエンジンに一切接続しない (起動待ちで通知が遅れない・エンジン停止中でも鳴る)
+            await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
+
             // 存在しない speaker だとエンジンは /initialize_speaker で 500 を返し、リトライ込みで十数秒待たされる。
             // /speakers の照会はローカルで数 ms なので、合成が必要なときだけ先に確認して即エラーにする。
             EnsureSpeakerExists(await _apiClient.GetSpeakersAsync(cancellationToken), request.SpeakerId);
