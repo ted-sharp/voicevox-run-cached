@@ -6,35 +6,53 @@ using VoicevoxRunCached.Constants;
 namespace VoicevoxRunCached.Services.Audio;
 
 /// <summary>
-/// 起動時のデバイス事前準備 (warm-up) を担当するクラス。
+/// 再生前のデバイス事前準備 (warm-up) を担当するクラス。
 /// 最初のセグメントの取りこぼしを防ぐため、無音再生でドライバを起こしておく。
 /// </summary>
+/// <remarks>
+/// warm-up は <see cref="StartPreparation"/> で始める (コンストラクタでは始めない)。
+/// このクラスは CommandRouter の依存として全コマンドで生成されるため、コンストラクタで始めると
+/// <c>speakers</c> / <c>devices</c> / <c>--clear</c> / <c>--no-play</c> でもウォームアップ音が鳴っていた。
+/// </remarks>
 public class AudioDeviceManager : IDisposable
 {
-    private readonly Task? _devicePreparationTask;
     private readonly AudioSettings _settings;
     private readonly ILogger _logger;
+    private Task? _devicePreparationTask;
     private bool _disposed;
 
     public AudioDeviceManager(AudioSettings settings, ILogger logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
 
-        if (_settings.PrepareDevice)
+    /// <summary>
+    /// <c>Audio.PrepareDevice</c> が有効なら warm-up をバックグラウンドで始める。2 回目以降は何もしない。
+    /// </summary>
+    /// <remarks>
+    /// 再生することが決まった時点で呼び、キャッシュ参照やエンジン起動と並行して温めておく
+    /// (完了は <see cref="EnsureDeviceReadyAsync"/> で待つ)。
+    /// </remarks>
+    public void StartPreparation()
+    {
+        if (!_settings.PrepareDevice || _devicePreparationTask != null)
         {
-            _devicePreparationTask = Task.Run(async () =>
-            {
-                try
-                {
-                    await PrewarmAudioDeviceAsync(_settings.PreparationDurationMs);
-                }
-                catch
-                {
-                    _logger.LogDebug("デバイス事前準備でエラーが発生しましたが、継続します");
-                }
-            });
+            return;
         }
+
+        _logger.LogDebug("デバイス事前準備を開始します");
+        _devicePreparationTask = Task.Run(async () =>
+        {
+            try
+            {
+                await PrewarmAudioDeviceAsync(_settings.PreparationDurationMs);
+            }
+            catch
+            {
+                _logger.LogDebug("デバイス事前準備でエラーが発生しましたが、継続します");
+            }
+        });
     }
 
     public void Dispose()
@@ -54,9 +72,14 @@ public class AudioDeviceManager : IDisposable
         _disposed = true;
     }
 
+    /// <summary>
+    /// warm-up の完了を待つ。まだ始めていなければここで始める。
+    /// </summary>
     public async Task EnsureDeviceReadyAsync()
     {
-        if (_settings.PrepareDevice && _devicePreparationTask != null)
+        StartPreparation();
+
+        if (_devicePreparationTask != null)
         {
             try
             { await _devicePreparationTask; }

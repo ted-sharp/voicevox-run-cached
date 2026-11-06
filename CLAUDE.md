@@ -241,7 +241,7 @@ Options:
 
 **Engine Management**: 起動時に既存 VOICEVOX プロセスを検査してから launch。`EnginePath` 空なら一般的なインストール場所から自動検出。
 
-**Audio Device**: `OutputDevice = -1` で OS デフォルト、`0+` で WaveOut index (`WaveOutEvent.DeviceNumber`)。`devices` は WASAPI 一覧に加えて WaveOut index 一覧を出す (netstandard 版 NAudio には `WaveOut.GetCapabilities` が無いため `WaveInterop.waveOutGetDevCaps` で取得)。両者の番号は一致しないことがある。`PrepareDevice: true` で起動時に無音再生してデバイスを温め、最初のセグメントの取りこぼしを防ぐ。
+**Audio Device**: `OutputDevice = -1` で OS デフォルト、`0+` で WaveOut index (`WaveOutEvent.DeviceNumber`)。`devices` は WASAPI 一覧に加えて WaveOut index 一覧を出す (netstandard 版 NAudio には `WaveOut.GetCapabilities` が無いため `WaveInterop.waveOutGetDevCaps` で取得)。両者の番号は一致しないことがある。`PrepareDevice: true` で再生前に小音量の音を流してデバイスを温め、最初のセグメントの取りこぼしを防ぐ。warm-up は `AudioDeviceManager.StartPreparation` で始め、コンストラクタでは始めない (`CommandRouter` の依存として全コマンドで生成されるため)。読み上げでは `TextToSpeechProcessor` が `--no-play` 以外のときロック取得直後に `AudioPlayer.BeginDevicePreparation` を呼び、キャッシュ参照・エンジン起動と並行させる。
 
 ## Code Standards
 

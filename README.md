@@ -144,7 +144,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
   "Audio": {
     "OutputDevice": -1,           // -1 = OS デフォルト, 0+ = WaveOut index
     "Volume": 1.0,                // 再生音量 0.0-1.0 (WaveOut の上限が 1.0)
-    "PrepareDevice": false,       // true で起動時に無音再生してデバイスを温める
+    "PrepareDevice": false,       // true で再生前に小音量の音を流してデバイスを温める (読み上げで再生するときだけ)
     "PreparationDurationMs": 200,
     "PreparationVolume": 0.01,
     "DesiredLatency": 100,        // WaveOutEvent の希望レイテンシ (ms)

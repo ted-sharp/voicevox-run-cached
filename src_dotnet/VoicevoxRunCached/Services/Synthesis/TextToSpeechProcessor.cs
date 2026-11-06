@@ -60,6 +60,12 @@ public class TextToSpeechProcessor
 
         var totalStartTime = _clock.UtcNow;
 
+        if (!options.NoPlay)
+        {
+            // デバイスの warm-up (PrepareDevice) はキャッシュ参照・エンジン起動と並行させる
+            _audioPlayer.BeginDevicePreparation();
+        }
+
         // エンジンの確認・起動はここではしない。全セグメントがキャッシュ済み (--cache-only を含む) なら
         // エンジンは不要なので、合成が必要なときだけ SynthesizeAndPlayAsync で行う
         var segments = await LoadSegmentsAsync(request, options.NoCache, cancellationToken);
