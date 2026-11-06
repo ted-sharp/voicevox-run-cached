@@ -43,6 +43,7 @@
   - `--clear` でファイルを削除できなかった場合も「Cache cleared successfully!」と表示していた問題を修正 (エラーとして終了コード 4 を返す)
   - 終了時の後片付け (エンジン停止・再生デバイスの破棄) で出たログが、Serilog を閉じた後に書かれて失われることがあった問題を修正
   - `devices` に `Audio.OutputDevice` に指定する WaveOut index の一覧を追加 (`--json` では `waveOutDevices`)。これまでは WASAPI の一覧しか出ず、番号が WaveOut index と一致しないため設定値が分からなかった
+  - **Ctrl+C でキャンセルしたときの終了コードを 0 から 130 に変更** (SIGINT の慣例)。呼び出し側 (スクリプト・Hooks) が正常終了と区別できるようにするため。0 を前提にしていた呼び出し側は要確認。終了コードの一覧を README に追加
 - 削除:
   - メモリキャッシュ層と `Cache.MemoryCacheSizeMb` 設定 (1 実行ごとに終了する CLI では効果がないため。既存設定に残っていても無視される)
   - `--benchmark` コマンド (BenchmarkDotNet によるベンチマークと合わせて廃止)

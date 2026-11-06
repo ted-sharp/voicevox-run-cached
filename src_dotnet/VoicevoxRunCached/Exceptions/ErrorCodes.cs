@@ -6,6 +6,12 @@
 public static class ErrorCodes
 {
     /// <summary>
+    /// Ctrl+C でキャンセルされたときの終了コード。シェルの SIGINT 終了の慣例 (128 + 2) に合わせ、
+    /// 呼び出し側 (Hooks・スクリプト) が正常終了と区別できるようにする。
+    /// </summary>
+    public const int CancelledExitCode = 130;
+
+    /// <summary>
     /// エラーコードに対応するプロセス終了コードを返す。カテゴリ (prefix) ごとに値を割り当てる。
     /// </summary>
     public static int GetExitCode(string? errorCode)

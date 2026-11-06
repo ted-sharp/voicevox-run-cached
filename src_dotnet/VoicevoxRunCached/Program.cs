@@ -48,7 +48,7 @@ static class Program
         catch (OperationCanceledException)
         {
             ConsoleHelper.WriteWarning("アプリケーションがキャンセルされました");
-            return 0;
+            return ErrorCodes.CancelledExitCode;
         }
         catch (Exception ex)
         {
