@@ -142,7 +142,7 @@ public class VoiceVoxApiClient : IDisposable
     ///   1. <see cref="VoicevoxRunCachedException"/> およびその派生 (<see cref="VoiceVoxApiException"/> 等) は素通し。
     ///      二重 wrap を防ぐ — 既にドメイン例外なら呼び出し元はそれを期待してハンドルする。
     ///   2. ユーザーキャンセル (<see cref="CancellationToken.IsCancellationRequested"/> = true) も素通し。
-    ///      <see cref="CommandRouter"/> 側で exit code 0 として処理する。
+    ///      <see cref="CommandRouter"/> 側で終了コード <see cref="ErrorCodes.CancelledExitCode"/> (130) として処理する。
     ///   3. その他 (HTTP/JSON/タイムアウト等) は <see cref="MapToApiException"/> で <see cref="VoiceVoxApiException"/> に変換。
     /// </remarks>
     private async Task<T> ExecuteApiAsync<T>(string operationName, Func<CancellationToken, Task<T>> apiCall, CancellationToken cancellationToken)

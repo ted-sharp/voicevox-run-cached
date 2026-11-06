@@ -49,7 +49,7 @@ task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube 
 
 **Streaming Playback**: `TextToSpeechProcessor.SynthesizeAndPlayAsync` で `Channel<TextSegment>` を介した producer (`SegmentProducer.ProduceAsync`) / consumer (`AudioPlayer.PlayStreamingAsync`) を並走させる。キャッシュ済みセグメントは即座に channel に流して再生開始、未キャッシュ分は producer が直列に API を叩きながら順次 channel に流す。consumer 側が `AudioConstants.FillerStartDelayMs` 以内に次セグメントを取れない場合は `FillerManager.GetRandomFillerAudioAsync` で相槌音声を挿入して無音を回避する。片側の例外は linked CTS で双方を停止する。キャッシュ書き込みは channel 書き込みの後で fire-and-forget して producer の次の API 呼び出しを遅らせない (producer 終了時に `finally` 内で `Task.WhenAll` 待機、例外パスでも保証)。`writer.TryComplete()` は `pendingCacheSaves` の `WhenAll` より**前**に呼ぶこと — 順序を逆にすると最終セグメント再生後の `WaitToReadAsync` が `FillerStartDelayMs` を超え、フィラーを誤発火する。
 
-**Audio Format Chain**: API (WAV) → `OpusCodec.EncodeWav` (Concentus, VOIP/VBR、`Cache.OpusBitrateKbps` 既定 32kbps。Opus 非対応レートは 48kHz にリサンプル) → `.opus` + `.meta.json` でキャッシュ。ビットレートはキャッシュキーに含めない (変えても既存キャッシュは流用され、作り直すなら `--clear`)。**デコード (`OpusCodec.DecodeToWav`) は 48kHz 固定** — Concentus 2.2.2 は 24kHz エンコード→24kHz デコードで出力がほぼ無音になる (`OpusCodecTests` が回帰検知)。v2 以前の `.mp3` キャッシュは読まず、`DiskCacheStore.DeleteLegacyFiles` (maintenance / `--clear`) で削除される。
+**Audio Format Chain**: API (WAV) → `OpusCodec.EncodeWav` (Concentus, VOIP/VBR、`Cache.OpusBitrateKbps` 既定 32kbps。Opus 非対応レートは 48kHz にリサンプル) → `.opus` + `.meta.json` でキャッシュ。ビットレートはキャッシュキーに含めない (変えても既存キャッシュは流用され、作り直すなら `--clear`)。**デコード (`OpusCodec.DecodeToWav`) は 48kHz 固定** — Concentus 2.2.2 は 24kHz エンコード→24kHz デコードで出力がほぼ無音になる (`OpusCodecTests` が回帰検知)。v2 以前の `.mp3` キャッシュは読まず、`DiskCacheStore.DeleteLegacyFiles` (maintenance) と `DiskCacheStore.DeleteAll` (`--clear`) で削除される。
 
 **Engine Lifecycle**: `VoiceVoxEngineManager` が起動済みプロセスを検出してから launch。VOICEVOX / AIVIS Speech 両対応 (設定で切替)。`KeepEngineRunning: true` で常駐、false で終了時に停止。
 
@@ -140,7 +140,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 - SHA256 生成ロジックは**変更禁止** (既存キャッシュが全て無効化される)
 - 期限切れは `ExpirationDays`、容量上限は `MaxSizeGB` で eviction。`AudioCacheManager.RunMaintenanceAsync` で両方まとめて実行し、`SegmentProducer` が新規保存のあった実行の最後に 1 回だけ呼ぶ (保存ごとに全走査しない)
 - 期限切れは読み込み時 (`DiskCacheStore.LoadAsync`) にも判定され、該当ファイルは削除される
-- 読み込み時・eviction の削除 (`DiskCacheStore.Delete`) は best-effort で失敗を Warning に留めるが、`--clear` (`DiskCacheStore.DeleteAll` / `FillerManager.ClearFillerCacheAsync`) は失敗を握りつぶさず `CacheErrorMapper` で `CacheException` にする (削除できていないのに成功表示しないため)
+- 読み込み時・eviction の削除 (`DiskCacheStore.Delete`) は best-effort で失敗を Warning に留めるが、`--clear` (`DiskCacheStore.DeleteAll` / `FillerManager.ClearFillerCacheAsync`) と `--init` の旧形式フィラー削除は失敗を握りつぶさず `CacheErrorMapper` で `CacheException` にする (削除できていないのに成功表示しないため)
 - キャッシュは executable と同じディレクトリに保存される (`UseExecutableBaseDirectory: true`)
 - `.meta.json` の検証 (`DiskCacheStore.IsMetadataValid`) は Text 非空・SpeakerId >= 0 (speaker 0 は実在)・CreatedAt 設定済みのみ。パラメータ一致はキー自体が保証するので照合しない
 

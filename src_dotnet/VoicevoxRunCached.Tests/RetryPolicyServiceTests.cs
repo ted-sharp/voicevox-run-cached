@@ -70,7 +70,7 @@ public class RetryPolicyServiceTests
         var policy = Create(maxAttempts: 3);
         var calls = 0;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        await Assert.ThrowsAsync<HttpRequestException>(async () =>
         {
             await policy.ExecuteWithRetryAsync<int>(() =>
             {
@@ -108,7 +108,7 @@ public class RetryPolicyServiceTests
         var policy = Create();
         var calls = 0;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        await Assert.ThrowsAsync<HttpRequestException>(async () =>
         {
             await policy.ExecuteWithRetryAsync<int>(() =>
             {
@@ -126,7 +126,7 @@ public class RetryPolicyServiceTests
         var policy = Create();
         var calls = 0;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        await Assert.ThrowsAsync<IOException>(async () =>
         {
             await policy.ExecuteWithRetryAsync<int>(() =>
             {
@@ -144,7 +144,7 @@ public class RetryPolicyServiceTests
         var policy = Create();
         var calls = 0;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        await Assert.ThrowsAsync<SocketException>(async () =>
         {
             await policy.ExecuteWithRetryAsync<int>(() =>
             {
@@ -178,7 +178,7 @@ public class RetryPolicyServiceTests
         var policy = Create();
         var calls = 0;
 
-        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        await Assert.ThrowsAsync<TaskCanceledException>(async () =>
         {
             await policy.ExecuteWithRetryAsync<int>(() =>
             {
@@ -191,16 +191,17 @@ public class RetryPolicyServiceTests
     }
 
     [Test]
-    public async Task FinalFailure_WrapsLastExceptionAsInner()
+    public async Task FinalFailure_RethrowsLastExceptionUnwrapped()
     {
+        // 包み直すと VoiceVoxApiClient が HTTP ステータスから ErrorCode を決められず、終了コードが 1 になる
         var policy = Create();
-        var caught = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+        var caught = await Assert.ThrowsAsync<HttpRequestException>(async () =>
         {
             await policy.ExecuteWithRetryAsync<int>(() =>
                 throw new HttpRequestException("server error", null, HttpStatusCode.BadGateway),
                 "op");
         });
 
-        await Assert.That(caught!.InnerException).IsTypeOf<HttpRequestException>();
+        await Assert.That(caught!.StatusCode).IsEqualTo(HttpStatusCode.BadGateway);
     }
 }

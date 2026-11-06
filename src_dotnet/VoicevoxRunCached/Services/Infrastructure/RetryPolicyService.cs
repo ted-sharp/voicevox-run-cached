@@ -34,12 +34,15 @@ public class RetryPolicyService
         _maxRetryAttempts = maxRetryAttempts;
     }
 
+    /// <remarks>
+    /// リトライ対象外の例外と、最後の試行で起きた例外は元の型のまま呼び出し元へ投げる
+    /// (包み直さない)。呼び出し元 (<c>VoiceVoxApiClient.MapToApiException</c>) が HTTP ステータス等から
+    /// ErrorCode を決めるため、包むと 500/503 (ENGINE) や 429・タイムアウト (API) の終了コードが
+    /// 「不明なエラー」になってしまう。Error ログも呼び出し元が書く。
+    /// </remarks>
     public async Task<T> ExecuteWithRetryAsync<T>(Func<Task<T>> operation, string operationName, CancellationToken cancellationToken = default)
     {
-        var retryCount = 0;
-        Exception? lastException = null;
-
-        while (retryCount < _maxRetryAttempts)
+        for (var attempt = 1; ; attempt++)
         {
             try
             {
@@ -49,57 +52,42 @@ public class RetryPolicyService
             {
                 throw new OperationCanceledException($"Operation '{operationName}' was cancelled", null, cancellationToken);
             }
-            catch (HttpRequestException ex) when (ShouldRetryHttpError(ex))
+            catch (Exception ex) when (attempt < _maxRetryAttempts && IsRetryable(ex))
             {
-                lastException = ex;
-                retryCount++;
-                await HandleRetryableErrorAsync(ex, operationName, retryCount, ex.StatusCode, cancellationToken);
-            }
-            catch (TaskCanceledException ex)
-            {
-                lastException = ex;
-                retryCount++;
-                await HandleRetryableErrorAsync(ex, operationName, retryCount, null, cancellationToken);
-            }
-            catch (Exception ex) when (ShouldRetryException(ex))
-            {
-                lastException = ex;
-                retryCount++;
-                await HandleRetryableErrorAsync(ex, operationName, retryCount, null, cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Non-retryable error during {OperationName}", operationName);
-                throw;
+                await DelayBeforeRetryAsync(ex, operationName, attempt, cancellationToken);
             }
         }
-
-        throw new InvalidOperationException($"Operation '{operationName}' failed after maximum retry attempts", lastException);
     }
 
-    private async Task HandleRetryableErrorAsync(
+    private async Task DelayBeforeRetryAsync(
         Exception exception,
         string operationName,
-        int retryCount,
-        HttpStatusCode? statusCode,
+        int attempt,
         CancellationToken cancellationToken)
     {
-        if (retryCount >= _maxRetryAttempts)
-        {
-            return;
-        }
-
-        var delay = CalculateDelay(retryCount, statusCode);
+        var statusCode = (exception as HttpRequestException)?.StatusCode;
+        var delay = CalculateDelay(attempt, statusCode);
         var errorType = GetErrorType(exception);
 
         // リトライ自体は正常フロー (5xx/429/timeout に対する既定の挙動) なので Debug。
-        // 全試行が失敗した時の `Non-retryable error` / `failed after maximum retry attempts` は
-        // 別のログパスで Error として残るため、運用ログ上の追跡性は保たれる。
+        // 最終的な失敗は呼び出し元が Error として残す。
         _logger.LogDebug(exception, "{ErrorType} during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
-            errorType, operationName, delay, retryCount, _maxRetryAttempts);
+            errorType, operationName, delay, attempt, _maxRetryAttempts);
 
         await Task.Delay(delay, cancellationToken);
     }
+
+    /// <summary>
+    /// 5xx/429 の HTTP エラー、HttpClient のタイムアウト (ユーザーキャンセルは呼び出し側の catch で除外済み)、
+    /// 一時的な I/O・ソケットエラーをリトライ対象とする。
+    /// </summary>
+    private static bool IsRetryable(Exception ex) => ex switch
+    {
+        HttpRequestException httpEx => ShouldRetryHttpError(httpEx),
+        TaskCanceledException => true,
+        IOException or SocketException or WebException => true,
+        _ => false,
+    };
 
     private static string GetErrorType(Exception exception) => exception switch
     {
@@ -122,11 +110,6 @@ public class RetryPolicyService
             HttpStatusCode.TooManyRequests => true,
             _ => false
         };
-    }
-
-    private static bool ShouldRetryException(Exception ex)
-    {
-        return ex is IOException or SocketException or WebException;
     }
 
     private int CalculateDelay(int retryCount, HttpStatusCode? statusCode)

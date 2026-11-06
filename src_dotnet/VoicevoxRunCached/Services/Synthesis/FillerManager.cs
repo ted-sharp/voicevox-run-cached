@@ -34,7 +34,7 @@ public class FillerManager
         }
 
         Directory.CreateDirectory(_settings.Directory);
-        DeleteFiles($"*{DiskCacheStore.LegacyAudioExtension}");
+        await DeleteFilesAsync("旧形式フィラーの削除", $"*{DiskCacheStore.LegacyAudioExtension}");
         _logger.LogInformation("フィラーキャッシュの初期化を開始します - テキスト数: {Count}", _settings.FillerTexts.Length);
 
         using var spinner = new ProgressSpinner("Initializing filler cache...");
@@ -147,22 +147,26 @@ public class FillerManager
     /// </summary>
     public Task ClearFillerCacheAsync()
     {
-        return CacheErrorMapper.WithMappingAsync<object?>("フィラーキャッシュのクリア", null, _settings.Directory, _logger, () =>
-        {
-            DeleteFiles($"*{DiskCacheStore.AudioExtension}");
-            DeleteFiles($"*{DiskCacheStore.LegacyAudioExtension}");
-            return Task.FromResult<object?>(null);
-        });
+        return DeleteFilesAsync("フィラーキャッシュのクリア",
+            $"*{DiskCacheStore.AudioExtension}", $"*{DiskCacheStore.LegacyAudioExtension}");
     }
 
-    private void DeleteFiles(string searchPattern)
+    /// <summary>
+    /// パターンに一致するファイルを削除する。I/O 失敗は <see cref="CacheErrorMapper"/> で
+    /// CacheException (終了コード 4) にして呼び出し元に伝える。
+    /// </summary>
+    private Task DeleteFilesAsync(string operation, params string[] searchPatterns)
     {
-        if (!Directory.Exists(_settings.Directory))
-            return;
-
-        foreach (var file in Directory.GetFiles(_settings.Directory, searchPattern))
+        return CacheErrorMapper.WithMappingAsync<object?>(operation, null, _settings.Directory, _logger, () =>
         {
-            File.Delete(file);
-        }
+            if (Directory.Exists(_settings.Directory))
+            {
+                foreach (var file in searchPatterns.SelectMany(p => Directory.GetFiles(_settings.Directory, p)))
+                {
+                    File.Delete(file);
+                }
+            }
+            return Task.FromResult<object?>(null);
+        });
     }
 }
