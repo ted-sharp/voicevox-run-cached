@@ -49,8 +49,15 @@ public class TextToSpeechProcessor
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <remarks>
+    /// 処理全体 (キャッシュ参照 → 合成 → 再生 → <c>--out</c>) を <see cref="InterProcessLock.SpeechLockPath"/> で
+    /// プロセス間に直列化する。Hooks が同時に発火しても音声が重ならず、VOICEVOX API の直列実行と
+    /// エンジンの起動もプロセスをまたいで 1 つずつになる。後から来た方は先の読み上げが終わるまで待つ。
+    /// </remarks>
     public async Task<int> ProcessTextToSpeechAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken = default)
     {
+        using var speechLock = await InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, _logger, cancellationToken);
+
         var totalStartTime = _clock.UtcNow;
 
         // エンジンの確認・起動はここではしない。全セグメントがキャッシュ済み (--cache-only を含む) なら

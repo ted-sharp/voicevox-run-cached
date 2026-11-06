@@ -43,6 +43,8 @@ task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube 
 
 **Serial API Calls**: VOICEVOX API は producer 側 (`SegmentProducer.ProduceAsync`) が `foreach` で 1 件ずつ処理することで直列性を担保している。`VoiceVoxApiClient` 自身に明示的なロックは無いので、もし複数スレッドから同時に呼び出すコードを足す場合は呼び出し元で直列化すること。各 speaker は session 内で初回のみ `/initialize_speaker` する (`TextToSpeechProcessor.SynthesizeAndPlayAsync` 側で 1 回だけ呼ぶ)。
 
+**Inter-process Serialization**: `TextToSpeechProcessor.ProcessTextToSpeechAsync` は処理全体 (キャッシュ参照 → 合成 → 再生 → `--out`) を `InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, ...)` で囲み、プロセス間でも 1 つずつ実行する (Hooks の同時発火で音声が重ならない・API 呼び出しとエンジン起動もプロセスをまたいで直列)。ロックは `%TEMP%\VoicevoxRunCached.speech.lock` を `FileShare.None` で開いている間で、後から来た方は 100ms 間隔で再試行して待つ。名前付き Mutex は取得スレッドでしか解放できず await と相性が悪いので使わない。ファイルロックはプロセスが kill されても OS が解放する。`speakers` / `devices` / `--init` / `--clear` はロックしない。
+
 **Cache Keys**: `CacheKeyGenerator.Compute` が `SHA256("{text}|{speakerId}|{speed:F2}|{pitch:F2}|{volume:F2}")` (InvariantCulture) を 16 進小文字化したものをファイル名として使用。`{CacheDirectory}/{SHA256_HEX}.opus` と `{SHA256_HEX}.meta.json` (CreatedAt, Text, SpeakerId, Speed, Pitch, Volume) のペアで保存。**SHA256 生成ロジックを変えると既存キャッシュが全て無効化されるため変更禁止**。**Speed/Pitch/Volume は `/audio_query` のクエリでは効かない** (VOICEVOX が無視する) ので、`VoiceVoxApiClient.ApplyVoiceParameters` が返却 JSON の `speedScale`/`pitchScale`/`volumeScale` を書き換えてから `/synthesis` に渡す。値は `CacheKeyGenerator.NormalizeParameter` (F2 書式経由。`Math.Round` は丸め方式が異なるので使わない) で丸め、キーと合成パラメータを一致させる。
 
 **Cache Data Format**: キャッシュ由来の `TextSegment.AudioData` は **Ogg Opus**、今回合成したものは **WAV** (VOICEVOX は 24kHz)。両者が混在するため、音声バイト列を読むときは必ず `AudioFormatDetector.CreateWaveStream` で形式判定する (`WaveFileReader` 決め打ち禁止)。Opus はデコード後 **48kHz** になるのでセグメント間でサンプルレートが異なる。再生はセグメントごとに `Init` するので問題ないが、結合する `AudioExportService` は 48kHz mono 16bit に揃えてから書く。
@@ -99,6 +101,7 @@ src_dotnet/
 │   │       ├── LoggingManager.cs           # Serilog 構成
 │   │       ├── RetryPolicyService.cs       # HTTP リトライ (自前実装の指数バックオフ)
 │   │       ├── CancellationManager.cs      # Ctrl+C 協調キャンセル
+│   │       ├── InterProcessLock.cs         # ファイルロックによるプロセス間排他 (読み上げの直列化)
 │   │       ├── ConsoleHelper.cs            # 色付き出力
 │   │       ├── ErrorHandlingUtility.cs     # 未知例外の表示
 │   │       ├── ProgressSpinner.cs          # 進捗表示
@@ -132,6 +135,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 - **`ErrorHandlingUtility`**: 例外 → ErrorCode → ExitCode 変換。`HandleExceptionAndGetExitCode` がコマンド末尾の定型処理
 - **`RetryPolicyService`**: VOICEVOX API 呼び出しのリトライ (5xx/429/timeout、自前実装の指数バックオフ。Polly は使っていない)
 - **`CancellationManager`**: Ctrl+C の協調キャンセル
+- **`InterProcessLock`**: ファイルロックによるプロセス間の排他 (読み上げの直列化に使用)
 - **`OpusCodec`** (`Services/Audio/`): WAV ⇔ Ogg Opus 変換。キャッシュ・フィラー・`--out .opus` すべてこれ経由
 - **`ConfigurationManager` / `ConfigurationValidationService`**: AppSettings 読込と FluentValidation による検証
 - **`IClock`**: 時刻抽象。`DateTime.UtcNow` を直接呼ばず、テスト容易性のためこのインターフェース経由で取得する
