@@ -188,7 +188,7 @@ DI 登録クラスのコンストラクタでは `ILogger` / `IClock` などの�
 
 ## Configuration
 
-`appsettings.json` で `VoiceVox` / `Cache` / `Audio` / `Filler` / `Logging` / `Test` セクションを定義。各セクションは `Configuration/AppSettings.cs` の型にバインドされ `Validators.cs` (FluentValidation) で検証される。読み込み・バインドの失敗 (JSON の構文エラー・型の不一致・ファイル無し) も `ApplicationBootstrap.LoadSettings` が `ConfigurationException` (終了コード 7) にする。Serilog は `LoggingManager` が `LoggingSettings` を使ってプログラム的に構成 (`appsettings.json` から `Serilog:*` セクションを直接読み込んでいるわけではない)。詳細プロパティは appsettings.json と AppSettings.cs を直接参照。
+`appsettings.json` で `VoiceVox` / `Cache` / `Audio` / `Filler` / `Logging` / `Test` セクションを定義。各セクションは `Configuration/AppSettings.cs` の型にバインドされ `Validators.cs` (FluentValidation) で検証される。読み込み・バインドの失敗 (JSON の構文エラー・型の不一致・ファイル無し) も `ApplicationBootstrap.LoadSettings` が `ConfigurationException` (終了コード 7) にする。Serilog は `LoggingManager` が `LoggingSettings` を使ってプログラム的に構成 (`appsettings.json` から `Serilog:*` セクションを直接読み込んでいるわけではない)。`Format: json` はコンソール・ファイルとも Serilog 本体の `JsonFormatter` (1 イベント 1 行)、`Level: none` は `LevelAlias.Off`。詳細プロパティは appsettings.json と AppSettings.cs を直接参照。
 
 ## Pre-Commit Hooks and Code Quality
 

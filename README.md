@@ -88,8 +88,8 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 | `--out, -o <path>` | ファイル保存 (`.wav` / `.opus` を拡張子で判定。それ以外はエラー) | — |
 | `--no-play` | 再生しない (`--out` と併用推奨) | false |
 | `--verbose` | 再生時間と総実行時間を表示 | false |
-| `--log-level <level>` | `trace`/`debug`/`info`/`warn`/`error`/`crit`/`none` | info |
-| `--log-format <fmt>` | `simple` / `json` | simple |
+| `--log-level <level>` | `trace`/`debug`/`info`/`warn`/`error`/`crit`/`none` (`none` はログを一切出さない) | info |
+| `--log-format <fmt>` | `simple` / `json` (`json` は 1 イベント 1 行の JSON。ファイル出力も同じ書式) | simple |
 | `--help, -h` | ヘルプ表示 | — |
 
 `--speed` / `--pitch` / `--volume` は小数第 2 位に丸めて使われる (キャッシュキーも丸めた値で作る)。「目安」は VOICEVOX エディタの調整範囲で、本ツールが検証するのは数値であること・speed が 0 より大きいこと・volume と speaker が 0 以上であることだけ。不正な値はエラーで終了する。
@@ -158,7 +158,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
   },
   "Logging": {
     "Level": "info",              // trace|debug|info|warn|error|crit|none
-    "Format": "simple",           // simple | json
+    "Format": "simple",           // simple | json (1 イベント 1 行の JSON。コンソール・ファイル共通)
     "EnableFileLogging": false,   // true でファイル出力を有効化
     "MaxFileSizeMb": 10,          // ログファイル単体の最大サイズ (MB)
     "MaxFileCount": 5             // ローテーションで保持するファイル数
