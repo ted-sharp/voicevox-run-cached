@@ -167,7 +167,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 
 **インスタンスクラスは必ずコンストラクタで `Microsoft.Extensions.Logging.ILogger` を受け取り `_logger.LogXxx(...)` で書く** (CommandHandler 系も例外なし)。`Serilog.Log` の static 呼び出しは Serilog 設定そのもの (`LoggingManager`)、ブートストラップ (`Program` / `ApplicationBootstrap`)、static utility (`AudioConversionUtility`, `OpusCodec`) など、DI が使えない箇所のみに残す。
 
-DI 登録クラスのコンストラクタでは `ILogger` / `IClock` などのサービスを省略可能 (`ILogger? logger = null` + `?? NullLogger.Instance`) にしない。Jab は既定値付き引数を未登録でも黙って既定値で生成するため、JAB0002 による登録漏れ検出が効かなくなる。テストでは `NullLogger.Instance` を明示的に渡す。
+DI 登録クラスのコンストラクタでは `ILogger` / `IClock` などのサービスを省略可能 (`ILogger? logger = null` + `?? NullLogger.Instance`) にしない。Jab は既定値付き引数を未登録でも黙って既定値で生成するため、JAB0002 による登録漏れ検出が効かなくなる。DI 外で手組みするクラス (`DiskCacheStore` / `CacheEvictionPolicy`) も同じく必須にする (渡し忘れると黙ってログ無し・実時刻になる)。テストでは `NullLogger.Instance` / `SystemClock.Instance` を明示的に渡す。
 
 `ILogger` と `ConsoleHelper` の使い分け:
 - **`ILogger`** = ログ用途。Serilog の構造化ログ・ファイル/JSON sink に流れる。内部エラー・警告・運用追跡情報はこちらに書く

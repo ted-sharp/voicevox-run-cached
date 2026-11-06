@@ -21,11 +21,9 @@ public class AudioCacheManager
     public AudioCacheManager(CacheSettings settings, ILogger logger, IClock clock)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        ArgumentNullException.ThrowIfNull(clock);
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _opusBitrateKbps = settings.OpusBitrateKbps;
-        // clock を渡し忘れると DiskCacheStore / CacheEvictionPolicy は SystemClock に黙って落ちるので必ず渡す
         _disk = new DiskCacheStore(settings, _logger, clock);
         _eviction = new CacheEvictionPolicy(_disk, settings, _logger, clock);
 
@@ -82,13 +80,13 @@ public class AudioCacheManager
 
     public Task ClearAllCacheAsync(CancellationToken cancellationToken = default)
     {
-        return CacheErrorMapper.WithMappingAsync<object?>("キャッシュのクリア", null, _disk.Directory, _logger, () =>
+        CacheErrorMapper.WithMapping("キャッシュのクリア", null, _disk.Directory, _logger, () =>
         {
             cancellationToken.ThrowIfCancellationRequested();
             var deleted = _disk.DeleteAll();
             _logger.LogInformation("すべてのキャッシュをクリアしました - 削除ファイル数: {Count}", deleted);
-            return Task.FromResult<object?>(null);
         });
+        return Task.CompletedTask;
     }
 
     /// <summary>

@@ -1,6 +1,5 @@
 ﻿using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Utilities;
@@ -23,12 +22,12 @@ public class DiskCacheStore
     private readonly ILogger _logger;
     private readonly IClock _clock;
 
-    public DiskCacheStore(CacheSettings settings, ILogger? logger = null, IClock? clock = null)
+    public DiskCacheStore(CacheSettings settings, ILogger logger, IClock clock)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _expiration = TimeSpan.FromDays(settings.ExpirationDays);
-        _logger = logger ?? NullLogger.Instance;
-        _clock = clock ?? SystemClock.Instance;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         // パスの正規化は ApplicationBootstrap.BuildAppSettings 側で完了済み
         EnsureDirectoryExists();
     }

@@ -1,6 +1,8 @@
-﻿using VoicevoxRunCached.Configuration;
+﻿using Microsoft.Extensions.Logging.Abstractions;
+using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Cache;
+using VoicevoxRunCached.Services.Infrastructure;
 
 namespace VoicevoxRunCached.Tests;
 
@@ -16,7 +18,7 @@ public class DiskCacheStoreTests
             MaxSizeGb = 1.0,
             UseExecutableBaseDirectory = false
         };
-        return (new DiskCacheStore(settings), dir);
+        return (new DiskCacheStore(settings, NullLogger.Instance, SystemClock.Instance), dir);
     }
 
     [Test]

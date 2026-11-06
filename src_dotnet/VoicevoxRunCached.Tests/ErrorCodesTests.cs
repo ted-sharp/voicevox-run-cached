@@ -1,4 +1,5 @@
-﻿using VoicevoxRunCached.Exceptions;
+﻿using System.Reflection;
+using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Tests;
 
@@ -20,23 +21,20 @@ public class ErrorCodesTests
     [Test]
     public async Task ExitCodes_NeverUseTwo()
     {
-        // Claude Code の Hooks では終了コード 2 がブロッキングエラー (Stop フックなら停止を阻止) になる
-        string[] allCodes =
-        [
-            ErrorCodes.Configuration.InvalidSettings,
-            ErrorCodes.Engine.EngineNotAvailable, ErrorCodes.Engine.EngineProcessError,
-            ErrorCodes.Cache.CacheReadError, ErrorCodes.Cache.CachePermissionDenied,
-            ErrorCodes.Audio.AudioGenerationFailed, ErrorCodes.Audio.AudioFormatError, ErrorCodes.Audio.AudioFileExportFailed,
-            ErrorCodes.Api.ApiRequestFailed, ErrorCodes.Api.ApiResponseInvalid, ErrorCodes.Api.ApiTimeout,
-            ErrorCodes.Api.ApiAuthenticationError, ErrorCodes.Api.ApiRateLimitExceeded,
-            ErrorCodes.General.UnknownError, ErrorCodes.General.InvalidArguments,
-            ErrorCodes.General.ResourceNotFound, ErrorCodes.General.PermissionDenied,
-        ];
+        // Claude Code の Hooks では終了コード 2 がブロッキングエラー (Stop フックなら停止を阻止) になる。
+        // 後から追加したコードも漏れなく検査するよう、定数はリフレクションで列挙する
+        var errorCodes = typeof(ErrorCodes).GetNestedTypes()
+            .SelectMany(GetConstants<string>)
+            .ToList();
+        var directExitCodes = GetConstants<int>(typeof(ErrorCodes)).ToList(); // CancelledExitCode など
 
-        var exitCodes = allCodes.Select(ErrorCodes.GetExitCode)
-            .Append(ErrorCodes.PartialFailureExitCode)
-            .Append(ErrorCodes.CancelledExitCode);
-
-        await Assert.That(exitCodes).DoesNotContain(2);
+        await Assert.That(errorCodes).Contains(ErrorCodes.Configuration.InvalidSettings); // 列挙できていること
+        await Assert.That(directExitCodes).Contains(ErrorCodes.PartialFailureExitCode);
+        await Assert.That(errorCodes.Select(ErrorCodes.GetExitCode).Concat(directExitCodes)).DoesNotContain(2);
     }
+
+    private static IEnumerable<T> GetConstants<T>(Type type) => type
+        .GetFields(BindingFlags.Public | BindingFlags.Static)
+        .Where(f => f.IsLiteral && f.FieldType == typeof(T))
+        .Select(f => (T)f.GetRawConstantValue()!);
 }

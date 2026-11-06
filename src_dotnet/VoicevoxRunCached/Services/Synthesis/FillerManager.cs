@@ -174,16 +174,16 @@ public class FillerManager
     public Task ClearFillerCacheAsync()
     {
         string[] searchPatterns = [$"*{DiskCacheStore.AudioExtension}", $"*{DiskCacheStore.LegacyAudioExtension}"];
-        return CacheErrorMapper.WithMappingAsync<object?>("フィラーキャッシュのクリア", null, _settings.Directory, _logger, () =>
+        CacheErrorMapper.WithMapping("フィラーキャッシュのクリア", null, _settings.Directory, _logger, () =>
         {
-            if (Directory.Exists(_settings.Directory))
+            if (!Directory.Exists(_settings.Directory))
+                return;
+
+            foreach (var file in searchPatterns.SelectMany(p => Directory.GetFiles(_settings.Directory, p)))
             {
-                foreach (var file in searchPatterns.SelectMany(p => Directory.GetFiles(_settings.Directory, p)))
-                {
-                    File.Delete(file);
-                }
+                File.Delete(file);
             }
-            return Task.FromResult<object?>(null);
         });
+        return Task.CompletedTask;
     }
 }
