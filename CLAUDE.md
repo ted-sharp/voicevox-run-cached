@@ -140,7 +140,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 - SHA256 生成ロジックは**変更禁止** (既存キャッシュが全て無効化される)
 - 期限切れは `ExpirationDays`、容量上限は `MaxSizeGB` で eviction。`AudioCacheManager.RunMaintenanceAsync` で両方まとめて実行し、`SegmentProducer` が新規保存のあった実行の最後に 1 回だけ呼ぶ (保存ごとに全走査しない)
 - 期限切れは読み込み時 (`DiskCacheStore.LoadAsync`) にも判定され、該当ファイルは削除される
-- 読み込み時・eviction の削除 (`DiskCacheStore.Delete`) は best-effort で失敗を Warning に留めるが、`--clear` (`DiskCacheStore.DeleteAll` / `FillerManager.ClearFillerCacheAsync`) と `--init` の旧形式フィラー削除は失敗を握りつぶさず `CacheErrorMapper` で `CacheException` にする (削除できていないのに成功表示しないため)
+- 読み込み時・eviction の削除 (`DiskCacheStore.Delete`) は best-effort で失敗を Warning に留めるが、`--clear` (`DiskCacheStore.DeleteAll` / `FillerManager.ClearFillerCacheAsync`) は削除そのものが目的なので、失敗を握りつぶさず `CacheErrorMapper` で `CacheException` にする (削除できていないのに成功表示しないため)。`--init` の旧形式 (`.mp3`) フィラー削除は、もう読まれないファイルの後片付けなので best-effort (Warning を出してフィラー生成を続ける)
 - キャッシュは executable と同じディレクトリに保存される (`UseExecutableBaseDirectory: true`)
 - `.meta.json` の検証 (`DiskCacheStore.IsMetadataValid`) は Text 非空・SpeakerId >= 0 (speaker 0 は実在)・CreatedAt 設定済みのみ。パラメータ一致はキー自体が保証するので照合しない
 
@@ -227,7 +227,7 @@ Options:
 
 **API**: 全呼び出し直列。Connection timeout はデフォルト 30 秒で全 HTTP リクエストに適用。CLI 引数は `ArgumentParser` で検証し、数値でない値・負の speaker/volume・0 以下の speed は `InvalidArguments` で即エラーにする (黙ってデフォルト値で続行しない)。範囲判定は F2 に丸めた後の値で行う。`--out` 等の値に `--xxx` が来た場合も値の指定漏れとしてエラー。本文 (`args[0]`) は `PreprocessArgs` にかけない (`-sample` が `-s ample` に割られるため)。speaker ID の存在は合成が必要なときだけ `TextToSpeechProcessor.EnsureSpeakerExists` が `/speakers` で事前確認し、無ければ `InvalidArguments` (VOICEVOX は `/initialize_speaker` で 500 を返しリトライで十数秒待たされるため)。全セグメントがキャッシュヒットなら照会しない。`InvalidArguments` は CommandRouter でスタックトレースなしの Warning ログになる。
 
-**Exit Codes**: `ErrorCodes.GetExitCode` がエラーコードの prefix から決める (ENGINE=3, CACHE=4, AUDIO=5, API=6, CONFIG=7, その他=1)。一部セグメントの合成失敗は `ErrorCodes.PartialFailureExitCode` (8)。**終了コード 2 は使わない** — Claude Code の Hooks では 2 がブロッキングエラーで、Stop フックから呼ばれた本ツールの失敗が Claude の停止を止めてしまう (`ErrorCodesTests` が回帰検知)。Ctrl+C は `ErrorCodes.CancelledExitCode` (130) で、`CommandRouter` と `Program` の `OperationCanceledException` catch の両方で返す。途中に `catch (Exception)` を書くときは、その前に `catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }` を置いてキャンセルを素通しする (握ると別のエラー扱いになったり、キャッシュを破損扱いで消したりする)。README の「終了コード」表と揃えること。
+**Exit Codes**: `ErrorCodes.GetExitCode` がエラーコードの prefix から決める (ENGINE=3, CACHE=4, AUDIO=5, API=6, CONFIG=7, その他=1)。一部セグメントの合成失敗は `ErrorCodes.PartialFailureExitCode` (8)、全セグメント失敗は `AudioGenerationFailed` (5)。`--init` のフィラー生成も同じ (`InitCommandHandler`)。**終了コード 2 は使わない** — Claude Code の Hooks では 2 がブロッキングエラーで、Stop フックから呼ばれた本ツールの失敗が Claude の停止を止めてしまう (`ErrorCodesTests` が回帰検知)。Ctrl+C は `ErrorCodes.CancelledExitCode` (130) で、`CommandRouter` と `Program` の `OperationCanceledException` catch の両方で返す。途中に `catch (Exception)` を書くときは、その前に `catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }` を置いてキャンセルを素通しする (握ると別のエラー扱いになったり、キャッシュを破損扱いで消したりする)。README の「終了コード」表と揃えること。
 
 **Text Processing**: `。！？!?` と改行 (半角 `.` は直後が空白・文末のとき) で文単位に分割。空セグメントは除外。各セグメントが独立にキャッシュされる。
 

@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Services.Commands;
 
@@ -30,7 +31,26 @@ public class InitCommandHandler
 
         _logger.LogInformation("フィラーキャッシュの初期化を開始します");
         ConsoleHelper.WriteLine("Initializing filler cache...");
-        await _fillerManager.InitializeFillerCacheAsync(_apiClient, cancellationToken);
+        var result = await _fillerManager.InitializeFillerCacheAsync(_apiClient, cancellationToken);
+
+        // 終了コードは通常の読み上げと揃える: 全部失敗は AUDIO エラー (5)、一部失敗は PartialFailureExitCode (8)
+        if (result.AttemptedCount > 0 && result.SuccessCount == 0)
+        {
+            throw new VoicevoxRunCachedException(
+                errorCode: ErrorCodes.Audio.AudioGenerationFailed,
+                message: $"All {result.AttemptedCount} fillers failed to generate",
+                userMessage: "全てのフィラー音声の生成に失敗しました。",
+                suggestedSolution: "VOICEVOXエンジンの状態とログを確認してください。");
+        }
+
+        if (result.FailureCount > 0)
+        {
+            _logger.LogWarning("フィラー音声の生成が部分的に失敗しました: {FailureCount}/{AttemptedCount}",
+                result.FailureCount, result.AttemptedCount);
+            ConsoleHelper.WriteWarning($"Warning: {result.FailureCount}/{result.AttemptedCount} fillers failed to generate");
+            return ErrorCodes.PartialFailureExitCode;
+        }
+
         ConsoleHelper.WriteSuccess("Filler cache initialized");
         return 0;
     }

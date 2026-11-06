@@ -166,6 +166,6 @@ public class SegmentProducer
 }
 
 /// <summary>
-/// セグメント合成の集計結果。
+/// セグメント (または <c>--init</c> のフィラー) 合成の集計結果。
 /// </summary>
 public readonly record struct SynthesisResult(int AttemptedCount, int SuccessCount, int FailureCount);
