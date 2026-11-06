@@ -66,7 +66,7 @@ src_dotnet/
 │   ├── Services/                      # コア実装
 │   │   ├── CommandRouter.cs                # コマンドルーティング
 │   │   ├── ArgumentParser.cs               # CLI 引数解析
-│   │   ├── ServiceRegistration.cs          # DryIoc コンテナ構築
+│   │   ├── AppServiceProvider.cs           # Jab (コンパイル時 DI) のプロバイダ
 │   │   ├── Audio/                          # 音声再生・デバイス・フォーマット
 │   │   │   ├── AudioPlayer.cs              # ストリーミング再生
 │   │   │   ├── AudioDeviceManager.cs       # デバイス事前準備 (warm-up)
@@ -109,7 +109,7 @@ src_dotnet/
 └── VoicevoxRunCached.Tests/           # TUnit ベースのユニットテスト
 ```
 
-DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する。新しいクラスを singleton 登録する箇所はここに集約されている。
+DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs` の `[Singleton(typeof(Xxx))]` 属性に登録を集約している。依存の登録漏れは JAB0002、循環依存は JAB0008 としてビルドエラーになる。設定・`ILogger`・`IClock` は `Instance = nameof(...)` でプロバイダのプロパティから渡す (`Program.cs` で `new AppServiceProvider { Settings = ..., Logger = ... }`)。IDisposable な singleton はプロバイダの `Dispose()` が登録順に破棄する。
 `GlobalUsings.cs` で `Services.{Audio,Cache,Commands,Infrastructure,Synthesis}` を global using しているため、各ファイルでの個別 using は不要。
 
 ## Common Development Patterns
@@ -117,7 +117,7 @@ DI コンテナは `Services/ServiceRegistration.cs` で DryIoc を構築する�
 ### Adding a New Command
 
 1. `Services/Commands/` にハンドラクラス (例: `XxxCommandHandler`) を作成。共通インターフェースは無く、具象クラスで `HandleXxxAsync()` 等の固有メソッドを公開する
-2. `Services/ServiceRegistration.cs` に `container.Register<XxxCommandHandler>(Reuse.Singleton)` で登録
+2. `Services/AppServiceProvider.cs` に `[Singleton(typeof(XxxCommandHandler))]` 属性を追加して登録
 3. `CommandRouter` のコンストラクタ引数として受け取り、`ExecuteCommandAsync` の switch 文に分岐を追加
 
 テキスト読み上げ系の追加機能は、独立したハンドラを作らず `TextToSpeechProcessor` に直接機能追加するか、`AudioExportService` のような単機能ヘルパに分けるのが現状の構成。

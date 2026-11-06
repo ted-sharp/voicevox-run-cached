@@ -116,7 +116,7 @@ Options:
 - `Serilog` (Console / File sink) — 構造化ロギング
 - `FluentValidation` — `AppSettings` の検証
 - `Polly` — HTTP / ファイル I/O のリトライ
-- `DryIoc` — DI コンテナ
+- `Jab` — DI コンテナ (Source Generator によるコンパイル時生成)
 - `Aloe.Utils.CommandLine` — CLI 引数処理
 - `BenchmarkDotNet` — `Benchmarks/AudioProcessingBenchmarks` のマイクロベンチマーク
 - `TUnit` (テストプロジェクト) — Microsoft.Testing.Platform ベースのテストランナー
@@ -154,4 +154,4 @@ flowchart TD
 - 新オプション: `--out`, `--no-play`, `--log-level`, `--log-format`
 - 新設定: `UseExecutableBaseDirectory`, `EngineType`, `KeepEngineRunning`, `MemoryCacheSizeMb`, `DesiredLatency`, `NumberOfBuffers`, `EnableFileLogging` / `MaxFileSizeMb` / `MaxFileCount`
 - 削除: `Audio.OutputDeviceId` (再生本体は `WaveOutEvent` 一本化のため、index 指定のみ)
-- アーキテクチャ: DryIoc による DI 化、`SegmentProducer` 切り出し、`Channel<TextSegment>` による producer/consumer 並走
+- アーキテクチャ: Jab (コンパイル時 DI) による DI 化、`SegmentProducer` 切り出し、`Channel<TextSegment>` による producer/consumer 並走
