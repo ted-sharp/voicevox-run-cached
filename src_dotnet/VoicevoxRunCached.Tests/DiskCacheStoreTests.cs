@@ -199,6 +199,26 @@ public class DiskCacheStoreTests
     }
 
     [Test]
+    public async Task LoadAsync_Cancelled_ThrowsAndKeepsFiles()
+    {
+        // Ctrl+C で読み込みが中断されたキャッシュを破損扱いで削除していた回帰の検知
+        var (store, dir) = CreateStore();
+        try
+        {
+            var key = "key-cancel";
+            await store.SaveAsync(new VoiceRequest("キャンセル", 1), [0x01, 0x02], key);
+            using var cts = new CancellationTokenSource();
+            await cts.CancelAsync();
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => store.LoadAsync(key, cts.Token));
+
+            await Assert.That(File.Exists(Path.Combine(dir, $"{key}.opus"))).IsTrue();
+            await Assert.That(File.Exists(Path.Combine(dir, $"{key}.meta.json"))).IsTrue();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
     public async Task ExtractKeyFromMetadataPath_StripsExtensions()
     {
         var key = DiskCacheStore.ExtractKeyFromMetadataPath("/some/path/abc123.meta.json");

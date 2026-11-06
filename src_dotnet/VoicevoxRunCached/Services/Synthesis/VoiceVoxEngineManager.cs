@@ -156,6 +156,11 @@ public class VoiceVoxEngineManager : IDisposable
             _logger.LogError("VOICEVOXエンジンの起動タイムアウトが発生しました");
             return false;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Ctrl+C は起動失敗 (EngineNotAvailable) にせず、キャンセルとして呼び出し元へ伝える
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogError(ex, "VOICEVOXエンジンの起動中にエラーが発生しました");

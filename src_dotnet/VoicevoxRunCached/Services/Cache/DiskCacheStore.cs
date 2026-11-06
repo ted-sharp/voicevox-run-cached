@@ -71,6 +71,11 @@ public class DiskCacheStore
             _logger.LogDebug("ディスクキャッシュヒット: {CacheKey} - サイズ: {Size} bytes", cacheKey, audioData.Length);
             return audioData;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Ctrl+C で読み込みが中断されただけなので、壊れたファイル扱いで削除しない
+            throw;
+        }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "キャッシュファイルの読み込みに失敗: {CacheKey}", cacheKey);

@@ -61,9 +61,12 @@ static class Program
     /// </summary>
     private static async Task<int> RunAsync(string[] args, AppSettings settings, ILogger logger)
     {
+        // CancellationManager は services より先に作り、後に破棄する。
+        // 終了処理 (エンジン停止の待機など) の間に押された Ctrl+C も受け止め、プロセスを途中で落とさない
+        using var cancellationManager = new CancellationManager(logger);
+
         // DI コンテナ構築 (Jab のコンパイル時生成プロバイダ)
         using var services = new AppServiceProvider { Settings = settings, Logger = logger };
-        using var cancellationManager = new CancellationManager(logger);
 
         var commandRouter = services.GetService<CommandRouter>();
         return await commandRouter.ExecuteCommandAsync(args, cancellationManager.Token);

@@ -15,7 +15,7 @@ public class CancellationManager : IDisposable
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _cancellationTokenSource = new CancellationTokenSource();
-        SetupCancellationHandling();
+        Console.CancelKeyPress += OnCancelKeyPress;
     }
 
     /// <summary>
@@ -32,21 +32,17 @@ public class CancellationManager : IDisposable
     {
         if (_disposed)
             return;
+        // ハンドラを残すと、破棄後の Ctrl+C で破棄済みの CTS を Cancel して ObjectDisposedException になる
+        Console.CancelKeyPress -= OnCancelKeyPress;
         _cancellationTokenSource.Dispose();
         _disposed = true;
     }
 
-    /// <summary>
-    /// キャンセレーション処理を設定します
-    /// </summary>
-    private void SetupCancellationHandling()
+    private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
     {
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            _logger.LogWarning("ユーザーによるキャンセル要求 (Ctrl+C)。正常終了を試行します...");
-            _cancellationTokenSource.Cancel();
-        };
+        e.Cancel = true;
+        _logger.LogWarning("ユーザーによるキャンセル要求 (Ctrl+C)。正常終了を試行します...");
+        _cancellationTokenSource.Cancel();
     }
 
     /// <summary>
