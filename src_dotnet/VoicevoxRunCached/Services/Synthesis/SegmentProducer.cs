@@ -28,11 +28,12 @@ public class SegmentProducer
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <param name="saveToCache">合成した音声をキャッシュに保存するか (<c>--no-cache</c> なら false)</param>
     public async Task<SynthesisResult> ProduceAsync(
         List<TextSegment> segments,
         ChannelWriter<TextSegment> writer,
         VoiceRequest originalRequest,
-        bool noCache,
+        bool saveToCache,
         CancellationToken cancellationToken)
     {
         var stats = new SegmentStats();
@@ -55,7 +56,7 @@ public class SegmentProducer
                 // 合成失敗 (AudioData == null) でも channel には流す。再生側で skip ログを出す
                 await writer.WriteAsync(segment, cancellationToken);
 
-                if (!noCache && synth.WavData != null && synth.Request != null)
+                if (saveToCache && synth.WavData != null && synth.Request != null)
                 {
                     pendingCacheSaves.Add(SaveCacheBestEffortAsync(synth.Request, synth.WavData));
                 }

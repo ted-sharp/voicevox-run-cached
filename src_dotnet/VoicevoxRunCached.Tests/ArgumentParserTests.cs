@@ -294,4 +294,36 @@ public class ArgumentParserTests
         await Assert.That(request.Speed).IsEqualTo(1.0);
         await Assert.That(options.OutPath).IsNull();
     }
+
+    [Test]
+    public async Task Parse_Refresh_SetsFlagWithoutWarning()
+    {
+        var logger = new WarningCountingLogger();
+
+        var (_, options) = ArgumentParser.Parse(["text", "--refresh", "--no-play"], DefaultSettings(), logger);
+
+        await Assert.That(options.Refresh).IsTrue();
+        await Assert.That(options.NoCache).IsFalse();
+        await Assert.That(logger.WarningCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Parse_WithoutRefresh_RefreshIsFalse()
+    {
+        var (_, options) = ArgumentParser.Parse(["text"], DefaultSettings());
+
+        await Assert.That(options.Refresh).IsFalse();
+    }
+
+    [Test]
+    [Arguments("--no-cache")]
+    [Arguments("--cache-only")]
+    public async Task Parse_RefreshWithCacheOption_ThrowsInvalidArguments(string option)
+    {
+        // --refresh (合成し直して上書き) は、書かない --no-cache・合成しない --cache-only と両立しない
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(["text", "--refresh", option], DefaultSettings())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
 }

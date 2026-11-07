@@ -11,12 +11,15 @@ namespace VoicevoxRunCached.Services;
 /// <summary>
 /// テキスト読み上げコマンドのオプション
 /// </summary>
+/// <param name="NoCache">キャッシュを読みも書きもしない</param>
+/// <param name="Refresh">キャッシュを読まずに全部合成し直し、キャッシュを上書きする (辞書登録・エンジン更新の反映用)</param>
 public record TextToSpeechOptions(
     bool NoCache,
     bool CacheOnly,
     bool Verbose,
     string? OutPath,
-    bool NoPlay);
+    bool NoPlay,
+    bool Refresh = false);
 
 public static class ArgumentParser
 {
@@ -32,6 +35,7 @@ public static class ArgumentParser
         "--verbose",
         "--no-cache",
         "--cache-only",
+        "--refresh",
         "--no-play",
         "--json",
         "--full",
@@ -109,7 +113,7 @@ public static class ArgumentParser
     private static TextToSpeechOptions ApplyOptions(
         string[] processedArgs, int optionsStartIndex, VoiceRequest request, ILogger? logger)
     {
-        bool noCache = false, cacheOnly = false, verbose = false, noPlay = false;
+        bool noCache = false, cacheOnly = false, verbose = false, noPlay = false, refresh = false;
         string? outPath = null;
 
         int i = optionsStartIndex;
@@ -139,6 +143,9 @@ public static class ArgumentParser
                     break;
                 case "--cache-only":
                     cacheOnly = ReadFlag(processedArgs, ref i);
+                    break;
+                case "--refresh":
+                    refresh = ReadFlag(processedArgs, ref i);
                     break;
                 case "--verbose":
                     verbose = ReadFlag(processedArgs, ref i);
@@ -178,7 +185,14 @@ public static class ArgumentParser
             }
         }
 
-        return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay);
+        if (refresh && (noCache || cacheOnly))
+        {
+            // --refresh は「合成し直してキャッシュを上書きする」なので、キャッシュを書かない --no-cache・
+            // 合成しない --cache-only とは両立しない。どちらかを黙って優先すると意図と違う動きになる
+            throw InvalidOption("--refresh", "--no-cache / --cache-only と同時には指定できません。");
+        }
+
+        return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay, refresh);
     }
 
     /// <summary>
@@ -292,8 +306,9 @@ Options:
   --speed <value>          Speech speed (default: 1.0)
   --pitch <value>          Speech pitch (default: 0.0)
   --volume <value>         Speech volume (default: 1.0)
-  --no-cache               Skip cache usage
+  --no-cache               Skip cache usage (neither read nor write)
   --cache-only             Use cache only, don't call API
+  --refresh                Re-synthesize all segments and overwrite the cache
   --out, -o <path>         Save output audio to file (.wav or .opus)
   --no-play                Do not play audio (useful with --out)
   --verbose                Show playback time and total execution time

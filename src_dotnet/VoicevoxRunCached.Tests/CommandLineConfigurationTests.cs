@@ -34,6 +34,16 @@ public class CommandLineConfigurationTests
     }
 
     [Test]
+    public async Task RefreshFlag_DoesNotConsumeFollowingOption()
+    {
+        // --refresh が FlagArgs に無いと、直後の "--log-level" が --refresh の値として読まれてログレベルが効かない
+        var configuration = ConfigurationManager.BuildConfigurationWithCommandLine(
+            ["テキスト", "--refresh", "--log-level", "debug"]);
+
+        await Assert.That(configuration["Logging:Level"]).IsEqualTo("debug");
+    }
+
+    [Test]
     public async Task WithoutLogOptions_UsesAppSettings()
     {
         var configuration = ConfigurationManager.BuildConfigurationWithCommandLine(["テキスト", "-s", "3", "--no-play"]);

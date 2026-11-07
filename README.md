@@ -62,6 +62,9 @@ VoicevoxRunCached.exe "保存します。" --out out.opus --no-play
 # キャッシュのみ (API を呼ばない。エンジンが止まっていても再生できる)
 VoicevoxRunCached.exe "既に生成済みのテキスト" --cache-only
 
+# キャッシュを作り直す (辞書登録で読みを直した・エンジンを更新したとき)
+VoicevoxRunCached.exe "読みを直したテキスト" --refresh
+
 # 詳細タイミング表示
 VoicevoxRunCached.exe "メッセージ" --verbose
 ```
@@ -83,8 +86,9 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 | `--speed <value>` | 速度。0 より大きい値 (目安 0.5–2.0) | 1.0 |
 | `--pitch <value>` | ピッチ (目安 -0.15–0.15) | 0.0 |
 | `--volume <value>` | 音量。0 以上 (目安 0.0–2.0) | 1.0 |
-| `--no-cache` | キャッシュを使わない | false |
+| `--no-cache` | キャッシュを使わない (読みも書きもしない) | false |
 | `--cache-only` | キャッシュのみ使う (API を呼ばず、エンジンにも接続しない。キャッシュに無い文があれば終了コード 4) | false |
+| `--refresh` | キャッシュを読まずに全部合成し直し、キャッシュを上書きする (`--no-cache` / `--cache-only` とは併用不可) | false |
 | `--out, -o <path>` | ファイル保存 (`.wav` / `.opus` を拡張子で判定。それ以外はエラー) | — |
 | `--no-play` | 再生しない (`--out` と併用推奨) | false |
 | `--verbose` | 再生時間と総実行時間を表示 | false |
@@ -179,6 +183,8 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 - **即時再生**: キャッシュ済みセグメントは待機なしで再生開始
 - **バックグラウンド生成**: 未キャッシュ分は再生と並行して API 呼び出し
 
+キャッシュは最後に使った日から `ExpirationDays` で期限切れになるので、よく使う文ほど作り直されない。VOICEVOX のユーザー辞書で読みを直したときやエンジンを更新したときは、その文を `--refresh` 付きで一度実行してキャッシュを上書きする。
+
 ```bash
 # 初回 (全セグメント生成)
 VoicevoxRunCached.exe "おはようございます。今日は良い天気ですね。"
@@ -225,6 +231,9 @@ Total execution time: 2445.4ms
 
 **キャッシュをクリアしたい**
 → `VoicevoxRunCached.exe --clear` (または `Cache.Directory` のフォルダを手動削除)。`--clear` はフィラーのキャッシュも削除するので、フィラーを使う場合は `--init` を再実行する。
+
+**ユーザー辞書で読みを直したのに、古い読みのまま再生される**
+→ キャッシュから再生されている。その文を `--refresh` 付きで一度実行すると合成し直してキャッシュを上書きする (`--no-cache` は合成し直すがキャッシュを更新しない)。
 
 ## Claude Code Hooks との連携
 
