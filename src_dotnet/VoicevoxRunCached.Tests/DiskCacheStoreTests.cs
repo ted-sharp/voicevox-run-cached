@@ -60,6 +60,49 @@ public class DiskCacheStoreTests
     }
 
     [Test]
+    public async Task SaveAsync_OverwritesExistingPair_WithoutLeavingTemporaryFile()
+    {
+        // --refresh は既存のペアをその場で上書きする
+        var (store, dir) = CreateStore();
+        try
+        {
+            var request = new VoiceRequest("上書き", 1);
+            var key = "key-overwrite";
+            await store.SaveAsync(request, [0x01], key);
+
+            await store.SaveAsync(request, [0x02, 0x03], key);
+
+            var audio = await File.ReadAllBytesAsync(Path.Combine(dir, key + DiskCacheStore.AudioExtension));
+            await Assert.That(audio.SequenceEqual(new byte[] { 0x02, 0x03 })).IsTrue();
+            await Assert.That(Directory.GetFiles(dir, "*" + DiskCacheStore.TemporarySuffix)).IsEmpty();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    public async Task SaveAsync_WriteFails_KeepsExistingAudio()
+    {
+        // 回帰: .opus に直接書いていたため、--refresh の上書き中に落ちると正しい古い meta.json と途中までの .opus が残り、
+        // 以後ずっとキャッシュヒットして再生に失敗した。書き込みに失敗しても既存の .opus は元のまま残る
+        var (store, dir) = CreateStore();
+        try
+        {
+            var request = new VoiceRequest("上書き失敗", 1);
+            var key = "key-write-fails";
+            var audioPath = Path.Combine(dir, key + DiskCacheStore.AudioExtension);
+            await store.SaveAsync(request, [0x01, 0x02], key);
+            // 一時ファイルの位置にディレクトリを置いて、書き込みを失敗させる
+            Directory.CreateDirectory(audioPath + DiskCacheStore.TemporarySuffix);
+
+            await Assert.ThrowsAsync<Exception>(() => store.SaveAsync(request, [0x09], key));
+
+            var audio = await File.ReadAllBytesAsync(audioPath);
+            await Assert.That(audio.SequenceEqual(new byte[] { 0x01, 0x02 })).IsTrue();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
     public async Task LoadAsync_MissingFiles_ReturnsNull()
     {
         var (store, dir) = CreateStore();

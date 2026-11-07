@@ -17,6 +17,12 @@ public class DiskCacheStore
     /// <summary>v2 以前の MP3 キャッシュの拡張子。読み込まず、掃除時に削除する。</summary>
     public const string LegacyAudioExtension = ".mp3";
 
+    /// <summary>
+    /// 書き込み中の音声ファイルに付ける接尾辞。この名前で書いてから本来の名前に置き換える
+    /// (書き込みの途中で落ちても、不完全な <see cref="AudioExtension"/> のファイルを残さないため)。
+    /// </summary>
+    public const string TemporarySuffix = ".tmp";
+
     private readonly CacheSettings _settings;
     private readonly TimeSpan _expiration;
     private readonly ILogger _logger;
@@ -108,7 +114,12 @@ public class DiskCacheStore
             Volume = request.Volume
         };
 
-        await File.WriteAllBytesAsync(audioPath, audioData, cancellationToken);
+        // 一時ファイルに書いてから置き換える。--refresh は既存のペアをその場で上書きするので、.opus に直接書くと
+        // 途中で落ちた (Hooks のタイムアウトで止められた等) ときに、正しい古い meta.json と途中までの .opus が残り、
+        // 以後ずっとキャッシュヒットして再生に失敗する
+        var tempPath = audioPath + TemporarySuffix;
+        await File.WriteAllBytesAsync(tempPath, audioData, cancellationToken);
+        File.Move(tempPath, audioPath, overwrite: true);
 
         var metaJson = JsonSerializer.Serialize(metadata, JsonSerializerOptionsCache.Indented);
         await File.WriteAllTextAsync(metaPath, metaJson, cancellationToken);
