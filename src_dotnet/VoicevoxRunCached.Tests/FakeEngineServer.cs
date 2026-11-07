@@ -26,13 +26,16 @@ internal sealed class FakeEngineServer : IDisposable
 
     private readonly HttpListener _listener = new();
     private readonly Func<string, bool> _audioQueryFails;
+    private readonly HttpStatusCode _audioQueryFailureStatus;
     private readonly Task _serveTask;
     private int _audioQueryRequestCount;
 
-    /// <param name="audioQueryFails">true を返したテキストだけ /audio_query を 400 (リトライ対象外) にする</param>
-    public FakeEngineServer(Func<string, bool>? audioQueryFails = null)
+    /// <param name="audioQueryFails">true を返したテキストだけ /audio_query を失敗させる</param>
+    /// <param name="audioQueryFailureStatus">失敗させるときのステータス。既定の 400 はリトライ対象外</param>
+    public FakeEngineServer(Func<string, bool>? audioQueryFails = null, HttpStatusCode audioQueryFailureStatus = HttpStatusCode.BadRequest)
     {
         _audioQueryFails = audioQueryFails ?? (_ => false);
+        _audioQueryFailureStatus = audioQueryFailureStatus;
         BaseUrl = $"http://127.0.0.1:{GetFreePort()}";
         _listener.Prefixes.Add(BaseUrl + "/");
         _listener.Start();
@@ -104,7 +107,7 @@ internal sealed class FakeEngineServer : IDisposable
             "/version" => (HttpStatusCode.OK, Encoding.UTF8.GetBytes("\"0.0.0\"")),
             "/speakers" => (HttpStatusCode.OK, Encoding.UTF8.GetBytes(SpeakersJson)),
             "/initialize_speaker" => (HttpStatusCode.NoContent, []),
-            "/audio_query" when _audioQueryFails(request.QueryString["text"] ?? "") => (HttpStatusCode.BadRequest, []),
+            "/audio_query" when _audioQueryFails(request.QueryString["text"] ?? "") => (_audioQueryFailureStatus, []),
             "/audio_query" => (HttpStatusCode.OK, Encoding.UTF8.GetBytes(AudioQueryJson)),
             "/synthesis" => (HttpStatusCode.OK, TestAudio.SineWav(24000, 200)),
             _ => (HttpStatusCode.NotFound, []),
