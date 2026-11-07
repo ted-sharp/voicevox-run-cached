@@ -89,7 +89,12 @@ public class FillerManager
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(fillerRequest, cancellationToken);
                 var audioData = await apiClient.SynthesizeAudioAsync(audioQuery, fillerRequest.SpeakerId, cancellationToken);
 
-                await File.WriteAllBytesAsync(fillerCachePath, OpusCodec.EncodeWav(audioData, _opusBitrateKbps), cancellationToken);
+                // 一時ファイルに書いてから置き換える。書き込みの途中で落ちて不完全な .opus が残ると、--init は生成済みとみなして
+                // 作り直さず、再生のたびにデコードに失敗してフィラーが使われなくなるため。
+                // 残った .tmp は次の --init が同じ名前で上書きして置き換える
+                var tempPath = fillerCachePath + ".tmp";
+                await File.WriteAllBytesAsync(tempPath, OpusCodec.EncodeWav(audioData, _opusBitrateKbps), cancellationToken);
+                File.Move(tempPath, fillerCachePath, overwrite: true);
                 _logger.LogDebug("フィラー音声を生成・保存しました: \"{Text}\"", fillerText);
             }
             catch (OperationCanceledException)

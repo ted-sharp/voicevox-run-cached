@@ -253,6 +253,19 @@ public class FillerManagerTests
         await Assert.That(files.Count(f => f.EndsWith(".opus", StringComparison.Ordinal))).IsEqualTo(1);
     }
 
+    [Test]
+    public async Task InitializeFillerCache_LeavesOnlyOpusFiles()
+    {
+        // 一時ファイル (.tmp) に書いてから置き換えるので、生成後は .opus だけが残る
+        using var engine = new FakeEngineServer();
+
+        var (result, files) = await InitializeAsync(engine, ["a", "b"]);
+
+        await Assert.That(result.SuccessCount).IsEqualTo(2);
+        await Assert.That(files.Length).IsEqualTo(2);
+        await Assert.That(files.All(f => f.EndsWith(".opus", StringComparison.Ordinal))).IsTrue();
+    }
+
     /// <summary>
     /// 一時ディレクトリに <paramref name="fillerTexts"/> のフィラーを生成し、結果と生成後のファイル (フルパス) を返す。
     /// </summary>
