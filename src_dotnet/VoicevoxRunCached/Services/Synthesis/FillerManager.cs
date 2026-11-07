@@ -59,6 +59,7 @@ public class FillerManager
         int failed = 0;
         int total = _settings.FillerTexts.Length;
         var engineUnavailable = false;
+        int aborted = 0;
 
         foreach (var fillerText in _settings.FillerTexts)
         {
@@ -81,6 +82,7 @@ public class FillerManager
             {
                 // 生成を中止した後の未生成分
                 failed++;
+                aborted++;
                 continue;
             }
 
@@ -106,15 +108,14 @@ public class FillerManager
                 failed++;
                 _logger.LogWarning(ex, "フィラー音声の生成に失敗: \"{Text}\"", fillerText);
 
-                if (VoiceVoxApiClient.IsEngineUnavailable(ex))
-                {
-                    engineUnavailable = true;
-                    if (processed < total)
-                    {
-                        _logger.LogWarning("エンジンに接続できない・応答しないため、残りのフィラーの生成を中止します");
-                    }
-                }
+                engineUnavailable = VoiceVoxApiClient.IsEngineUnavailable(ex);
             }
+        }
+
+        // 残りが生成済みだけなら打ち切ったものは無いので、実際に API を呼ばなかった件数で出す
+        if (aborted > 0)
+        {
+            _logger.LogWarning("エンジンに接続できない・応答しないため、{Count} 件のフィラーの生成を中止しました", aborted);
         }
 
         _logger.LogInformation("フィラーキャッシュの初期化が完了しました - 生成: {Success}, 失敗: {Failure}, 生成済み: {Skipped}",

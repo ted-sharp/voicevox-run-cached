@@ -1,4 +1,5 @@
 ﻿using System.Net;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
@@ -222,12 +223,16 @@ public class FillerManagerTests
         // その間 Hooks の読み上げを待たせていた
         using var engine = new FakeEngineServer(audioQueryFails: _ => true, audioQueryFailureStatus: HttpStatusCode.ServiceUnavailable);
 
-        var (result, _) = await InitializeAsync(engine, ["a", "b", "c"]);
+        var logger = new RecordingLogger();
+
+        var (result, _) = await InitializeAsync(engine, ["a", "b", "c"], logger: logger);
 
         // 最初のフィラーのリトライ分だけで、残りには問い合わせない
         await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(AudioConstants.RetryMaxAttempts);
         // 中止した分も失敗に数える (全部失敗なら終了コード 5、一部なら 8 のまま)
         await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 3, SuccessCount: 0, FailureCount: 3));
+        // ログには実際に API を呼ばなかった件数を出す
+        await Assert.That(logger.Messages.Count(m => m.Contains("2 件のフィラーの生成を中止"))).IsEqualTo(1);
     }
 
     [Test]
@@ -272,13 +277,13 @@ public class FillerManagerTests
     /// 一時ディレクトリに <paramref name="fillerTexts"/> のフィラーを生成し、結果と生成後のファイル (フルパス) を返す。
     /// </summary>
     private static async Task<(SynthesisResult Result, string[] Files)> InitializeAsync(
-        FakeEngineServer engine, string[] fillerTexts, bool enabled = true)
+        FakeEngineServer engine, string[] fillerTexts, bool enabled = true, ILogger? logger = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
         try
         {
             var settings = new FillerSettings { Enabled = enabled, Directory = dir, FillerTexts = fillerTexts };
-            var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
+            var mgr = new FillerManager(settings, new CacheSettings(), logger ?? NullLogger.Instance);
             using var apiClient = engine.CreateApiClient();
 
             var result = await mgr.InitializeFillerCacheAsync(apiClient, FakeEngineServer.SpeakerId);
