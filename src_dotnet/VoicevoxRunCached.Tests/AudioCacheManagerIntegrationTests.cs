@@ -66,6 +66,26 @@ public class AudioCacheManagerIntegrationTests
     }
 
     [Test]
+    public async Task RunMaintenance_DeletesLeftoverTemporaryFiles()
+    {
+        // 書き込みの途中で落ちて残った一時ファイルは名前がキーごとに違い、eviction も数えないので、
+        // maintenance で消さないと --clear するまで溜まり続ける
+        var (mgr, dir) = CreateManager();
+        try
+        {
+            var request = new VoiceRequest("残す", 1);
+            await mgr.SaveAudioCacheAsync(request, AudioConversionUtility.CreateMinimalWavData(300));
+            await File.WriteAllBytesAsync(Path.Combine(dir, "interrupted.opus.tmp"), [0x01]);
+
+            await mgr.RunMaintenanceAsync();
+
+            await Assert.That(Directory.GetFiles(dir, "*.tmp")).IsEmpty();
+            await Assert.That(await mgr.GetCachedAudioAsync(request)).IsNotNull();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
     public async Task SaveThenGet_RoundTripsAsPlayableOpus()
     {
         var (mgr, dir) = CreateManager();
@@ -93,6 +113,8 @@ public class AudioCacheManagerIntegrationTests
             await mgr.SaveAudioCacheAsync(new VoiceRequest("新", 1), AudioConversionUtility.CreateMinimalWavData(300, 24000));
             await File.WriteAllBytesAsync(Path.Combine(dir, "legacy.mp3"), [0xFF, 0xFB]);
             await File.WriteAllTextAsync(Path.Combine(dir, "legacy.meta.json"), "{}");
+            // 書き込みの途中で落ちて残った一時ファイルも消す
+            await File.WriteAllBytesAsync(Path.Combine(dir, "interrupted.opus.tmp"), [0x00]);
 
             await mgr.ClearAllCacheAsync();
 

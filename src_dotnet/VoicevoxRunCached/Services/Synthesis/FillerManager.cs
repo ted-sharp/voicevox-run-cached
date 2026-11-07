@@ -59,6 +59,7 @@ public class FillerManager
         int failed = 0;
         int total = _settings.FillerTexts.Length;
         var engineUnavailable = false;
+        int aborted = 0;
 
         foreach (var fillerText in _settings.FillerTexts)
         {
@@ -81,6 +82,7 @@ public class FillerManager
             {
                 // 生成を中止した後の未生成分
                 failed++;
+                aborted++;
                 continue;
             }
 
@@ -91,13 +93,13 @@ public class FillerManager
 
                 // 一時ファイルに書いてから置き換える。書き込みの途中で落ちて不完全な .opus が残ると、--init は生成済みとみなして
                 // 作り直さず、再生のたびにデコードに失敗してフィラーが使われなくなるため。
-                // 残った .tmp は次の --init が同じ名前で上書きして置き換える
-                var tempPath = fillerCachePath + ".tmp";
+                // 残った .tmp は同じフィラーを次に生成するときに上書きされ、--clear (ClearFillerCacheAsync) でも消える
+                var tempPath = fillerCachePath + DiskCacheStore.TemporarySuffix;
                 await File.WriteAllBytesAsync(tempPath, OpusCodec.EncodeWav(audioData, _opusBitrateKbps), cancellationToken);
                 File.Move(tempPath, fillerCachePath, overwrite: true);
                 _logger.LogDebug("フィラー音声を生成・保存しました: \"{Text}\"", fillerText);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
@@ -106,15 +108,14 @@ public class FillerManager
                 failed++;
                 _logger.LogWarning(ex, "フィラー音声の生成に失敗: \"{Text}\"", fillerText);
 
-                if (VoiceVoxApiClient.IsEngineUnavailable(ex))
-                {
-                    engineUnavailable = true;
-                    if (processed < total)
-                    {
-                        _logger.LogWarning("エンジンに接続できない・応答しないため、残りのフィラーの生成を中止します");
-                    }
-                }
+                engineUnavailable = VoiceVoxApiClient.IsEngineUnavailable(ex);
             }
+        }
+
+        // 残りが生成済みだけなら打ち切ったものは無いので、実際に API を呼ばなかった件数で出す
+        if (aborted > 0)
+        {
+            _logger.LogWarning("エンジンに接続できない・応答しないため、{Count} 件のフィラーの生成を中止しました", aborted);
         }
 
         _logger.LogInformation("フィラーキャッシュの初期化が完了しました - 生成: {Success}, 失敗: {Failure}, 生成済み: {Skipped}",
@@ -217,11 +218,17 @@ public class FillerManager
     }
 
     /// <summary>
-    /// フィラーキャッシュを削除する (旧形式の MP3 も含む)。失敗は CacheException として呼び出し元に伝える。
+    /// フィラーキャッシュを削除する (旧形式の MP3 と、生成の途中で落ちて残った一時ファイルも含む)。
+    /// 失敗は CacheException として呼び出し元に伝える。
     /// </summary>
     public Task ClearFillerCacheAsync()
     {
-        string[] searchPatterns = [$"*{DiskCacheStore.AudioExtension}", $"*{DiskCacheStore.LegacyAudioExtension}"];
+        string[] searchPatterns =
+        [
+            $"*{DiskCacheStore.AudioExtension}",
+            $"*{DiskCacheStore.LegacyAudioExtension}",
+            $"*{DiskCacheStore.AudioExtension}{DiskCacheStore.TemporarySuffix}",
+        ];
         CacheErrorMapper.WithMapping("フィラーキャッシュのクリア", null, _settings.Directory, _logger, () =>
         {
             if (!Directory.Exists(_settings.Directory))

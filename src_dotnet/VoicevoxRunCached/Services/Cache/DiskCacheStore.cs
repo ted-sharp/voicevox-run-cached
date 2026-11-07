@@ -17,6 +17,12 @@ public class DiskCacheStore
     /// <summary>v2 以前の MP3 キャッシュの拡張子。読み込まず、掃除時に削除する。</summary>
     public const string LegacyAudioExtension = ".mp3";
 
+    /// <summary>
+    /// 書き込み中の音声ファイルに付ける接尾辞。この名前で書いてから本来の名前に置き換える
+    /// (書き込みの途中で落ちても、不完全な <see cref="AudioExtension"/> のファイルを残さないため)。
+    /// </summary>
+    public const string TemporarySuffix = ".tmp";
+
     private readonly CacheSettings _settings;
     private readonly TimeSpan _expiration;
     private readonly ILogger _logger;
@@ -108,7 +114,12 @@ public class DiskCacheStore
             Volume = request.Volume
         };
 
-        await File.WriteAllBytesAsync(audioPath, audioData, cancellationToken);
+        // 一時ファイルに書いてから置き換える。--refresh は既存のペアをその場で上書きするので、.opus に直接書くと
+        // 途中で落ちた (Hooks のタイムアウトで止められた等) ときに、正しい古い meta.json と途中までの .opus が残り、
+        // 以後ずっとキャッシュヒットして再生に失敗する
+        var tempPath = audioPath + TemporarySuffix;
+        await File.WriteAllBytesAsync(tempPath, audioData, cancellationToken);
+        File.Move(tempPath, audioPath, overwrite: true);
 
         var metaJson = JsonSerializer.Serialize(metadata, JsonSerializerOptionsCache.Indented);
         await File.WriteAllTextAsync(metaPath, metaJson, cancellationToken);
@@ -156,7 +167,8 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// --clear 用。キャッシュディレクトリ内の音声 (Opus / 旧 MP3) と meta.json をすべて削除する。
+    /// --clear 用。キャッシュディレクトリ内の音声 (Opus / 旧 MP3)・meta.json と、
+    /// 書き込みの途中で落ちて残った一時ファイル (<see cref="TemporarySuffix"/>) をすべて削除する。
     /// </summary>
     /// <remarks>
     /// best-effort の <see cref="Delete"/> と違い失敗を握りつぶさない。呼び出し元
@@ -168,7 +180,7 @@ public class DiskCacheStore
         if (!System.IO.Directory.Exists(_settings.Directory))
             return 0;
 
-        string[] patterns = [$"*{AudioExtension}", "*.meta.json", $"*{LegacyAudioExtension}"];
+        string[] patterns = [$"*{AudioExtension}", "*.meta.json", $"*{LegacyAudioExtension}", $"*{AudioExtension}{TemporarySuffix}"];
         int deleted = 0;
         foreach (var pattern in patterns)
         {
@@ -212,6 +224,42 @@ public class DiskCacheStore
         if (deleted > 0)
         {
             _logger.LogInformation("旧形式 (MP3) のキャッシュを {Count} 件削除しました", deleted);
+        }
+        return deleted;
+    }
+
+    /// <summary>
+    /// 書き込みの途中で落ちて残った一時ファイル (<see cref="TemporarySuffix"/>) を削除する。
+    /// </summary>
+    /// <remarks>
+    /// 一時ファイルの名前はキーごとに違い、同じ文を保存し直すまで上書きされず eviction も数えないので、ここで消さないと溜まり続ける。
+    /// 呼ぶのはこの実行の保存がすべて終わった後 (<see cref="AudioCacheManager.RunMaintenanceAsync"/>) で、キャッシュへの保存は
+    /// 読み上げのプロセス間ロックの中でしか行わないため、残っているものは書き込み中ではない。
+    /// best-effort で、失敗は Warning に留める。
+    /// </remarks>
+    /// <returns>削除した一時ファイルの件数</returns>
+    public int DeleteTemporaryFiles()
+    {
+        if (!System.IO.Directory.Exists(_settings.Directory))
+            return 0;
+
+        int deleted = 0;
+        foreach (var tempPath in System.IO.Directory.EnumerateFiles(_settings.Directory, $"*{AudioExtension}{TemporarySuffix}"))
+        {
+            try
+            {
+                File.Delete(tempPath);
+                deleted++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "一時ファイルの削除に失敗: {Path}", tempPath);
+            }
+        }
+
+        if (deleted > 0)
+        {
+            _logger.LogInformation("書き込みの途中で残った一時ファイルを {Count} 件削除しました", deleted);
         }
         return deleted;
     }
