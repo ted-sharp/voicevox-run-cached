@@ -65,7 +65,8 @@ public class AudioCacheManager
     }
 
     /// <summary>
-    /// 旧形式 (MP3) の削除、期限切れキャッシュの削除、容量上限を超えた分の古い順削除をまとめて行う。
+    /// 旧形式 (MP3)・書き込みの途中で残った一時ファイルの削除、期限切れキャッシュの削除、
+    /// 容量上限を超えた分の古い順削除をまとめて行う。
     /// </summary>
     /// <remarks>
     /// ディレクトリ全体を走査するため、セグメント保存ごとではなく 1 実行につき 1 回だけ呼ぶこと
@@ -74,6 +75,7 @@ public class AudioCacheManager
     public async Task RunMaintenanceAsync(CancellationToken cancellationToken = default)
     {
         _disk.DeleteLegacyFiles();
+        _disk.DeleteTemporaryFiles();
         await _eviction.CleanupExpiredAsync(cancellationToken);
         await _eviction.CleanupByMaxSizeAsync(cancellationToken);
     }

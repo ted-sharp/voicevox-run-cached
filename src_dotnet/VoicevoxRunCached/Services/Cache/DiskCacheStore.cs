@@ -229,6 +229,42 @@ public class DiskCacheStore
     }
 
     /// <summary>
+    /// 書き込みの途中で落ちて残った一時ファイル (<see cref="TemporarySuffix"/>) を削除する。
+    /// </summary>
+    /// <remarks>
+    /// 一時ファイルの名前はキーごとに違い、同じ文を保存し直すまで上書きされず eviction も数えないので、ここで消さないと溜まり続ける。
+    /// 呼ぶのはこの実行の保存がすべて終わった後 (<see cref="AudioCacheManager.RunMaintenanceAsync"/>) で、キャッシュへの保存は
+    /// 読み上げのプロセス間ロックの中でしか行わないため、残っているものは書き込み中ではない。
+    /// best-effort で、失敗は Warning に留める。
+    /// </remarks>
+    /// <returns>削除した一時ファイルの件数</returns>
+    public int DeleteTemporaryFiles()
+    {
+        if (!System.IO.Directory.Exists(_settings.Directory))
+            return 0;
+
+        int deleted = 0;
+        foreach (var tempPath in System.IO.Directory.EnumerateFiles(_settings.Directory, $"*{AudioExtension}{TemporarySuffix}"))
+        {
+            try
+            {
+                File.Delete(tempPath);
+                deleted++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "一時ファイルの削除に失敗: {Path}", tempPath);
+            }
+        }
+
+        if (deleted > 0)
+        {
+            _logger.LogInformation("書き込みの途中で残った一時ファイルを {Count} 件削除しました", deleted);
+        }
+        return deleted;
+    }
+
+    /// <summary>
     /// メタデータからキャッシュキーを推定 (ファイル名先頭部分)。
     /// </summary>
     public static string ExtractKeyFromMetadataPath(string metaFilePath)
