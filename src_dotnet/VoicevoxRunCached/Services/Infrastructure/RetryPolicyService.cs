@@ -69,7 +69,7 @@ public class RetryPolicyService
         var delay = CalculateDelay(attempt, statusCode);
         var errorType = GetErrorType(exception);
 
-        // リトライ自体は正常フロー (5xx/429/timeout に対する既定の挙動) なので Debug。
+        // リトライ自体は正常フロー (5xx/429 等に対する既定の挙動) なので Debug。
         // 最終的な失敗は呼び出し元が Error として残す。
         _logger.LogDebug(exception, "{ErrorType} during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
             errorType, operationName, delay, attempt, _maxRetryAttempts);
@@ -78,13 +78,16 @@ public class RetryPolicyService
     }
 
     /// <summary>
-    /// 5xx/429 の HTTP エラー、HttpClient のタイムアウト (ユーザーキャンセルは呼び出し側の catch で除外済み)、
-    /// 一時的な I/O・ソケットエラーをリトライ対象とする。
+    /// 5xx/429 の HTTP エラーと、一時的な I/O・ソケットエラーをリトライ対象とする。
     /// </summary>
+    /// <remarks>
+    /// <para>HttpClient のタイムアウト (<see cref="TaskCanceledException"/>) はリトライしない。タイムアウト (既定 30 秒) を
+    /// 待ってもエンジンが応答しないなら、もう一度待っても応答しないことがほとんどで、リトライすると 1 件で約 93 秒
+    /// (30 秒 × 3 回 + バックオフ) プロセス間ロックを握り、後続の読み上げや Hooks を待たせるため。</para>
+    /// </remarks>
     private static bool IsRetryable(Exception ex) => ex switch
     {
         HttpRequestException httpEx => ShouldRetryHttpError(httpEx),
-        TaskCanceledException => true,
         IOException or SocketException or WebException => true,
         _ => false,
     };
@@ -92,7 +95,6 @@ public class RetryPolicyService
     private static string GetErrorType(Exception exception) => exception switch
     {
         HttpRequestException => "HTTP error",
-        TaskCanceledException => "Timeout",
         _ => "Retryable error"
     };
 

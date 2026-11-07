@@ -173,8 +173,9 @@ public class RetryPolicyServiceTests
     }
 
     [Test]
-    public async Task TaskCanceledException_WithoutUserCancel_IsRetried()
+    public async Task TaskCanceledException_WithoutUserCancel_IsNotRetried()
     {
+        // HttpClient のタイムアウト。リトライすると 1 件で約 93 秒 (30 秒 × 3 回 + バックオフ) ロックを握るため 1 回で投げる
         var policy = Create();
         var calls = 0;
 
@@ -187,7 +188,7 @@ public class RetryPolicyServiceTests
             }, "op");
         });
 
-        await Assert.That(calls).IsEqualTo(3);
+        await Assert.That(calls).IsEqualTo(1);
     }
 
     [Test]

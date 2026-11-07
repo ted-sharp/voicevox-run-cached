@@ -133,7 +133,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "EngineArguments": "--host 127.0.0.1 --port 50021",
     "DefaultSpeaker": 1,
     "EnginePath": "",             // 空なら一般的なインストール場所から自動検出
-    "ConnectionTimeout": 30,      // 秒
+    "ConnectionTimeout": 30,      // 秒。HTTP リクエスト 1 回の上限 (タイムアウトはリトライしない)
     "AutoStartEngine": true,
     "StartupTimeoutSeconds": 30,
     "KeepEngineRunning": true     // false ならアプリ終了時にエンジンも停止
@@ -183,6 +183,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 - **即時再生**: キャッシュ済みセグメントは待機なしで再生開始
 - **バックグラウンド生成**: 未キャッシュ分は再生と並行して API 呼び出し
 - **エンジン異常時の打ち切り**: 合成中にエンジンに接続できなくなった (接続拒否・503・タイムアウト) ら、残りの未キャッシュ分の合成は中止する (キャッシュ済みの文は再生する)。1 文ごとにリトライとタイムアウトを待ち続けない
+- **リトライ**: 5xx / 429 と通信の途中切断は最大 3 回まで試す。タイムアウト (`ConnectionTimeout`) はリトライせず、その文を失敗にする
 
 キャッシュは最後に使った日から `ExpirationDays` で期限切れになるので、よく使う文ほど作り直されない。VOICEVOX のユーザー辞書で読みを直したときやエンジンを更新したときは、その文を `--refresh` 付きで一度実行してキャッシュを上書きする。
 

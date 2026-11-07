@@ -133,7 +133,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 
 - **`ConsoleHelper`**: 色付き出力、エラー表示。`Console.WriteLine` を直接使わず原則これ経由 (stdout / stderr の振り分けと、リダイレクト時に色を外す処理を持つ)
 - **`ErrorHandlingUtility`**: 例外 → ErrorCode → ExitCode 変換。`HandleExceptionAndGetExitCode` がコマンド末尾の定型処理
-- **`RetryPolicyService`**: VOICEVOX API 呼び出しのリトライ (5xx/429/timeout、自前実装の指数バックオフ。Polly は使っていない)
+- **`RetryPolicyService`**: VOICEVOX API 呼び出しのリトライ (5xx/429 と I/O・ソケットエラー、自前実装の指数バックオフ。Polly は使っていない)。HttpClient のタイムアウトはリトライしない (リトライすると 1 件で約 93 秒ロックを握る。`RetryPolicyServiceTests` が回帰検知)
 - **`CancellationManager`**: Ctrl+C の協調キャンセル
 - **`InterProcessLock`**: ファイルロックによるプロセス間の排他 (読み上げの直列化に使用)
 - **`OpusCodec`** (`Services/Audio/`): WAV ⇔ Ogg Opus 変換。キャッシュ・フィラー・`--out .opus` すべてこれ経由
@@ -238,7 +238,7 @@ Options:
 
 ## Technical Constraints
 
-**API**: 全呼び出し直列。Connection timeout はデフォルト 30 秒で全 HTTP リクエストに適用。CLI 引数は `ArgumentParser` で検証し、数値でない値・負の speaker/volume・0 以下の speed は `InvalidArguments` で即エラーにする (黙ってデフォルト値で続行しない)。範囲判定は F2 に丸めた後の値で行う。`--out` 等の値に `--xxx` が来た場合も値の指定漏れとしてエラー。本文 (`args[0]`) は `PreprocessArgs` にかけない (`-sample` が `-s ample` に割られるため)。speaker ID の存在は合成が必要なときだけ `TextToSpeechProcessor.EnsureSpeakerExists` が `/speakers` で事前確認し、無ければ `InvalidArguments` (VOICEVOX は `/initialize_speaker` で 500 を返しリトライで十数秒待たされるため)。全セグメントがキャッシュヒットなら照会しない (エンジンの起動確認も同じ)。`InvalidArguments` は CommandRouter でスタックトレースなしの Warning ログになる。
+**API**: 全呼び出し直列。Connection timeout はデフォルト 30 秒で全 HTTP リクエストに適用 (1 回あたり。タイムアウトはリトライしない)。CLI 引数は `ArgumentParser` で検証し、数値でない値・負の speaker/volume・0 以下の speed は `InvalidArguments` で即エラーにする (黙ってデフォルト値で続行しない)。範囲判定は F2 に丸めた後の値で行う。`--out` 等の値に `--xxx` が来た場合も値の指定漏れとしてエラー。本文 (`args[0]`) は `PreprocessArgs` にかけない (`-sample` が `-s ample` に割られるため)。speaker ID の存在は合成が必要なときだけ `TextToSpeechProcessor.EnsureSpeakerExists` が `/speakers` で事前確認し、無ければ `InvalidArguments` (VOICEVOX は `/initialize_speaker` で 500 を返しリトライで十数秒待たされるため)。全セグメントがキャッシュヒットなら照会しない (エンジンの起動確認も同じ)。`InvalidArguments` は CommandRouter でスタックトレースなしの Warning ログになる。
 
 **Exit Codes**: `ErrorCodes.GetExitCode` がエラーコードの prefix から決める (ENGINE=3, CACHE=4, AUDIO=5, API=6, CONFIG=7, その他=1)。一部セグメントの合成失敗は `ErrorCodes.PartialFailureExitCode` (8)、全セグメント失敗は `AudioGenerationFailed` (5)。`--init` のフィラー生成も同じ (`InitCommandHandler`)。**終了コード 2 は使わない** — Claude Code の Hooks では 2 がブロッキングエラーで、Stop フックから呼ばれた本ツールの失敗が Claude の停止を止めてしまう (`ErrorCodesTests` が回帰検知)。Ctrl+C は `ErrorCodes.CancelledExitCode` (130) で、`CommandRouter` と `Program` の `OperationCanceledException` catch の両方で返す。`CancellationManager` は 1 回目の Ctrl+C だけ握ってキャンセルを要求し (`CancelAsync` でコールバックをハンドラのスレッドで実行しない)、2 回目以降は既定の強制終了に任せる。途中に `catch (Exception)` を書くときは、その前に `catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }` を置いてキャンセルを素通しする (握ると別のエラー扱いになったり、キャッシュを破損扱いで消したりする)。README の「終了コード」表と揃えること。
 

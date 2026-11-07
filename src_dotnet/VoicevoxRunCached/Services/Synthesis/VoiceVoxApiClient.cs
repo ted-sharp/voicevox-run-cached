@@ -214,7 +214,7 @@ public class VoiceVoxApiClient : IDisposable
     };
 
     /// <summary>
-    /// エンジンそのものに届かない失敗か (接続できない・503・応答の途中切断 = EngineNotAvailable、リトライ込みのタイムアウト = ApiTimeout)。
+    /// エンジンそのものに届かない失敗か (接続できない・503・応答の途中切断 = EngineNotAvailable、タイムアウト = ApiTimeout)。
     /// 続けても同じ失敗を繰り返すだけなので、残りの合成 (読み上げの <see cref="SegmentProducer"/>・<c>--init</c> の
     /// <see cref="FillerManager"/>) を中止する判定に使う。どちらもプロセス間ロックを持っているので、1 件ごとに
     /// リトライ込みのタイムアウトを待つと後続の読み上げも待たせてしまう。
