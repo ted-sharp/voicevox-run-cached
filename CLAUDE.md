@@ -53,7 +53,7 @@ task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube 
 
 **Audio Format Chain**: API (WAV) → `OpusCodec.EncodeWav` (Concentus, VOIP/VBR、`Cache.OpusBitrateKbps` 既定 32kbps。フィラー (`FillerManager`)・`--out .opus` (`AudioExportService`) も同じ設定値を渡す。Opus 非対応レートは 48kHz にリサンプル) → `.opus` + `.meta.json` でキャッシュ。ビットレートはキャッシュキーに含めない (変えても既存キャッシュは流用され、作り直すなら `--clear`)。**デコード (`OpusCodec.DecodeToWav`) は 48kHz 固定** — Concentus 2.2.2 は 24kHz エンコード→24kHz デコードで出力がほぼ無音になる (`OpusCodecTests` が回帰検知)。v2 以前の `.mp3` キャッシュは読まず、`DiskCacheStore.DeleteLegacyFiles` (maintenance) と `DiskCacheStore.DeleteAll` (`--clear`) で削除される。
 
-**Engine Lifecycle**: `VoiceVoxEngineManager` が起動済みプロセスを検出してから launch。VOICEVOX / AIVIS Speech 両対応 (設定で切替)。`KeepEngineRunning: true` で常駐、false で終了時に停止。読み上げでは**合成が必要なとき (キャッシュに無いセグメントがあるとき) だけ** `TextToSpeechProcessor.SynthesizeAndPlayAsync` が `EnsureRunningOrThrowAsync` を呼ぶ。全セグメントがキャッシュ済み・`--cache-only` ならエンジンに一切接続しない (エンジン停止中でも鳴り、起動待ちで通知が遅れない。`TextToSpeechProcessorTests` が回帰検知)。
+**Engine Lifecycle**: `VoiceVoxEngineManager` が起動済みプロセスを検出してから launch。VOICEVOX / AIVIS Speech 両対応 (設定で切替)。`KeepEngineRunning: true` で常駐、false で終了時に停止。エンジンは `UseShellExecute = true` + `WindowStyle = Hidden` で起動する (`UseShellExecute = false` だと本ツールの継承可能なハンドルをすべて引き継ぎ、Hooks から呼ばれたときの stdout / stderr のパイプが常駐エンジンに残って閉じず、Hooks がタイムアウトまで待たされる。`VoiceVoxEngineManagerTests.StartEngine_DoesNotInheritHandles` が回帰検知)。読み上げでは**合成が必要なとき (キャッシュに無いセグメントがあるとき) だけ** `TextToSpeechProcessor.SynthesizeAndPlayAsync` が `EnsureRunningOrThrowAsync` を呼ぶ。全セグメントがキャッシュ済み・`--cache-only` ならエンジンに一切接続しない (エンジン停止中でも鳴り、起動待ちで通知が遅れない。`TextToSpeechProcessorTests` が回帰検知)。
 
 ## Project Structure
 

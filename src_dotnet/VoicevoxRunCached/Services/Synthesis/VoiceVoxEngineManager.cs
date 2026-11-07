@@ -119,14 +119,16 @@ public class VoiceVoxEngineManager : IDisposable
         {
             using var spinner = new ProgressSpinner("Starting VOICEVOX engine...");
 
+            // UseShellExecute = false だと、本ツールの継承可能なハンドル (Hooks から呼ばれたときの stdout / stderr の
+            // パイプなど) をエンジンが引き継ぐ。エンジンは常駐するので、本ツールが終了してもパイプが閉じず、
+            // 出力を読む側 (Hooks) がタイムアウトまで待たされる。ShellExecute はハンドルを継承させない。
+            // ShellExecute では CreateNoWindow が効かないので、WindowStyle でコンソールを隠す。
             var startInfo = new ProcessStartInfo
             {
                 FileName = enginePath,
                 Arguments = _settings.EngineArguments,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-                RedirectStandardOutput = false,
-                RedirectStandardError = false,
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
                 WorkingDirectory = Path.GetDirectoryName(enginePath) ?? Environment.CurrentDirectory
             };
 
