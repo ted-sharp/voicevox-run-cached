@@ -159,7 +159,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
   },
   "Filler": {
     "Enabled": false,             // true で生成待機中に相槌音声を再生して無音を回避 (初回は --init で事前生成)
-    "Directory": "./cache/filler/",
+    "Directory": "./cache/filler/",  // Cache.Directory と同じにはできない (設定エラー)
     "UseExecutableBaseDirectory": true,
     "FillerTexts": ["えーっと、", "あのー、", "あのう、", "ええと、", "ええっと、", "えとえと、"]
   },
