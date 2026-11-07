@@ -17,4 +17,15 @@
     <Version>3.0.0</Version>
   </PropertyGroup>
 
+  <!--
+    再生 (WinMM) とデバイス列挙 (WASAPI) が Windows 専用なので、全プロジェクトを Windows 専用と宣言する。
+    NAudio 3 は Windows 専用 API に SupportedOSPlatform("windows") を付けており、宣言しないと CA1416 になる
+    (テストも本体の型を通じて同じ警告になるため、ここで共通に付ける)。
+  -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>windows</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>

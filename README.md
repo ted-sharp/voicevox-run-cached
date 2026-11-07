@@ -151,8 +151,8 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "PrepareDevice": false,       // true で再生前に小音量の音を流してデバイスを温める (読み上げで再生するときだけ)
     "PreparationDurationMs": 200,
     "PreparationVolume": 0.01,
-    "DesiredLatency": 100,        // WaveOutEvent の希望レイテンシ (ms)
-    "NumberOfBuffers": 3          // WaveOutEvent のバッファ数
+    "DesiredLatency": 100,        // WaveOut の希望レイテンシ (ms。全バッファの合計)
+    "NumberOfBuffers": 3          // WaveOut のバッファ数
   },
   "Filler": {
     "Enabled": false,             // true で生成待機中に相槌音声を再生して無音を回避 (初回は --init で事前生成)

@@ -85,6 +85,9 @@
   - `Taskfile.yml` を追加 (`task build` / `task test` / `task check` / `task publish:zip` 等)
   - バージョンを `src_dotnet/Directory.Build.props` の `<Version>` に一元化
   - コミット時のテスト実行を廃止 (`task check` で手動実行)
+  - 依存パッケージを更新: NAudio 2.2.1 → 3.3.0、Microsoft.Extensions.* 10.0.2 → 10.0.14、Serilog 4.3.0 → 4.4.0、FluentValidation 12.1.1 → 12.2.0、TUnit 1.43.11 → 1.81.10
+    - NAudio 3 で `WaveOutEvent` が `WaveOut` に改名され `DesiredLatency` が無くなったため、`Audio.DesiredLatency` はバッファ 1 本の長さ (`DesiredLatency / NumberOfBuffers` の切り上げ、NAudio 2 と同じ計算) に換算して渡す。設定項目と挙動は変わらない
+    - 全プロジェクトに `SupportedOSPlatform("windows")` を宣言 (NAudio 3 が Windows 専用 API に付けた注釈による CA1416 警告のため。もともと Windows 専用)
 
 ## v2.0.0 - 2026-01-17
 

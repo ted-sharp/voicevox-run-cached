@@ -1,8 +1,6 @@
-﻿using System.Runtime.InteropServices;
-using System.Text.Json;
+﻿using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
-using NAudio;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
 using VoicevoxRunCached.Utilities;
@@ -19,7 +17,7 @@ public sealed record AudioDeviceInfo(
     [property: JsonPropertyName("state")] string State);
 
 /// <summary>
-/// Audio.OutputDevice に指定する WaveOut デバイス (再生は WaveOutEvent.DeviceNumber = Index で選ぶ)。
+/// Audio.OutputDevice に指定する WaveOut デバイス (再生は WaveOut.DeviceNumber = Index で選ぶ)。
 /// </summary>
 public sealed record WaveOutDeviceInfo(
     [property: JsonPropertyName("index")] int Index,
@@ -72,18 +70,12 @@ public class DeviceCommandHandler
     /// WASAPI の一覧とは並び・件数が一致するとは限らないので別に列挙する。
     /// </summary>
     /// <remarks>
-    /// net10.0 (非 -windows) では NAudio の netstandard 版が使われ <c>WaveOut.GetCapabilities</c> が無いため、
-    /// 同じ処理を WinMM ラッパー (<see cref="WaveInterop"/>) で行う。WinMM の制約で ProductName は最大 31 文字に切られる。
+    /// WinMM の制約で ProductName は最大 31 文字に切られる。
     /// </remarks>
     private static List<WaveOutDeviceInfo> EnumerateWaveOutDevices()
     {
-        var capsSize = Marshal.SizeOf<WaveOutCapabilities>();
-        return Enumerable.Range(0, WaveInterop.waveOutGetNumDevs())
-            .Select(i =>
-            {
-                MmException.Try(WaveInterop.waveOutGetDevCaps(i, out var caps, capsSize), nameof(WaveInterop.waveOutGetDevCaps));
-                return new WaveOutDeviceInfo(i, caps.ProductName);
-            })
+        return Enumerable.Range(0, WaveOut.DeviceCount)
+            .Select(i => new WaveOutDeviceInfo(i, WaveOut.GetCapabilities(i).ProductName))
             .ToList();
     }
 

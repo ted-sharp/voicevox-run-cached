@@ -59,11 +59,22 @@ public class WavePlayerManager : IDisposable
         }
     }
 
+    /// <summary>
+    /// 設定の DesiredLatency (全バッファ合計の遅延) を <see cref="WaveOut.BufferMilliseconds"/> (バッファ 1 本の長さ) に換算する。
+    /// </summary>
+    /// <remarks>
+    /// NAudio 3 で <c>WaveOutEvent.DesiredLatency</c> が無くなったため。式は NAudio 2 の <c>WaveOutEvent.Init</c> と同じ (切り上げ)。
+    /// </remarks>
+    public static int GetBufferMilliseconds(AudioSettings settings)
+    {
+        return (settings.DesiredLatency + settings.NumberOfBuffers - 1) / settings.NumberOfBuffers;
+    }
+
     private IWavePlayer CreateWavePlayer()
     {
-        var waveOut = new WaveOutEvent
+        var waveOut = new WaveOut
         {
-            DesiredLatency = _settings.DesiredLatency,
+            BufferMilliseconds = GetBufferMilliseconds(_settings),
             NumberOfBuffers = _settings.NumberOfBuffers
         };
 

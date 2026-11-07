@@ -8,7 +8,7 @@
 ## 実装サマリ
 
 - **キャッシュ**: 文単位セグメント化 + Ogg Opus 保存 + 期限/容量管理
-- **再生**: NAudio (`WaveOutEvent`) ベース、`Channel<TextSegment>` による producer/consumer ストリーミング、デバイス暖気運転（オプション）
+- **再生**: NAudio (`WaveOut`) ベース、`Channel<TextSegment>` による producer/consumer ストリーミング、デバイス暖気運転（オプション）
 - **エンジン管理**: 自動起動、起動完了待機、永続化（任意）、子プロセス kill による確実な停止
 - **フィラー**: 生成待機時の自然な間つなぎ音声（任意）
 - **CLI**: `speakers`/`devices`/`--init`/`--clear`/`--test`、各種オプション
@@ -151,5 +151,5 @@ flowchart TD
 - 追加コマンド: `devices`, `--init`, `--clear`, `--test`
 - 新オプション: `--out`, `--no-play`, `--log-level`, `--log-format`
 - 新設定: `UseExecutableBaseDirectory`, `EngineType`, `KeepEngineRunning`, `OpusBitrateKbps`, `DesiredLatency`, `NumberOfBuffers`, `EnableFileLogging` / `MaxFileSizeMb` / `MaxFileCount`
-- 削除: `Audio.OutputDeviceId` (再生本体は `WaveOutEvent` 一本化のため、index 指定のみ)、`Cache.MemoryCacheSizeMb` (メモリキャッシュ層の削除に伴い)、`--benchmark` コマンド
+- 削除: `Audio.OutputDeviceId` (再生本体は `WaveOut` (NAudio 2 では `WaveOutEvent`) 一本化のため、index 指定のみ)、`Cache.MemoryCacheSizeMb` (メモリキャッシュ層の削除に伴い)、`--benchmark` コマンド
 - アーキテクチャ: Jab (コンパイル時 DI) による DI 化、`SegmentProducer` 切り出し、`Channel<TextSegment>` による producer/consumer 並走
