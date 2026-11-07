@@ -1,5 +1,7 @@
-﻿using Microsoft.Extensions.Logging.Abstractions;
+﻿using System.Net;
+using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Services.Synthesis;
 
@@ -208,6 +210,56 @@ public class FillerManagerTests
         finally
         {
             Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public async Task InitializeFillerCache_EngineUnavailable_StopsGeneratingRemaining()
+    {
+        // 回帰: --init は読み上げと同じロックを持つのに、エンジンが落ちても全フィラーでリトライ込みの失敗を待ち、
+        // その間 Hooks の読み上げを待たせていた
+        using var engine = new FakeEngineServer(audioQueryFails: _ => true, audioQueryFailureStatus: HttpStatusCode.ServiceUnavailable);
+
+        var result = await InitializeAsync(engine, ["a", "b", "c"]);
+
+        // 最初のフィラーのリトライ分だけで、残りには問い合わせない
+        await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(AudioConstants.RetryMaxAttempts);
+        // 中止した分も失敗に数える (全部失敗なら終了コード 5、一部なら 8 のまま)
+        await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 3, SuccessCount: 0, FailureCount: 3));
+    }
+
+    [Test]
+    public async Task InitializeFillerCache_RequestError_ContinuesWithRemaining()
+    {
+        // 400 などエンジンが応答している失敗はテキストごとの問題なので、残りの生成は続ける
+        using var engine = new FakeEngineServer(audioQueryFails: _ => true, audioQueryFailureStatus: HttpStatusCode.BadRequest);
+
+        var result = await InitializeAsync(engine, ["a", "b", "c"]);
+
+        await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(3);
+        await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 3, SuccessCount: 0, FailureCount: 3));
+    }
+
+    /// <summary>
+    /// 一時ディレクトリに <paramref name="fillerTexts"/> のフィラーを生成し、結果を返す。
+    /// </summary>
+    private static async Task<SynthesisResult> InitializeAsync(FakeEngineServer engine, string[] fillerTexts)
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var settings = new FillerSettings { Enabled = true, Directory = dir, FillerTexts = fillerTexts };
+            var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
+            using var apiClient = engine.CreateApiClient();
+
+            return await mgr.InitializeFillerCacheAsync(apiClient, FakeEngineServer.SpeakerId);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
         }
     }
 }

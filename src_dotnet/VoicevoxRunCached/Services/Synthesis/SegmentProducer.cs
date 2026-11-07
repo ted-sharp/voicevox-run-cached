@@ -1,6 +1,5 @@
 ﻿using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
-using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Synthesis;
@@ -15,7 +14,7 @@ namespace VoicevoxRunCached.Services.Synthesis;
 ///   2. その後に pending cache save を WhenAll で待つ
 ///   3. 新規保存があれば、最後に 1 回だけキャッシュ eviction (期限切れ + 容量上限) を行う
 /// 例外パスでも 2. を必ず実行することで、producer 終了 = 全 cache save 完了を上位に保証する。
-/// エンジンに届かない失敗 (<see cref="IsEngineUnavailable"/>) が起きたら、残りの未キャッシュ分は API を呼ばずに失敗として数える
+/// エンジンに届かない失敗 (<see cref="VoiceVoxApiClient.IsEngineUnavailable"/>) が起きたら、残りの未キャッシュ分は API を呼ばずに失敗として数える
 /// (1 件ごとにリトライ込みのタイムアウトを待つと、その間プロセス間ロックを持ったまま後続の読み上げも待たせるため)。
 /// キャッシュ済みのセグメントはそのまま流して再生する。
 /// </remarks>
@@ -81,7 +80,7 @@ public class SegmentProducer
                     var remaining = segments.Skip(i + 1).Count(s => !IsReady(s));
                     if (remaining > 0)
                     {
-                        _logger.LogWarning("エンジンに接続できないため、残り {Count} セグメントの合成を中止します", remaining);
+                        _logger.LogWarning("エンジンに接続できない・応答しないため、残り {Count} セグメントの合成を中止します", remaining);
                     }
                 }
             }
@@ -148,7 +147,7 @@ public class SegmentProducer
             _logger.LogError(ex, "Failed to synthesize segment: {Text}", segment.Text);
             stats.Failure++;
             // segment.AudioData は null のまま — 再生側で skip される
-            return new SegmentSynthesis(null, null, IsEngineUnavailable(ex));
+            return new SegmentSynthesis(null, null, VoiceVoxApiClient.IsEngineUnavailable(ex));
         }
     }
 
@@ -156,16 +155,6 @@ public class SegmentProducer
     /// 再生できる音声を既に持っている (キャッシュヒットした) セグメントか。
     /// </summary>
     private static bool IsReady(TextSegment segment) => segment.IsCached && segment.AudioData != null;
-
-    /// <summary>
-    /// エンジンそのものに届かない失敗か (接続できない・503・応答の途中切断 = EngineNotAvailable、リトライ込みのタイムアウト = ApiTimeout)。
-    /// 続けても同じ失敗を繰り返すだけなので、残りの合成を中止する判定に使う。
-    /// </summary>
-    /// <remarks>
-    /// 500 (EngineProcessError) は特定の文だけで起きることがあるので含めない (次の文は合成できる可能性がある)。
-    /// </remarks>
-    private static bool IsEngineUnavailable(Exception ex)
-        => ex is VoicevoxRunCachedException { ErrorCode: ErrorCodes.Engine.EngineNotAvailable or ErrorCodes.Api.ApiTimeout };
 
     private async Task SaveCacheBestEffortAsync(VoiceRequest request, byte[] wavData)
     {

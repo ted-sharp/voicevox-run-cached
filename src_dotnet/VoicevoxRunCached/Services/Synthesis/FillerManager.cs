@@ -35,6 +35,11 @@ public class FillerManager
     /// <param name="speakerId">フィラーを生成する話者</param>
     /// <param name="cancellationToken">キャンセル</param>
     /// <returns>生成を試みた件数と成否。生成済みでスキップしたフィラーは数えない</returns>
+    /// <remarks>
+    /// エンジンに届かない失敗 (<see cref="VoiceVoxApiClient.IsEngineUnavailable"/>) が起きたら、残りの未生成分は
+    /// API を呼ばずに失敗として数える (<c>--init</c> は読み上げと同じロックを持つので、1 件ごとにリトライ込みの
+    /// タイムアウトを待つと、その間 Hooks の読み上げも待たせてしまう)。
+    /// </remarks>
     public async Task<SynthesisResult> InitializeFillerCacheAsync(VoiceVoxApiClient apiClient, int speakerId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(apiClient);
@@ -57,6 +62,7 @@ public class FillerManager
         int attempted = 0;
         int failed = 0;
         int total = _settings.FillerTexts.Length;
+        var engineUnavailable = false;
 
         foreach (var fillerText in _settings.FillerTexts)
         {
@@ -75,6 +81,13 @@ public class FillerManager
             }
 
             attempted++;
+            if (engineUnavailable)
+            {
+                // 生成を中止した後の未生成分
+                failed++;
+                continue;
+            }
+
             try
             {
                 var audioQuery = await apiClient.GenerateAudioQueryAsync(fillerRequest, cancellationToken);
@@ -91,6 +104,15 @@ public class FillerManager
             {
                 failed++;
                 _logger.LogWarning(ex, "フィラー音声の生成に失敗: \"{Text}\"", fillerText);
+
+                if (VoiceVoxApiClient.IsEngineUnavailable(ex))
+                {
+                    engineUnavailable = true;
+                    if (processed < total)
+                    {
+                        _logger.LogWarning("エンジンに接続できない・応答しないため、残りのフィラーの生成を中止します");
+                    }
+                }
             }
         }
 
