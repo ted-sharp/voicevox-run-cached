@@ -25,13 +25,18 @@ public class InitCommandHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task<int> HandleInitAsync(CancellationToken cancellationToken = default)
+    /// <param name="speakerId">フィラーを生成する話者。フィラーは読み上げと同じ話者の声で再生されるので、話者ごとに生成する</param>
+    /// <param name="cancellationToken">キャンセル</param>
+    public async Task<int> HandleInitAsync(int speakerId, CancellationToken cancellationToken = default)
     {
         await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
 
-        _logger.LogInformation("フィラーキャッシュの初期化を開始します");
-        ConsoleHelper.WriteLine("Initializing filler cache...");
-        var result = await _fillerManager.InitializeFillerCacheAsync(_apiClient, cancellationToken);
+        // 存在しない話者だと /initialize_speaker が 500 になりリトライで待たされるので、先に確認して即エラーにする
+        TextToSpeechProcessor.EnsureSpeakerExists(await _apiClient.GetSpeakersAsync(cancellationToken), speakerId);
+
+        _logger.LogInformation("フィラーキャッシュの初期化を開始します - 話者: {SpeakerId}", speakerId);
+        ConsoleHelper.WriteLine($"Initializing filler cache (speaker {speakerId})...");
+        var result = await _fillerManager.InitializeFillerCacheAsync(_apiClient, speakerId, cancellationToken);
 
         // 終了コードは通常の読み上げと揃える: 全部失敗は AUDIO エラー (5)、一部失敗は PartialFailureExitCode (8)
         if (result.AttemptedCount > 0 && result.SuccessCount == 0)

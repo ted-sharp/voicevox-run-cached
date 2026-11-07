@@ -76,7 +76,7 @@ VoicevoxRunCached <text> [options]
 VoicevoxRunCached --test [options]      # appsettings.json の Test.Message で実行
 VoicevoxRunCached speakers              # スピーカー一覧
 VoicevoxRunCached devices [--full] [--json]  # オーディオデバイス一覧
-VoicevoxRunCached --init                # フィラー音声キャッシュを初期化
+VoicevoxRunCached --init [-s <id>]      # フィラー音声キャッシュを初期化 (話者ごと。省略時は DefaultSpeaker)
 VoicevoxRunCached --clear               # キャッシュ全削除
 ```
 
@@ -198,7 +198,9 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 
 `Filler.Enabled: true` にすると、セグメント生成待ちの隙間に「えーっと、」「あのー、」などのフィラー音声を再生して無音を回避する (既定は無効)。
 
-フィラーは `--init` で事前生成したキャッシュからしか再生されない。有効にする前に一度 `--init` を実行しておくこと (未生成だとフィラーは鳴らず、Warning ログが出るだけ)。`--clear` はフィラーのキャッシュも消すので、その後は `--init` をやり直す。
+フィラーは `--init` で事前生成したキャッシュからしか再生されない。有効にする前に一度 `--init` を実行しておくこと (未生成だとフィラーは鳴らず、Warning ログが 1 回出るだけ)。`--clear` はフィラーのキャッシュも消すので、その後は `--init` をやり直す。
+
+フィラーは読み上げと同じ話者の声で再生する (途中で声が変わらないように)。`--init` が生成するのは `DefaultSpeaker` の分なので、`--speaker 3` のように別の話者で読み上げるなら `--init -s 3` でその話者の分も生成しておく。生成していない話者ではフィラーは鳴らない。フィラーの読み込みや再生に失敗しても本編の読み上げは止めず、その回はフィラーを使わない。
 
 ### 同時実行
 

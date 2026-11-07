@@ -16,9 +16,9 @@ public class FillerManagerTests
             Directory = Path.GetTempPath(),
             FillerTexts = ["a", "b"]
         };
-        var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, new CacheSettings(), NullLogger.Instance);
+        var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
 
-        var data = await mgr.GetRandomFillerAudioAsync();
+        var data = await mgr.GetRandomFillerAudioAsync(speakerId: 1);
 
         await Assert.That(data).IsNull();
     }
@@ -32,9 +32,9 @@ public class FillerManagerTests
             Directory = Path.GetTempPath(),
             FillerTexts = []
         };
-        var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, new CacheSettings(), NullLogger.Instance);
+        var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
 
-        var data = await mgr.GetRandomFillerAudioAsync();
+        var data = await mgr.GetRandomFillerAudioAsync(speakerId: 1);
 
         await Assert.That(data).IsNull();
     }
@@ -53,15 +53,45 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["えーっと、"]
             };
-            var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, new CacheSettings(), NullLogger.Instance);
+            var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
 
-            var data = await mgr.GetRandomFillerAudioAsync();
+            var data = await mgr.GetRandomFillerAudioAsync(speakerId: 1);
 
             await Assert.That(data).IsNull();
         }
         finally
         {
             Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public async Task GetRandomFillerAudio_OnlyReturnsFillerOfRequestedSpeaker()
+    {
+        // 回帰: フィラーは常に DefaultSpeaker の声で、-s 3 で読み上げても途中でフィラーだけ別の声になっていた
+        using var engine = new FakeEngineServer();
+        var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var settings = new FillerSettings { Enabled = true, Directory = dir, FillerTexts = ["a"] };
+            var logger = new RecordingLogger();
+            var mgr = new FillerManager(settings, new CacheSettings(), logger);
+            using var apiClient = engine.CreateApiClient();
+            await mgr.InitializeFillerCacheAsync(apiClient, speakerId: 1);
+
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(speakerId: 1)).IsNotNull();
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(speakerId: 3)).IsNull();
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(speakerId: 3)).IsNull();
+
+            // 未生成の Warning (生成方法の案内付き) は合成待ちのたびではなく 1 回だけ
+            await Assert.That(logger.Messages.Count(m => m.Contains("--init -s 3"))).IsEqualTo(1);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
         }
     }
 
@@ -82,7 +112,7 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["a"]
             };
-            var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, new CacheSettings(), NullLogger.Instance);
+            var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
 
             await mgr.ClearFillerCacheAsync();
 
@@ -106,7 +136,7 @@ public class FillerManagerTests
             Directory = dir,
             FillerTexts = ["a"]
         };
-        var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, new CacheSettings(), NullLogger.Instance);
+        var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
 
         await mgr.ClearFillerCacheAsync();
         // 例外を投げない (no-op で完了)
@@ -128,7 +158,7 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["a"]
             };
-            var mgr = new FillerManager(settings, new VoiceVoxSettings { DefaultSpeaker = 1 }, new CacheSettings(), NullLogger.Instance);
+            var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
 
             // FileShare.None で開いたままにすると Windows では File.Delete が共有違反 (IOException) になる
             using (new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None))
@@ -161,13 +191,13 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["a"]
             };
-            var mgr = new FillerManager(settings, engine.CreateSettings(), new CacheSettings(), NullLogger.Instance);
+            var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
             using var apiClient = engine.CreateApiClient();
 
             SynthesisResult result;
             using (new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None))
             {
-                result = await mgr.InitializeFillerCacheAsync(apiClient);
+                result = await mgr.InitializeFillerCacheAsync(apiClient, speakerId: 1);
             }
 
             await Assert.That(result.SuccessCount).IsEqualTo(1);

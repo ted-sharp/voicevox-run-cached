@@ -187,7 +187,7 @@ public class TextToSpeechProcessor
         var producerTask = _producer.ProduceAsync(segments, channel.Writer, request, saveToCache: !options.NoCache, sharedCts.Token);
         var playbackTask = options.NoPlay
             ? Task.CompletedTask
-            : RunPlaybackAsync(channel.Reader, options.Verbose, sharedCts.Token);
+            : RunPlaybackAsync(channel.Reader, request.SpeakerId, options.Verbose, sharedCts.Token);
 
         await WhenAllOrCancelOnFaultAsync(producerTask, playbackTask, sharedCts);
         return await producerTask;
@@ -239,10 +239,14 @@ public class TextToSpeechProcessor
             suggestedSolution: "`VoicevoxRunCached speakers` で利用可能な ID を確認してください。");
     }
 
-    private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, bool verbose, CancellationToken cancellationToken)
+    private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, int speakerId, bool verbose, CancellationToken cancellationToken)
     {
         var playbackStartTime = _clock.UtcNow;
-        await _audioPlayer.PlayStreamingAsync(reader, _fillerManager, cancellationToken);
+        // フィラーも読み上げと同じ話者の声にする (--init -s で話者ごとに生成したものを使う)
+        await _audioPlayer.PlayStreamingAsync(
+            reader,
+            ct => _fillerManager.GetRandomFillerAudioAsync(speakerId, ct),
+            cancellationToken);
 
         if (verbose)
         {

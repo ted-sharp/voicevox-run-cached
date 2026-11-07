@@ -53,7 +53,7 @@ public class CommandRouter
             {
                 "speakers" => await _speakerHandler.HandleSpeakersAsync(cancellationToken),
                 "devices" => _deviceHandler.HandleDevices(subArgs),
-                "--init" => await _initHandler.HandleInitAsync(cancellationToken),
+                "--init" => await _initHandler.HandleInitAsync(ArgumentParser.ParseInitSpeaker(subArgs, _settings), cancellationToken),
                 "--clear" => await _cacheHandler.HandleClearCacheAsync(),
                 "--test" => await HandleTestCommandAsync(subArgs, cancellationToken),
                 _ => await ExecuteTextToSpeechCommandAsync(args, cancellationToken)

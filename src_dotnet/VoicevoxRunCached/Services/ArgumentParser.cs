@@ -94,6 +94,28 @@ public static class ArgumentParser
         return (request, options);
     }
 
+    /// <summary>
+    /// <c>--init</c> の引数から、フィラーを生成する話者 (<c>--speaker</c> / <c>-s</c>) を読む。省略時は <c>DefaultSpeaker</c>。
+    /// </summary>
+    /// <remarks>
+    /// フィラーは読み上げと同じ話者の声で再生するので、既定以外の話者で読み上げるならその話者の分を生成しておく。
+    /// それ以外の引数 (<c>--log-level</c> や <c>--Section:Key=値</c>) は設定の読み込み側で扱うので、ここでは読み飛ばす。
+    /// </remarks>
+    public static int ParseInitSpeaker(string[] args, AppSettings settings)
+    {
+        var processedArgs = PreprocessArgs(args);
+        var speakerId = settings.VoiceVox.DefaultSpeaker;
+        for (int i = 0; i < processedArgs.Length; i++)
+        {
+            if (processedArgs[i] is "--speaker" or "-s")
+            {
+                speakerId = ReadInt(processedArgs, i, min: 0);
+                i++;
+            }
+        }
+        return speakerId;
+    }
+
     private static readonly TextToSpeechOptions EmptyOptions = new(
         NoCache: false, CacheOnly: false, Verbose: false, OutPath: null, NoPlay: false);
 
@@ -295,7 +317,7 @@ Usage:
   VoicevoxRunCached --test [options]
   VoicevoxRunCached speakers
   VoicevoxRunCached devices [--full] [--json]
-  VoicevoxRunCached --init
+  VoicevoxRunCached --init [--speaker <id>]
   VoicevoxRunCached --clear
 
 Arguments:
@@ -320,7 +342,7 @@ Commands:
   speakers                 List available speakers
   devices                  List audio output devices
   --test                   Play the configured test message (Test.Message)
-  --init                   Initialize filler audio cache
+  --init                   Initialize filler audio cache for the speaker (default: VoiceVox.DefaultSpeaker)
   --clear                  Clear audio and filler cache files
 
 Enhanced Features:

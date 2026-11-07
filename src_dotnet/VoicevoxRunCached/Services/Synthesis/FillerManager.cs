@@ -5,19 +5,24 @@ using VoicevoxRunCached.Services.Cache;
 
 namespace VoicevoxRunCached.Services.Synthesis;
 
+/// <summary>
+/// フィラー音声 (合成待ちの隙間に挟む相槌) の生成と取得。
+/// </summary>
+/// <remarks>
+/// フィラーは読み上げと同じ話者の声で再生する (途中で声が変わらないように)。キャッシュキーに話者が含まれるので、
+/// 話者ごとに <c>--init -s &lt;id&gt;</c> で生成しておく。生成していない話者ではフィラーを鳴らさない。
+/// </remarks>
 public class FillerManager
 {
-    private readonly int _defaultSpeaker;
     private readonly FillerSettings _settings;
     private readonly int _opusBitrateKbps;
     private readonly ILogger _logger;
     private string? _lastUsedFiller;
+    private bool _missingFillerWarned;
 
-    public FillerManager(FillerSettings settings, VoiceVoxSettings voiceVoxSettings, CacheSettings cacheSettings, ILogger logger)
+    public FillerManager(FillerSettings settings, CacheSettings cacheSettings, ILogger logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        ArgumentNullException.ThrowIfNull(voiceVoxSettings);
-        _defaultSpeaker = voiceVoxSettings.DefaultSpeaker;
         ArgumentNullException.ThrowIfNull(cacheSettings);
         _opusBitrateKbps = cacheSettings.OpusBitrateKbps;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -26,8 +31,11 @@ public class FillerManager
             _settings.Enabled, _settings.Directory);
     }
 
+    /// <param name="apiClient">合成に使う API クライアント</param>
+    /// <param name="speakerId">フィラーを生成する話者</param>
+    /// <param name="cancellationToken">キャンセル</param>
     /// <returns>生成を試みた件数と成否。生成済みでスキップしたフィラーは数えない</returns>
-    public async Task<SynthesisResult> InitializeFillerCacheAsync(VoiceVoxApiClient apiClient, CancellationToken cancellationToken = default)
+    public async Task<SynthesisResult> InitializeFillerCacheAsync(VoiceVoxApiClient apiClient, int speakerId, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(apiClient);
 
@@ -43,7 +51,7 @@ public class FillerManager
 
         using var spinner = new ProgressSpinner("Initializing filler cache...");
 
-        await apiClient.InitializeSpeakerAsync(_defaultSpeaker, cancellationToken);
+        await apiClient.InitializeSpeakerAsync(speakerId, cancellationToken);
 
         int processed = 0;
         int attempted = 0;
@@ -57,7 +65,7 @@ public class FillerManager
             spinner.UpdateMessage($"Generating filler {processed}/{total}: \"{fillerText}\"");
             _logger.LogDebug("フィラー音声を生成中 {Processed}/{Total}: \"{Text}\"", processed, total, fillerText);
 
-            var fillerRequest = BuildFillerRequest(fillerText);
+            var fillerRequest = BuildFillerRequest(fillerText, speakerId);
             var fillerCachePath = ResolveFillerCachePath(fillerRequest);
 
             if (File.Exists(fillerCachePath))
@@ -110,7 +118,10 @@ public class FillerManager
         }
     }
 
-    public async Task<byte[]?> GetRandomFillerAudioAsync(CancellationToken cancellationToken = default)
+    /// <param name="speakerId">読み上げ中の話者。その話者のフィラーだけを返す</param>
+    /// <param name="cancellationToken">キャンセル</param>
+    /// <returns>フィラーの Ogg Opus。無効・未生成なら null</returns>
+    public async Task<byte[]?> GetRandomFillerAudioAsync(int speakerId, CancellationToken cancellationToken = default)
     {
         if (!_settings.Enabled || _settings.FillerTexts.Length == 0)
         {
@@ -122,12 +133,22 @@ public class FillerManager
         _lastUsedFiller = selectedFiller;
         _logger.LogDebug("ランダムフィラー音声を選択: \"{Text}\"", selectedFiller);
 
-        var fillerRequest = BuildFillerRequest(selectedFiller);
+        var fillerRequest = BuildFillerRequest(selectedFiller, speakerId);
         var fillerCachePath = ResolveFillerCachePath(fillerRequest);
 
         if (!File.Exists(fillerCachePath))
         {
-            _logger.LogWarning("フィラーキャッシュファイルが見つかりませんでした (--init で生成してください) - text=\"{Text}\"", selectedFiller);
+            // 合成待ちのたびに (800ms ごとに) 呼ばれるので、Warning は 1 実行につき 1 回にする
+            if (!_missingFillerWarned)
+            {
+                _logger.LogWarning("この話者のフィラーが未生成です (--init -s {SpeakerId} で生成できます) - text=\"{Text}\"",
+                    speakerId, selectedFiller);
+                _missingFillerWarned = true;
+            }
+            else
+            {
+                _logger.LogDebug("話者 {SpeakerId} のフィラーが未生成です - text=\"{Text}\"", speakerId, selectedFiller);
+            }
             return null;
         }
 
@@ -156,10 +177,10 @@ public class FillerManager
         return availableFillers[Random.Shared.Next(availableFillers.Length)];
     }
 
-    private VoiceRequest BuildFillerRequest(string text) => new()
+    private static VoiceRequest BuildFillerRequest(string text, int speakerId) => new()
     {
         Text = text,
-        SpeakerId = _defaultSpeaker,
+        SpeakerId = speakerId,
         Speed = 1.0,
         Pitch = 0.0,
         Volume = 1.0

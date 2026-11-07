@@ -326,4 +326,32 @@ public class ArgumentParserTests
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
     }
+
+    [Test]
+    [Arguments("", 7)]
+    [Arguments("-s 3", 3)]
+    [Arguments("-s3", 3)]
+    [Arguments("--speaker 4 --log-level debug", 4)]
+    [Arguments("--log-level debug --Filler:Enabled=true", 7)]
+    public async Task ParseInitSpeaker_ReadsSpeakerOrDefault(string args, int expected)
+    {
+        var settings = DefaultSettings();
+        settings.VoiceVox.DefaultSpeaker = 7;
+
+        var speakerId = ArgumentParser.ParseInitSpeaker(args.Split(' ', StringSplitOptions.RemoveEmptyEntries), settings);
+
+        await Assert.That(speakerId).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments("-s abc")]
+    [Arguments("-s -1")]
+    [Arguments("-s")]
+    public async Task ParseInitSpeaker_InvalidSpeaker_ThrowsInvalidArguments(string args)
+    {
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.ParseInitSpeaker(args.Split(' '), DefaultSettings())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
 }
