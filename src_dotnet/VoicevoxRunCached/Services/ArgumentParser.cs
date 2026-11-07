@@ -99,21 +99,44 @@ public static class ArgumentParser
     /// </summary>
     /// <remarks>
     /// フィラーは読み上げと同じ話者の声で再生するので、既定以外の話者で読み上げるならその話者の分を生成しておく。
-    /// それ以外の引数 (<c>--log-level</c> や <c>--Section:Key=値</c>) は設定の読み込み側で扱うので、ここでは読み飛ばす。
+    /// <c>--log-level</c> / <c>--log-format</c> と設定の上書き (<c>--Section:Key=値</c>) は設定の読み込み側で扱うので、ここでは読み飛ばす。
+    /// それ以外の <c>-</c> で始まる引数は読み上げと同じく Unknown option として警告する
+    /// (<c>--speaker=3</c> や打ち間違いで、黙って既定の話者のフィラーを作って成功表示しないように)。
     /// </remarks>
-    public static int ParseInitSpeaker(string[] args, AppSettings settings)
+    public static int ParseInitSpeaker(string[] args, AppSettings settings, ILogger? logger = null)
     {
         var processedArgs = PreprocessArgs(args);
         var speakerId = settings.VoiceVox.DefaultSpeaker;
         for (int i = 0; i < processedArgs.Length; i++)
         {
-            if (processedArgs[i] is "--speaker" or "-s")
+            var arg = processedArgs[i];
+            if (arg is "--speaker" or "-s")
             {
                 speakerId = ReadInt(processedArgs, i, min: 0);
                 i++;
             }
+            else if (arg is "--log-level" or "--log-format")
+            {
+                i++;
+            }
+            else if (arg.StartsWith('-') && !IsInlineLogOption(arg) && !arg.Contains(':'))
+            {
+                WarnUnknownOption(arg, logger);
+            }
         }
         return speakerId;
+    }
+
+    /// <summary>
+    /// <c>--log-level=値</c> / <c>--log-format=値</c> か (値は ConfigurationManager.SwitchMappings 経由で反映済み)。
+    /// </summary>
+    private static bool IsInlineLogOption(string arg)
+        => arg.StartsWith("--log-level=", StringComparison.Ordinal) || arg.StartsWith("--log-format=", StringComparison.Ordinal);
+
+    private static void WarnUnknownOption(string arg, ILogger? logger)
+    {
+        ConsoleHelper.WriteWarning($"Warning: Unknown option '{arg}'");
+        logger?.LogWarning("Unknown option: {Option}", arg);
     }
 
     private static readonly TextToSpeechOptions EmptyOptions = new(
@@ -194,14 +217,12 @@ public static class ArgumentParser
                         i++;
                         break;
                     }
-                    if (arg.StartsWith("--log-level=", StringComparison.Ordinal) || arg.StartsWith("--log-format=", StringComparison.Ordinal))
+                    if (IsInlineLogOption(arg))
                     {
-                        // 値は ConfigurationManager.SwitchMappings 経由で反映済み
                         i++;
                         break;
                     }
-                    ConsoleHelper.WriteWarning($"Warning: Unknown option '{arg}'");
-                    logger?.LogWarning("Unknown option: {Option}", arg);
+                    WarnUnknownOption(arg, logger);
                     i++;
                     break;
             }

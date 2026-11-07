@@ -354,4 +354,34 @@ public class ArgumentParserTests
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
     }
+
+    [Test]
+    [Arguments("--speaker=3")]
+    [Arguments("--speakr 3")]
+    public async Task ParseInitSpeaker_UnknownOption_WarnsAndUsesDefault(string args)
+    {
+        // 回帰: 不明な引数を黙って読み飛ばしていたため、--speaker=3 や打ち間違いでも既定の話者のフィラーを作って成功表示していた
+        var settings = DefaultSettings();
+        settings.VoiceVox.DefaultSpeaker = 7;
+        var logger = new WarningCountingLogger();
+
+        var speakerId = ArgumentParser.ParseInitSpeaker(args.Split(' '), settings, logger);
+
+        await Assert.That(speakerId).IsEqualTo(7);
+        await Assert.That(logger.WarningCount).IsEqualTo(1);
+    }
+
+    [Test]
+    [Arguments("--log-level debug --Filler:Enabled=true")]
+    [Arguments("--log-format=json --Filler:Enabled true")]
+    [Arguments("-s 3 --log-level=debug")]
+    public async Task ParseInitSpeaker_LogAndConfigurationArgs_DoNotWarn(string args)
+    {
+        // ログ設定と設定の上書き (--Section:Key=値 / --Section:Key 値) は設定の読み込み側で扱うので警告しない
+        var logger = new WarningCountingLogger();
+
+        ArgumentParser.ParseInitSpeaker(args.Split(' '), DefaultSettings(), logger);
+
+        await Assert.That(logger.WarningCount).IsEqualTo(0);
+    }
 }
