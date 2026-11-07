@@ -159,7 +159,8 @@ public class FillerManager
             // 合成待ちのたびに (800ms ごとに) 呼ばれるので、Warning は 1 実行につき 1 回にする
             if (!_missingFillerWarned)
             {
-                _logger.LogWarning("この話者のフィラーが未生成です (--init -s {SpeakerId} で生成できます) - text=\"{Text}\"",
+                // 一部だけ未生成のこともある (FillerTexts を追加した・--init が一部失敗した)。--init は生成済みを飛ばすので案内は同じ
+                _logger.LogWarning("この話者に未生成のフィラーがあります (--init -s {SpeakerId} で生成できます) - text=\"{Text}\"",
                     speakerId, selectedFiller);
                 _missingFillerWarned = true;
             }
