@@ -327,16 +327,51 @@ public class ArgumentParserTests
     [Test]
     [Arguments(@"--output=C:\tmp\a.wav")]
     [Arguments(@"--out:C:\tmp\a.wav")]
-    public async Task Parse_UnknownOptionWithColon_WarnsAndReadsFollowingOptions(string option)
+    public async Task Parse_UnknownOptionWithColon_ThrowsInvalidArguments(string option)
     {
-        // 回帰: ':' を含む引数をすべて設定の上書きとみなしていたため、ドライブ名入りの打ち間違いを黙って無視し、
-        // '=' が無いと後ろの --no-play を値として読み飛ばしていた
-        var logger = new WarningCountingLogger();
+        // 回帰: ':' を含む引数をすべて設定の上書きとみなしていたため、ドライブ名入りの打ち間違いを黙って無視していた
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(["text", option, "--no-play"], DefaultSettings())));
 
-        var (_, options) = ArgumentParser.Parse(["text", option, "--no-play"], DefaultSettings(), logger);
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+        await Assert.That(ex.UserMessage).Contains(option);
+    }
 
-        await Assert.That(logger.WarningCount).IsEqualTo(1);
-        await Assert.That(options.NoPlay).IsTrue();
+    [Test]
+    [Arguments("--speeed 1.5")]
+    [Arguments("--speed 1.5 --unknown")]
+    [Arguments("-x")]
+    [Arguments("世界")]
+    public async Task Parse_UnexpectedArgument_ThrowsInvalidArguments(string extraArgs)
+    {
+        // 回帰: 不明な引数を Warning だけ出して読み飛ばし、既定値で合成・キャッシュして終了コード 0 になっていた
+        // (本文の引用符忘れ「こんにちは 世界」も、後半を黙って捨てていた)
+        string[] args = ["こんにちは", .. extraArgs.Split(' ')];
+
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(args, DefaultSettings())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
+
+    [Test]
+    public async Task ParseTestCommand_UnknownOption_ThrowsInvalidArguments()
+    {
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.ParseTestCommand("hello", ["--speeed", "1.5"], DefaultSettings())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
+
+    [Test]
+    [Arguments("--log-level")]
+    [Arguments("--log-format")]
+    public async Task Parse_LogOptionWithoutValue_ThrowsInvalidArguments(string option)
+    {
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(["text", option], DefaultSettings())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
     }
 
     [Test]
@@ -391,30 +426,25 @@ public class ArgumentParserTests
     [Arguments("--speaker=3")]
     [Arguments("--speakr 3")]
     [Arguments("--speaker:3")]
-    public async Task ParseInitSpeaker_UnknownOption_WarnsAndUsesDefault(string args)
+    [Arguments("3")]
+    public async Task ParseInitSpeaker_UnexpectedArgument_ThrowsInvalidArguments(string args)
     {
-        // 回帰: 不明な引数を黙って読み飛ばしていたため、--speaker=3 や打ち間違いでも既定の話者のフィラーを作って成功表示していた
-        var settings = DefaultSettings();
-        settings.VoiceVox.DefaultSpeaker = 7;
-        var logger = new WarningCountingLogger();
+        // 回帰: 不明な引数を読み飛ばしていたため、--speaker=3 や打ち間違いでも既定の話者のフィラーを作って成功表示していた
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.ParseInitSpeaker(args.Split(' '), DefaultSettings())));
 
-        var speakerId = ArgumentParser.ParseInitSpeaker(args.Split(' '), settings, logger);
-
-        await Assert.That(speakerId).IsEqualTo(7);
-        await Assert.That(logger.WarningCount).IsEqualTo(1);
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
     }
 
     [Test]
-    [Arguments("--log-level debug --Filler:Enabled=true")]
-    [Arguments("--log-format=json --Filler:Enabled true")]
-    [Arguments("-s 3 --log-level=debug")]
-    public async Task ParseInitSpeaker_LogAndConfigurationArgs_DoNotWarn(string args)
+    [Arguments("--log-level debug --Filler:Enabled=true", 1)]
+    [Arguments("--log-format=json --Filler:Enabled true", 1)]
+    [Arguments("-s 3 --log-level=debug", 3)]
+    public async Task ParseInitSpeaker_LogAndConfigurationArgs_AreSkipped(string args, int expected)
     {
-        // ログ設定と設定の上書き (--Section:Key=値 / --Section:Key 値) は設定の読み込み側で扱うので警告しない
-        var logger = new WarningCountingLogger();
+        // ログ設定と設定の上書き (--Section:Key=値 / --Section:Key 値) は設定の読み込み側で扱うので読み飛ばす
+        var speakerId = ArgumentParser.ParseInitSpeaker(args.Split(' '), DefaultSettings());
 
-        ArgumentParser.ParseInitSpeaker(args.Split(' '), DefaultSettings(), logger);
-
-        await Assert.That(logger.WarningCount).IsEqualTo(0);
+        await Assert.That(speakerId).IsEqualTo(expected);
     }
 }

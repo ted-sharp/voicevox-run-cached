@@ -71,9 +71,8 @@ public static class ArgumentParser
         }
 
         // 本文 (args[0]) は前処理しない。"-sample" のような先頭ハイフンの本文が "-s ample" に割られるのを防ぐ
-        string[] processedArgs = [args[0], .. PreprocessArgs(args[1..])];
         var request = CreateDefaultRequest(args[0], settings);
-        var options = ApplyOptions(processedArgs, optionsStartIndex: 1, request, logger);
+        var options = ApplyOptions(PreprocessArgs(args[1..]), request);
 
         logger?.LogDebug("引数解析結果 - Text='{Text}', SpeakerId={SpeakerId}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
             request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
@@ -86,11 +85,10 @@ public static class ArgumentParser
     /// テキストは事前に決まっているため呼び出し側から渡し、args は全てオプションとして処理する。
     /// </summary>
     public static (VoiceRequest Request, TextToSpeechOptions Options) ParseTestCommand(
-        string text, string[] args, AppSettings settings, ILogger? logger = null)
+        string text, string[] args, AppSettings settings)
     {
-        var processedArgs = PreprocessArgs(args);
         var request = CreateDefaultRequest(text, settings);
-        var options = ApplyOptions(processedArgs, optionsStartIndex: 0, request, logger);
+        var options = ApplyOptions(PreprocessArgs(args), request);
         return (request, options);
     }
 
@@ -101,35 +99,55 @@ public static class ArgumentParser
     /// フィラーは読み上げと同じ話者の声で再生するので、既定以外の話者で読み上げるならその話者の分を生成しておく。
     /// <c>--log-level</c> / <c>--log-format</c> と設定の上書き (<c>--Section:Key=値</c> / <c>--Section:Key 値</c>) は
     /// 設定の読み込み側で扱うので、ここでは読み飛ばす。
-    /// それ以外の <c>-</c> で始まる引数は読み上げと同じく Unknown option として警告する
+    /// それ以外の引数は読み上げと同じく <see cref="ErrorCodes.General.InvalidArguments"/> にする
     /// (<c>--speaker=3</c> や打ち間違いで、黙って既定の話者のフィラーを作って成功表示しないように)。
     /// </remarks>
-    public static int ParseInitSpeaker(string[] args, AppSettings settings, ILogger? logger = null)
+    public static int ParseInitSpeaker(string[] args, AppSettings settings)
     {
         var processedArgs = PreprocessArgs(args);
         var speakerId = settings.VoiceVox.DefaultSpeaker;
-        for (int i = 0; i < processedArgs.Length; i++)
+        int i = 0;
+        while (i < processedArgs.Length)
         {
             var arg = processedArgs[i];
             if (arg is "--speaker" or "-s")
             {
                 speakerId = ReadInt(processedArgs, i, min: 0);
-                i++;
+                i += 2;
             }
-            else if (arg is "--log-level" or "--log-format")
+            else if (!TrySkipConfigurationArgs(processedArgs, ref i))
             {
-                i++;
-            }
-            else if (IsConfigurationOverride(arg))
-            {
-                i += ConfigurationOverrideLength(arg) - 1;
-            }
-            else if (arg.StartsWith('-') && !IsInlineLogOption(arg))
-            {
-                WarnUnknownOption(arg, logger);
+                throw UnexpectedArgument(arg);
             }
         }
         return speakerId;
+    }
+
+    /// <summary>
+    /// 設定の読み込み側 (ConfigurationManager) が扱う引数 (<c>--log-level</c> / <c>--log-format</c> と設定の上書き) なら、
+    /// 値ごと読み飛ばして true を返す。
+    /// </summary>
+    private static bool TrySkipConfigurationArgs(string[] args, ref int i)
+    {
+        var arg = args[i];
+        if (arg is "--log-level" or "--log-format")
+        {
+            // 値は ConfigurationManager.SwitchMappings で Logging:Level / Logging:Format にバインドされる
+            ReadValue(args, i);
+            i += 2;
+            return true;
+        }
+        if (IsInlineLogOption(arg))
+        {
+            i++;
+            return true;
+        }
+        if (IsConfigurationOverride(arg))
+        {
+            i += ConfigurationOverrideLength(arg);
+            return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -175,11 +193,21 @@ public static class ArgumentParser
     /// </summary>
     private static int ConfigurationOverrideLength(string arg) => arg.Contains('=') ? 1 : 2;
 
-    private static void WarnUnknownOption(string arg, ILogger? logger)
-    {
-        ConsoleHelper.WriteWarning($"Warning: Unknown option '{arg}'");
-        logger?.LogWarning("Unknown option: {Option}", arg);
-    }
+    /// <summary>
+    /// 解釈できない引数。打ち間違い (<c>--speeed</c>) を黙って読み飛ばすと、意図と違うパラメータで合成・キャッシュして
+    /// 成功してしまうのでエラーにする。
+    /// </summary>
+    private static VoicevoxRunCachedException UnexpectedArgument(string arg) => arg.StartsWith('-')
+        ? new(
+            errorCode: ErrorCodes.General.InvalidArguments,
+            message: $"Unknown option: {arg}",
+            userMessage: $"不明なオプションです: '{arg}'",
+            suggestedSolution: "--help で使い方を確認してください。")
+        : new(
+            errorCode: ErrorCodes.General.InvalidArguments,
+            message: $"Unexpected argument: {arg}",
+            userMessage: $"余分な引数です: '{arg}'",
+            suggestedSolution: "--help で使い方を確認してください (本文に空白を含めるときは全体を引用符で囲みます)。");
 
     private static readonly TextToSpeechOptions EmptyOptions = new(
         NoCache: false, CacheOnly: false, Verbose: false, OutPath: null, NoPlay: false);
@@ -195,15 +223,14 @@ public static class ArgumentParser
 
     /// <summary>
     /// 前処理済み引数列から音声パラメータを <see cref="VoiceRequest"/> に反映しつつ、
-    /// 動作フラグを <see cref="TextToSpeechOptions"/> として返す。
+    /// 動作フラグを <see cref="TextToSpeechOptions"/> として返す。解釈できない引数は <see cref="ErrorCodes.General.InvalidArguments"/>。
     /// </summary>
-    private static TextToSpeechOptions ApplyOptions(
-        string[] processedArgs, int optionsStartIndex, VoiceRequest request, ILogger? logger)
+    private static TextToSpeechOptions ApplyOptions(string[] processedArgs, VoiceRequest request)
     {
         bool noCache = false, cacheOnly = false, verbose = false, noPlay = false, refresh = false;
         string? outPath = null;
 
-        int i = optionsStartIndex;
+        int i = 0;
         while (i < processedArgs.Length)
         {
             var arg = processedArgs[i];
@@ -247,11 +274,6 @@ public static class ArgumentParser
                 case "--help" or "-h":
                     ReadFlag(processedArgs, ref i);
                     break;
-                case "--log-level" or "--log-format" when i + 1 < processedArgs.Length:
-                    // ConfigurationManager.SwitchMappings で Logging:Level / Logging:Format にバインドされる。
-                    // ここでは Unknown 警告を出さないために値を読み飛ばす。
-                    i += 2;
-                    break;
                 default:
                     if (arg.StartsWith("--out=", StringComparison.Ordinal))
                     {
@@ -259,18 +281,10 @@ public static class ArgumentParser
                         i++;
                         break;
                     }
-                    if (IsInlineLogOption(arg))
+                    if (!TrySkipConfigurationArgs(processedArgs, ref i))
                     {
-                        i++;
-                        break;
+                        throw UnexpectedArgument(arg);
                     }
-                    if (IsConfigurationOverride(arg))
-                    {
-                        i += ConfigurationOverrideLength(arg);
-                        break;
-                    }
-                    WarnUnknownOption(arg, logger);
-                    i++;
                     break;
             }
         }
@@ -290,7 +304,7 @@ public static class ArgumentParser
     /// </summary>
     /// <remarks>
     /// <see cref="PreprocessArgs"/> は IConfiguration 向けに <c>--flag</c> を <c>--flag true</c> へ展開するため、
-    /// 直後の <c>true</c>/<c>false</c> は値として消費する (読み飛ばさないと "Unknown option 'true'" 警告になる)。
+    /// 直後の <c>true</c>/<c>false</c> は値として消費する (読み飛ばさないと余分な引数 'true' としてエラーになる)。
     /// </remarks>
     private static bool ReadFlag(string[] args, ref int i)
     {
@@ -389,7 +403,7 @@ Usage:
   VoicevoxRunCached --clear
 
 Arguments:
-  <text>                    The text to convert to speech
+  <text>                    The text to convert to speech (quote it if it contains spaces)
 
 Options:
   --speaker, -s <id>       Speaker ID (default: appsettings VoiceVox.DefaultSpeaker)
