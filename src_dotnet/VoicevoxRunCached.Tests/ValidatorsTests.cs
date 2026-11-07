@@ -91,6 +91,30 @@ public class ValidatorsTests
     }
 
     [Test]
+    public async Task CacheSettings_WritableCheckFileHeldByAnotherProcess_IsValid()
+    {
+        // 回帰: 書き込み検証が固定名 (.test) のファイルを使っていたため、同時に起動した別プロセスが
+        // 検証中だと共有違反になり「書き込み可能である必要があります」の設定エラー (終了コード 7) になりえた
+        var dir = CreateTempCacheDir();
+        try
+        {
+            var validator = new CacheSettingsValidator();
+            using (new FileStream(Path.Combine(dir, ".test"), FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                var result = validator.Validate(new CacheSettings { Directory = dir });
+                await Assert.That(result.IsValid).IsTrue();
+            }
+
+            // 検証用のファイルは残さない
+            await Assert.That(Directory.GetFiles(dir, ".write-test-*")).IsEmpty();
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
     public async Task CacheSettings_EmptyDirectory_Fails()
     {
         var validator = new CacheSettingsValidator();

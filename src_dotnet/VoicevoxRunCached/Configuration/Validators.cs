@@ -68,7 +68,9 @@ internal static class DirectoryValidation
                 Directory.CreateDirectory(path);
             }
 
-            var testPath = Path.Combine(path, ".test");
+            // 検証はプロセス間ロックより前 (起動直後) に走るので、Hooks で同時に起動したプロセス同士が
+            // 同じファイルを書いて共有違反にならないよう、毎回別の名前にする
+            var testPath = Path.Combine(path, $".write-test-{Guid.NewGuid():N}.tmp");
             File.WriteAllText(testPath, "test");
             File.Delete(testPath);
             return true;
