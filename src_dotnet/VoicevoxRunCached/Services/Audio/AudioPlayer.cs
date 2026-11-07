@@ -191,6 +191,9 @@ public class AudioPlayer : IDisposable
     /// フィラーは無音を埋めるための飾りなので、失敗 (ファイルの読み込み・デコード・再生) で本編の読み上げごと止めない。
     /// Warning を残して <see cref="FillerOutcome.Failed"/> を返し、呼び出し元はその再生の間フィラーを使わない。
     /// デバイス自体の故障なら、続く本編セグメントの再生で例外として表に出る。
+    /// ただし再生のタイムアウト (<see cref="TimeoutException"/>) は握らずに投げる。<see cref="PlayWaveAsync"/> は
+    /// 再生の途中で共有 WavePlayer を Stop() しており、そのまま本編を再生すると、遅れて届く停止イベントで本編が途中で切れうるため
+    /// (デバイスの異常として、フィラーを握るようにする前と同じく表に出す)。
     /// </remarks>
     private async Task<FillerOutcome> TryPlayFillerAsync(
         IWavePlayer wavePlayer,
@@ -213,7 +216,7 @@ public class AudioPlayer : IDisposable
         {
             throw;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not TimeoutException)
         {
             _logger.LogWarning(ex, "フィラー音声を再生できませんでした。この読み上げではフィラーを使いません");
             return FillerOutcome.Failed;
