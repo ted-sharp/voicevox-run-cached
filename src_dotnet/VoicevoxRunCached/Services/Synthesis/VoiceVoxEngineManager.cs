@@ -82,7 +82,8 @@ public class VoiceVoxEngineManager : IDisposable
     {
         try
         {
-            var response = await _httpClient.GetAsync($"{_settings.BaseUrl}/version", cancellationToken);
+            // 起動待ちでは 1 秒ごとに呼ばれるので、応答 (接続) を都度解放する
+            using var response = await _httpClient.GetAsync($"{_settings.BaseUrl}/version", cancellationToken);
             return response.IsSuccessStatusCode;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
