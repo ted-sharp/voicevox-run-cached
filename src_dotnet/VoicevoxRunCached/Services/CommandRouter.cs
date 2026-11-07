@@ -56,6 +56,7 @@ public class CommandRouter
                 "--init" => await _initHandler.HandleInitAsync(ArgumentParser.ParseInitSpeaker(subArgs, _settings), cancellationToken),
                 "--clear" => await _cacheHandler.HandleClearCacheAsync(),
                 "--test" => await HandleTestCommandAsync(subArgs, cancellationToken),
+                // "--" (ArgumentParser.TextSeparator) もここに来る。続く引数はコマンド名と同じでも本文として読む
                 _ => await ExecuteTextToSpeechCommandAsync(args, cancellationToken)
             };
         }

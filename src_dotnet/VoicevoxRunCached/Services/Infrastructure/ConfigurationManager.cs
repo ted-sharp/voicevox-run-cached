@@ -18,6 +18,12 @@ public static class ConfigurationManager
     /// <param name="basePath">appsettings.json を探すディレクトリ。省略時は実行ファイルのディレクトリ</param>
     public static IConfiguration BuildConfigurationWithCommandLine(string[] args, string? basePath = null)
     {
+        // "-- <本文>" は区切りと本文を設定の読み込みから外す (コマンド名やオプションと同じ文字列の本文を読むための書き方なので、
+        // 本文が "--init" や "--Logging:Level=error" でも設定として解釈しない)
+        if (args.Length > 0 && args[0] == ArgumentParser.TextSeparator)
+        {
+            args = args[Math.Min(2, args.Length)..];
+        }
         var processedArgs = ArgumentParser.PreprocessArgs(args);
 
         if (basePath is null)

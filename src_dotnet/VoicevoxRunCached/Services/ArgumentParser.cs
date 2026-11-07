@@ -58,21 +58,29 @@ public static class ArgumentParser
         => ArgsHelper.PreprocessArgs(args, FlagArgs, ShortArgs);
 
     /// <summary>
-    /// 通常のテキスト読み上げコマンドの引数を解析する。
-    /// 先頭引数をテキストとして扱い、残りをオプションとして処理する。
+    /// 本文の前に置く区切り。<c>VoicevoxRunCached -- speakers</c> のように、コマンド名 (<c>speakers</c> / <c>devices</c> /
+    /// <c>--init</c> 等) と同じ文字列も本文として読み上げられるようにする。
     /// </summary>
-    /// <returns>引数が空の場合は <c>Request</c> が <c>null</c>。呼び出し側は usage 表示で対応する。</returns>
+    public const string TextSeparator = "--";
+
+    /// <summary>
+    /// 通常のテキスト読み上げコマンドの引数を解析する。
+    /// 先頭引数 (<see cref="TextSeparator"/> で始まるならその次) をテキストとして扱い、残りをオプションとして処理する。
+    /// </summary>
+    /// <returns>本文が無い場合は <c>Request</c> が <c>null</c>。呼び出し側は usage 表示で対応する。</returns>
     public static (VoiceRequest? Request, TextToSpeechOptions Options) Parse(
         string[] args, AppSettings settings, ILogger? logger = null)
     {
-        if (args.Length == 0)
+        int textIndex = args.Length > 0 && args[0] == TextSeparator ? 1 : 0;
+        if (textIndex >= args.Length)
         {
             return (null, EmptyOptions);
         }
 
-        // 本文 (args[0]) は前処理しない。"-sample" のような先頭ハイフンの本文が "-s ample" に割られるのを防ぐ
-        var request = CreateDefaultRequest(args[0], settings);
-        var options = ApplyOptions(PreprocessArgs(args[1..]), request);
+        // 本文は前処理しない。"-sample" のような先頭ハイフンの本文が "-s ample" に割られるのを防ぐ
+        var text = args[textIndex];
+        var request = CreateDefaultRequest(text, settings);
+        var options = ApplyOptions(PreprocessArgs(args[(textIndex + 1)..]), request);
 
         logger?.LogDebug("引数解析結果 - Text='{Text}', SpeakerId={SpeakerId}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
             request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
@@ -396,6 +404,7 @@ VOICEVOX REST API wrapper with caching
 
 Usage:
   VoicevoxRunCached <text> [options]
+  VoicevoxRunCached -- <text> [options]   (read <text> even if it looks like a command, e.g. "speakers")
   VoicevoxRunCached --test [options]
   VoicevoxRunCached speakers
   VoicevoxRunCached devices [--full] [--json]

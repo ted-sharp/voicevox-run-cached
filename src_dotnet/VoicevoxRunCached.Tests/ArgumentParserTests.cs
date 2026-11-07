@@ -375,6 +375,30 @@ public class ArgumentParserTests
     }
 
     [Test]
+    [Arguments("speakers")]
+    [Arguments("devices")]
+    [Arguments("--init")]
+    [Arguments("--help")]
+    [Arguments("--")]
+    public async Task Parse_TextAfterSeparator_IsReadAsText(string text)
+    {
+        // コマンド名と同じ文字列は "-- <本文>" で読み上げる
+        var (request, options) = ArgumentParser.Parse(["--", text, "-s", "3", "--no-play"], DefaultSettings());
+
+        await Assert.That(request!.Text).IsEqualTo(text);
+        await Assert.That(request.SpeakerId).IsEqualTo(3);
+        await Assert.That(options.NoPlay).IsTrue();
+    }
+
+    [Test]
+    public async Task Parse_SeparatorWithoutText_RequestIsNull()
+    {
+        var (request, _) = ArgumentParser.Parse(["--"], DefaultSettings());
+
+        await Assert.That(request).IsNull();
+    }
+
+    [Test]
     public async Task Parse_WithoutRefresh_RefreshIsFalse()
     {
         var (_, options) = ArgumentParser.Parse(["text"], DefaultSettings());

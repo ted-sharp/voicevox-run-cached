@@ -73,6 +73,7 @@ VoicevoxRunCached.exe "メッセージ" --verbose
 
 ```
 VoicevoxRunCached <text> [options]
+VoicevoxRunCached -- <text> [options]   # <text> がコマンド名 (speakers など) と同じでも本文として読み上げる
 VoicevoxRunCached --test [options]      # appsettings.json の Test.Message で実行
 VoicevoxRunCached speakers              # スピーカー一覧
 VoicevoxRunCached devices [--full] [--json]  # オーディオデバイス一覧
@@ -98,7 +99,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 
 `--speed` / `--pitch` / `--volume` は小数第 2 位に丸めて使われる (キャッシュキーも丸めた値で作る)。「目安」は VOICEVOX エディタの調整範囲で、本ツールが検証するのは数値であること・speed が 0 より大きいこと・volume と speaker が 0 以上であることだけ。不正な値はエラーで終了する。
 
-不明なオプション (`--speeed` などの打ち間違い) と余分な引数もエラーで終了する (終了コード 1。既定値のまま読み上げない)。本文に空白を含めるときは全体を引用符で囲む。
+不明なオプション (`--speeed` などの打ち間違い) と余分な引数もエラーで終了する (終了コード 1。既定値のまま読み上げない)。本文に空白を含めるときは全体を引用符で囲む。本文が `speakers` / `devices` / `--init` のようにコマンドやオプションと同じ文字列のときは、`VoicevoxRunCached -- speakers` のように前に `--` を置く。
 
 ### 終了コード
 
