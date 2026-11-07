@@ -308,6 +308,22 @@ public class ArgumentParserTests
     }
 
     [Test]
+    [Arguments("--Filler:Enabled=true")]
+    [Arguments("--Filler:Enabled true")]
+    public async Task Parse_ConfigurationOverride_DoesNotWarn(string overrideArgs)
+    {
+        // 回帰: 設定の上書きは ConfigurationManager が反映するのに、読み上げでは Unknown option と (値の 'true' も) 警告していた
+        var logger = new WarningCountingLogger();
+        string[] args = ["text", .. overrideArgs.Split(' '), "--no-play"];
+
+        var (_, options) = ArgumentParser.Parse(args, DefaultSettings(), logger);
+
+        await Assert.That(logger.WarningCount).IsEqualTo(0);
+        // 上書きの値だけを読み飛ばし、後ろのオプションは読む
+        await Assert.That(options.NoPlay).IsTrue();
+    }
+
+    [Test]
     public async Task Parse_WithoutRefresh_RefreshIsFalse()
     {
         var (_, options) = ArgumentParser.Parse(["text"], DefaultSettings());

@@ -99,7 +99,8 @@ public static class ArgumentParser
     /// </summary>
     /// <remarks>
     /// フィラーは読み上げと同じ話者の声で再生するので、既定以外の話者で読み上げるならその話者の分を生成しておく。
-    /// <c>--log-level</c> / <c>--log-format</c> と設定の上書き (<c>--Section:Key=値</c>) は設定の読み込み側で扱うので、ここでは読み飛ばす。
+    /// <c>--log-level</c> / <c>--log-format</c> と設定の上書き (<c>--Section:Key=値</c> / <c>--Section:Key 値</c>) は
+    /// 設定の読み込み側で扱うので、ここでは読み飛ばす。
     /// それ以外の <c>-</c> で始まる引数は読み上げと同じく Unknown option として警告する
     /// (<c>--speaker=3</c> や打ち間違いで、黙って既定の話者のフィラーを作って成功表示しないように)。
     /// </remarks>
@@ -119,7 +120,11 @@ public static class ArgumentParser
             {
                 i++;
             }
-            else if (arg.StartsWith('-') && !IsInlineLogOption(arg) && !arg.Contains(':'))
+            else if (IsConfigurationOverride(arg))
+            {
+                i += ConfigurationOverrideLength(arg) - 1;
+            }
+            else if (arg.StartsWith('-') && !IsInlineLogOption(arg))
             {
                 WarnUnknownOption(arg, logger);
             }
@@ -132,6 +137,18 @@ public static class ArgumentParser
     /// </summary>
     private static bool IsInlineLogOption(string arg)
         => arg.StartsWith("--log-level=", StringComparison.Ordinal) || arg.StartsWith("--log-format=", StringComparison.Ordinal);
+
+    /// <summary>
+    /// 設定の上書き (<c>--Section:Key=値</c> / <c>--Section:Key 値</c>) か。
+    /// 値は ConfigurationManager (AddCommandLine) が設定に反映するので、オプションとしては警告せずに読み飛ばす。
+    /// </summary>
+    private static bool IsConfigurationOverride(string arg)
+        => arg.StartsWith("--", StringComparison.Ordinal) && arg.Contains(':');
+
+    /// <summary>
+    /// 設定の上書きが占める引数の数。AddCommandLine は <c>=</c> が無ければ次の引数を値として読むので、値ごと 2 つ。
+    /// </summary>
+    private static int ConfigurationOverrideLength(string arg) => arg.Contains('=') ? 1 : 2;
 
     private static void WarnUnknownOption(string arg, ILogger? logger)
     {
@@ -220,6 +237,11 @@ public static class ArgumentParser
                     if (IsInlineLogOption(arg))
                     {
                         i++;
+                        break;
+                    }
+                    if (IsConfigurationOverride(arg))
+                    {
+                        i += ConfigurationOverrideLength(arg);
                         break;
                     }
                     WarnUnknownOption(arg, logger);
