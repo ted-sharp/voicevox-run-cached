@@ -44,12 +44,8 @@ public class FillerManager
     {
         ArgumentNullException.ThrowIfNull(apiClient);
 
-        if (!_settings.Enabled)
-        {
-            _logger.LogInformation("フィラー機能が無効化されているため、初期化をスキップします");
-            return default;
-        }
-
+        // Filler.Enabled は再生にだけ効く。生成してから有効にする手順 (appsettings.json のコメント・README) なので、
+        // 無効のままでも生成する
         Directory.CreateDirectory(_settings.Directory);
         DeleteLegacyFiles();
         _logger.LogInformation("フィラーキャッシュの初期化を開始します - テキスト数: {Count}", _settings.FillerTexts.Length);

@@ -220,7 +220,7 @@ public class FillerManagerTests
         // その間 Hooks の読み上げを待たせていた
         using var engine = new FakeEngineServer(audioQueryFails: _ => true, audioQueryFailureStatus: HttpStatusCode.ServiceUnavailable);
 
-        var result = await InitializeAsync(engine, ["a", "b", "c"]);
+        var (result, _) = await InitializeAsync(engine, ["a", "b", "c"]);
 
         // 最初のフィラーのリトライ分だけで、残りには問い合わせない
         await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(AudioConstants.RetryMaxAttempts);
@@ -234,25 +234,40 @@ public class FillerManagerTests
         // 400 などエンジンが応答している失敗はテキストごとの問題なので、残りの生成は続ける
         using var engine = new FakeEngineServer(audioQueryFails: _ => true, audioQueryFailureStatus: HttpStatusCode.BadRequest);
 
-        var result = await InitializeAsync(engine, ["a", "b", "c"]);
+        var (result, _) = await InitializeAsync(engine, ["a", "b", "c"]);
 
         await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(3);
         await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 3, SuccessCount: 0, FailureCount: 3));
     }
 
+    [Test]
+    public async Task InitializeFillerCache_WhenDisabled_StillGenerates()
+    {
+        // 回帰: Filler.Enabled=false だと --init が何も生成せずに成功表示していたため、
+        // appsettings.json・README の「--init で生成してから true にする」手順ではフィラーが作られなかった
+        using var engine = new FakeEngineServer();
+
+        var (result, files) = await InitializeAsync(engine, ["a"], enabled: false);
+
+        await Assert.That(result.SuccessCount).IsEqualTo(1);
+        await Assert.That(files.Count(f => f.EndsWith(".opus", StringComparison.Ordinal))).IsEqualTo(1);
+    }
+
     /// <summary>
-    /// 一時ディレクトリに <paramref name="fillerTexts"/> のフィラーを生成し、結果を返す。
+    /// 一時ディレクトリに <paramref name="fillerTexts"/> のフィラーを生成し、結果と生成後のファイル (フルパス) を返す。
     /// </summary>
-    private static async Task<SynthesisResult> InitializeAsync(FakeEngineServer engine, string[] fillerTexts)
+    private static async Task<(SynthesisResult Result, string[] Files)> InitializeAsync(
+        FakeEngineServer engine, string[] fillerTexts, bool enabled = true)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
         try
         {
-            var settings = new FillerSettings { Enabled = true, Directory = dir, FillerTexts = fillerTexts };
+            var settings = new FillerSettings { Enabled = enabled, Directory = dir, FillerTexts = fillerTexts };
             var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
             using var apiClient = engine.CreateApiClient();
 
-            return await mgr.InitializeFillerCacheAsync(apiClient, FakeEngineServer.SpeakerId);
+            var result = await mgr.InitializeFillerCacheAsync(apiClient, FakeEngineServer.SpeakerId);
+            return (result, Directory.GetFiles(dir));
         }
         finally
         {
