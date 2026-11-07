@@ -156,6 +156,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 `TextSegmentProcessor.ProcessTextAsync(text, speakerId)` が `List<TextSegment>` を返す。
 
 - 分割は文末記号 (`。！？!?`) と改行で行われる。半角 `.` は直後が空白か文末のときだけ区切る (`3.14` や `Node.js` を割らない)
+- 文字も数字も含まないセグメント (「えっ！？」の「？」、「「完了。」」の「」」など) は前のセグメントの末尾に付ける (`AddSegmentIfNotEmpty`)。単独で API に渡しても読む音が無く、余分な合成・キャッシュ・無音の間になるだけなので
 - 1 セグメントが `maxSegmentLength` (デフォルト 100 文字) に達すると、バッファ後半にある最後の `、` `，` か空白 (`Char.IsWhiteSpace`) の直後で切り、残りを次のセグメントに持ち越す (`TextSegmentProcessor.FindSplitPosition`)。後半に区切りが無ければ上限位置で切るが、末尾が high surrogate なら 1 文字手前で切る (ペアを割ると不正な UTF-16 になる)。半角 `,` は `1,980` を割るので区切りにしない
 - 空白のみ・空セグメントは filter される
 - キャッシュヒット判定はセグメント単位なので、テキストの一部変更でも未変更部分は再利用される
@@ -240,7 +241,7 @@ Options:
 
 **Exit Codes**: `ErrorCodes.GetExitCode` がエラーコードの prefix から決める (ENGINE=3, CACHE=4, AUDIO=5, API=6, CONFIG=7, その他=1)。一部セグメントの合成失敗は `ErrorCodes.PartialFailureExitCode` (8)、全セグメント失敗は `AudioGenerationFailed` (5)。`--init` のフィラー生成も同じ (`InitCommandHandler`)。**終了コード 2 は使わない** — Claude Code の Hooks では 2 がブロッキングエラーで、Stop フックから呼ばれた本ツールの失敗が Claude の停止を止めてしまう (`ErrorCodesTests` が回帰検知)。Ctrl+C は `ErrorCodes.CancelledExitCode` (130) で、`CommandRouter` と `Program` の `OperationCanceledException` catch の両方で返す。`CancellationManager` は 1 回目の Ctrl+C だけ握ってキャンセルを要求し (`CancelAsync` でコールバックをハンドラのスレッドで実行しない)、2 回目以降は既定の強制終了に任せる。途中に `catch (Exception)` を書くときは、その前に `catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }` を置いてキャンセルを素通しする (握ると別のエラー扱いになったり、キャッシュを破損扱いで消したりする)。README の「終了コード」表と揃えること。
 
-**Text Processing**: `。！？!?` と改行 (半角 `.` は直後が空白・文末のとき) で文単位に分割。空セグメントは除外。各セグメントが独立にキャッシュされる。
+**Text Processing**: `。！？!?` と改行 (半角 `.` は直後が空白・文末のとき) で文単位に分割。空セグメントは除外、記号だけのセグメントは前に結合。各セグメントが独立にキャッシュされる。
 
 **Engine Management**: 起動時に既存 VOICEVOX プロセスを検査してから launch。`EnginePath` 空なら一般的なインストール場所から自動検出。
 

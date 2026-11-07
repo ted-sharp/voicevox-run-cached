@@ -50,6 +50,33 @@ public class TextSegmentProcessorTests
     }
 
     [Test]
+    [Arguments("えっ！？本当？", "えっ！？|本当？")]
+    [Arguments("すごい！！！", "すごい！！！")]
+    [Arguments("「完了しました。」", "「完了しました。」")]
+    [Arguments("見出し\n---\n本文です。", "見出し---|本文です。")]
+    public async Task ProcessText_SymbolOnlySegment_MergesIntoPrevious(string text, string expected)
+    {
+        // 回帰: 文末記号のたびに区切っていたため「？」「」」だけのセグメントができ、
+        // 読む音が無いのに API を呼び、キャッシュが増え、無音の間が入っていた
+        var processor = CreateProcessor();
+
+        var result = await processor.ProcessTextAsync(text);
+
+        await Assert.That(String.Join("|", result.Select(s => s.Text))).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task ProcessText_SymbolOnlyText_ReturnsOneSegment()
+    {
+        // 前に付けるセグメントが無いときは、まとめて 1 セグメントにする
+        var processor = CreateProcessor();
+
+        var result = await processor.ProcessTextAsync("！？");
+
+        await Assert.That(String.Join("|", result.Select(s => s.Text))).IsEqualTo("！？");
+    }
+
+    [Test]
     public async Task ProcessText_PeriodInsideToken_DoesNotSplit()
     {
         var processor = CreateProcessor();

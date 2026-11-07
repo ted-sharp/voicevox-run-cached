@@ -116,14 +116,28 @@ public partial class TextSegmentProcessor
     private static bool IsSentenceEndingPeriod(string text, int index)
         => text[index] == '.' && (index == text.Length - 1 || Char.IsWhiteSpace(text[index + 1]));
 
+    /// <remarks>
+    /// 文字も数字も含まないセグメント (「えっ！？」の「？」、「「完了。」」の「」」、「…」など) は
+    /// 単独で API に渡しても読む音が無く、余分な合成・キャッシュ・無音の間になるだけなので、前のセグメントの末尾に付ける。
+    /// 前が無い (本文の先頭) ときはそのまま 1 セグメントにする。
+    /// </remarks>
     private static void AddSegmentIfNotEmpty(List<string> segments, StringBuilder buffer)
     {
         var segment = buffer.ToString().Trim();
-        if (!String.IsNullOrWhiteSpace(segment))
-        {
-            segments.Add(segment);
-        }
         buffer.Clear();
+
+        if (String.IsNullOrWhiteSpace(segment))
+        {
+            return;
+        }
+
+        if (segments.Count > 0 && !segment.Any(Char.IsLetterOrDigit))
+        {
+            segments[^1] += segment;
+            return;
+        }
+
+        segments.Add(segment);
     }
 
     [GeneratedRegex(@"\s+")]
