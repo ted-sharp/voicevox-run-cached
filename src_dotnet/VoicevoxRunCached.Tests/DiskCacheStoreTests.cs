@@ -91,10 +91,10 @@ public class DiskCacheStoreTests
             var key = "key-write-fails";
             var audioPath = Path.Combine(dir, key + DiskCacheStore.AudioExtension);
             await store.SaveAsync(request, [0x01, 0x02], key);
-            // 一時ファイルの位置にディレクトリを置いて、書き込みを失敗させる
+            // 一時ファイルの位置にディレクトリを置いて、書き込みを失敗させる (ディレクトリには書けず UnauthorizedAccessException)
             Directory.CreateDirectory(audioPath + DiskCacheStore.TemporarySuffix);
 
-            await Assert.ThrowsAsync<Exception>(() => store.SaveAsync(request, [0x09], key));
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => store.SaveAsync(request, [0x09], key));
 
             var audio = await File.ReadAllBytesAsync(audioPath);
             await Assert.That(audio.SequenceEqual(new byte[] { 0x01, 0x02 })).IsTrue();
