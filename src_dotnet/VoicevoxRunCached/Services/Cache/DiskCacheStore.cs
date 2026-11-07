@@ -167,7 +167,8 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// --clear 用。キャッシュディレクトリ内の音声 (Opus / 旧 MP3) と meta.json をすべて削除する。
+    /// --clear 用。キャッシュディレクトリ内の音声 (Opus / 旧 MP3)・meta.json と、
+    /// 書き込みの途中で落ちて残った一時ファイル (<see cref="TemporarySuffix"/>) をすべて削除する。
     /// </summary>
     /// <remarks>
     /// best-effort の <see cref="Delete"/> と違い失敗を握りつぶさない。呼び出し元
@@ -179,7 +180,7 @@ public class DiskCacheStore
         if (!System.IO.Directory.Exists(_settings.Directory))
             return 0;
 
-        string[] patterns = [$"*{AudioExtension}", "*.meta.json", $"*{LegacyAudioExtension}"];
+        string[] patterns = [$"*{AudioExtension}", "*.meta.json", $"*{LegacyAudioExtension}", $"*{AudioExtension}{TemporarySuffix}"];
         int deleted = 0;
         foreach (var pattern in patterns)
         {

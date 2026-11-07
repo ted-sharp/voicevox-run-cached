@@ -93,6 +93,8 @@ public class AudioCacheManagerIntegrationTests
             await mgr.SaveAudioCacheAsync(new VoiceRequest("新", 1), AudioConversionUtility.CreateMinimalWavData(300, 24000));
             await File.WriteAllBytesAsync(Path.Combine(dir, "legacy.mp3"), [0xFF, 0xFB]);
             await File.WriteAllTextAsync(Path.Combine(dir, "legacy.meta.json"), "{}");
+            // 書き込みの途中で落ちて残った一時ファイルも消す
+            await File.WriteAllBytesAsync(Path.Combine(dir, "interrupted.opus.tmp"), [0x00]);
 
             await mgr.ClearAllCacheAsync();
 
