@@ -9,7 +9,7 @@ namespace VoicevoxRunCached.Services.Infrastructure;
 /// HTTP/IO 系の retry ポリシーを集約する。指数バックオフ + jitter で再試行する。
 /// </summary>
 /// <remarks>
-/// HTTP ステータスコード別の判定 (5xx/429 のみ retry) と TooManyRequests 下限調整を持つため、
+/// HTTP ステータスコード別の判定 (502/503/504/429 のみ retry) と TooManyRequests 下限調整を持つため、
 /// 単純な Polly ポリシーで置き換えるとロジックが薄くなる。手書きループで保守する方針。
 /// </remarks>
 public class RetryPolicyService
@@ -69,7 +69,7 @@ public class RetryPolicyService
         var delay = CalculateDelay(attempt, statusCode);
         var errorType = GetErrorType(exception);
 
-        // リトライ自体は正常フロー (5xx/429 等に対する既定の挙動) なので Debug。
+        // リトライ自体は正常フロー (502/503/504/429 等に対する既定の挙動) なので Debug。
         // 最終的な失敗は呼び出し元が Error として残す。
         _logger.LogDebug(exception, "{ErrorType} during {OperationName}, retrying in {Delay}ms (attempt {RetryCount}/{MaxRetries})",
             errorType, operationName, delay, attempt, _maxRetryAttempts);
@@ -78,12 +78,14 @@ public class RetryPolicyService
     }
 
     /// <summary>
-    /// 5xx/429 の HTTP エラーと、一時的な I/O・ソケットエラーをリトライ対象とする。
+    /// 502/503/504/429 の HTTP エラーと、一時的な I/O・ソケットエラーをリトライ対象とする。
     /// </summary>
     /// <remarks>
     /// <para>HttpClient のタイムアウト (<see cref="TaskCanceledException"/>) はリトライしない。タイムアウト (既定 30 秒) を
     /// 待ってもエンジンが応答しないなら、もう一度待っても応答しないことがほとんどで、リトライすると 1 件で約 93 秒
     /// (30 秒 × 3 回 + バックオフ) プロセス間ロックを握り、後続の読み上げや Hooks を待たせるため。</para>
+    /// <para>500 もリトライしない。VOICEVOX の 500 は特定の文が合成できないときに返るもので、同じ文を送り直しても同じ結果になる
+    /// (バックオフの分だけ遅れるだけ)。</para>
     /// </remarks>
     private static bool IsRetryable(Exception ex) => ex switch
     {
@@ -105,7 +107,6 @@ public class RetryPolicyService
 
         return ex.StatusCode.Value switch
         {
-            HttpStatusCode.InternalServerError => true,
             HttpStatusCode.BadGateway => true,
             HttpStatusCode.ServiceUnavailable => true,
             HttpStatusCode.GatewayTimeout => true,

@@ -37,7 +37,7 @@ public class InitCommandHandler
 
         await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
 
-        // 存在しない話者だと /initialize_speaker が 500 になりリトライで待たされるので、先に確認して即エラーにする
+        // 存在しない話者だと /initialize_speaker が 500 (原因の分からないエンジンエラー) になるので、先に確認して入力ミスとして即エラーにする
         TextToSpeechProcessor.EnsureSpeakerExists(await _apiClient.GetSpeakersAsync(cancellationToken), speakerId);
 
         _logger.LogInformation("フィラーキャッシュの初期化を開始します - 話者: {SpeakerId}", speakerId);

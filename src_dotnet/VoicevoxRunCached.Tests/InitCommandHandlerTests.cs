@@ -46,7 +46,7 @@ public class InitCommandHandlerTests
     [Test]
     public async Task NonexistentSpeaker_ThrowsInvalidArguments()
     {
-        // 存在しない話者だと /initialize_speaker が 500 になりリトライで待たされるので、先に /speakers で弾く
+        // 存在しない話者だと /initialize_speaker が 500 (原因の分からないエンジンエラー) になるので、先に /speakers で弾く
         using var engine = new FakeEngineServer();
 
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => RunInitAsync(engine, speakerId: 999));
