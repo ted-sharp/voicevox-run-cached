@@ -310,6 +310,7 @@ public class ArgumentParserTests
     [Test]
     [Arguments("--Filler:Enabled=true")]
     [Arguments("--Filler:Enabled true")]
+    [Arguments("--filler:enabled=true")]
     public async Task Parse_ConfigurationOverride_DoesNotWarn(string overrideArgs)
     {
         // 回帰: 設定の上書きは ConfigurationManager が反映するのに、読み上げでは Unknown option と (値の 'true' も) 警告していた
@@ -320,6 +321,21 @@ public class ArgumentParserTests
 
         await Assert.That(logger.WarningCount).IsEqualTo(0);
         // 上書きの値だけを読み飛ばし、後ろのオプションは読む
+        await Assert.That(options.NoPlay).IsTrue();
+    }
+
+    [Test]
+    [Arguments(@"--output=C:\tmp\a.wav")]
+    [Arguments(@"--out:C:\tmp\a.wav")]
+    public async Task Parse_UnknownOptionWithColon_WarnsAndReadsFollowingOptions(string option)
+    {
+        // 回帰: ':' を含む引数をすべて設定の上書きとみなしていたため、ドライブ名入りの打ち間違いを黙って無視し、
+        // '=' が無いと後ろの --no-play を値として読み飛ばしていた
+        var logger = new WarningCountingLogger();
+
+        var (_, options) = ArgumentParser.Parse(["text", option, "--no-play"], DefaultSettings(), logger);
+
+        await Assert.That(logger.WarningCount).IsEqualTo(1);
         await Assert.That(options.NoPlay).IsTrue();
     }
 
@@ -374,6 +390,7 @@ public class ArgumentParserTests
     [Test]
     [Arguments("--speaker=3")]
     [Arguments("--speakr 3")]
+    [Arguments("--speaker:3")]
     public async Task ParseInitSpeaker_UnknownOption_WarnsAndUsesDefault(string args)
     {
         // 回帰: 不明な引数を黙って読み飛ばしていたため、--speaker=3 や打ち間違いでも既定の話者のフィラーを作って成功表示していた

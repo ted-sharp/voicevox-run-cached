@@ -139,11 +139,36 @@ public static class ArgumentParser
         => arg.StartsWith("--log-level=", StringComparison.Ordinal) || arg.StartsWith("--log-format=", StringComparison.Ordinal);
 
     /// <summary>
+    /// 設定の上書きで指定できるセクション (appsettings.json の最上位。設定のキーは大文字小文字を区別しない)。
+    /// </summary>
+    private static readonly FrozenSet<string> ConfigurationSections = new[]
+    {
+        nameof(AppSettings.VoiceVox),
+        nameof(AppSettings.Cache),
+        nameof(AppSettings.Audio),
+        nameof(AppSettings.Filler),
+        nameof(AppSettings.Logging),
+        nameof(AppSettings.Test)
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// 設定の上書き (<c>--Section:Key=値</c> / <c>--Section:Key 値</c>) か。
     /// 値は ConfigurationManager (AddCommandLine) が設定に反映するので、オプションとしては警告せずに読み飛ばす。
     /// </summary>
+    /// <remarks>
+    /// <c>=</c> より前のキーが既知のセクションで始まるものだけを上書きとみなす。<c>:</c> があるだけで上書きとみなすと、
+    /// <c>--output=C:\a.wav</c> (ドライブ名の <c>:</c>) を黙って無視し、<c>--out:C:\a.wav --no-play</c> では
+    /// 後ろの <c>--no-play</c> を値として読み飛ばしてしまう。
+    /// </remarks>
     private static bool IsConfigurationOverride(string arg)
-        => arg.StartsWith("--", StringComparison.Ordinal) && arg.Contains(':');
+    {
+        if (!arg.StartsWith("--", StringComparison.Ordinal))
+            return false;
+
+        var key = arg[2..].Split('=', 2)[0];
+        var colon = key.IndexOf(':');
+        return colon > 0 && ConfigurationSections.Contains(key[..colon]);
+    }
 
     /// <summary>
     /// 設定の上書きが占める引数の数。AddCommandLine は <c>=</c> が無ければ次の引数を値として読むので、値ごと 2 つ。
