@@ -103,6 +103,28 @@ public class DiskCacheStoreTests
     }
 
     [Test]
+    public async Task SaveAsync_NewKeyAudioWriteFails_LeavesOnlyMetaAndMisses()
+    {
+        // 回帰: .opus を先に置いてから meta.json を書いていたため、間で落ちると .opus だけが残り、期限切れの掃除
+        // (meta.json を数える) では消えず容量超過まで溜まっていた。残るのを meta.json だけにして期限切れで消えるようにする
+        var (store, dir) = CreateStore();
+        try
+        {
+            var request = new VoiceRequest("新規保存失敗", 1);
+            var key = "key-new-write-fails";
+            var audioPath = Path.Combine(dir, key + DiskCacheStore.AudioExtension);
+            Directory.CreateDirectory(audioPath + DiskCacheStore.TemporarySuffix);
+
+            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => store.SaveAsync(request, [0x09], key));
+
+            await Assert.That(File.Exists(audioPath)).IsFalse();
+            await Assert.That(File.Exists(Path.Combine(dir, $"{key}.meta.json"))).IsTrue();
+            await Assert.That(await store.LoadAsync(key)).IsNull();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
     public async Task LoadAsync_MissingFiles_ReturnsNull()
     {
         var (store, dir) = CreateStore();
