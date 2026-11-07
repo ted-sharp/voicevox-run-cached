@@ -156,7 +156,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 `TextSegmentProcessor.ProcessTextAsync(text, speakerId)` が `List<TextSegment>` を返す。
 
 - 分割は文末記号 (`。！？!?`) と改行で行われる。半角 `.` は直後が空白か文末のときだけ区切る (`3.14` や `Node.js` を割らない)
-- 文字も数字も含まないセグメント (「えっ！？」の「？」、「「完了。」」の「」」など) は前のセグメントの末尾に付ける (`AddSegmentIfNotEmpty`)。単独で API に渡しても読む音が無く、余分な合成・キャッシュ・無音の間になるだけなので
+- 文字も数字も含まないセグメント (「えっ！？」の「？」、「「完了。」」の「」」など) は前のセグメントの末尾に付ける (`AddSegmentIfNotEmpty`)。単独で API に渡しても読む音が無く、余分な合成・キャッシュ・無音の間になるだけなので。ただし付けると `maxSegmentLength` を超えるときは付けない (上限で割った記号の塊を連結し続けて上限を超えないように)。判定は `Rune.IsLetterOrDigit` (UTF-16 の 1 文字ずつだとサロゲートペアの漢字を記号とみなす)
 - 1 セグメントが `maxSegmentLength` (デフォルト 100 文字) に達すると、バッファ後半にある最後の `、` `，` か空白 (`Char.IsWhiteSpace`) の直後で切り、残りを次のセグメントに持ち越す (`TextSegmentProcessor.FindSplitPosition`)。後半に区切りが無ければ上限位置で切るが、末尾が high surrogate なら 1 文字手前で切る (ペアを割ると不正な UTF-16 になる)。半角 `,` は `1,980` を割るので区切りにしない
 - 空白のみ・空セグメントは filter される
 - キャッシュヒット判定はセグメント単位なので、テキストの一部変更でも未変更部分は再利用される

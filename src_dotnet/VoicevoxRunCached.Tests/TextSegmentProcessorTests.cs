@@ -77,6 +77,34 @@ public class TextSegmentProcessorTests
     }
 
     [Test]
+    public async Task ProcessText_SupplementaryPlaneLetter_IsNotTreatedAsSymbol()
+    {
+        // 回帰: UTF-16 の 1 文字ずつ判定していたため、サロゲートペアの漢字だけの文を記号とみなして前の文に付けていた
+        var processor = CreateProcessor();
+
+        var result = await processor.ProcessTextAsync("前文。\n𩸽。");
+
+        await Assert.That(String.Join("|", result.Select(s => s.Text))).IsEqualTo("前文。|𩸽。");
+    }
+
+    [Test]
+    public async Task ProcessText_SymbolMerge_DoesNotExceedMaxLength()
+    {
+        // 回帰: 記号だけのセグメントを上限を見ずに付けていたため、上限で割った記号の塊や記号だけの文が
+        // 前の文に連結され続け、上限を超える長さを 1 回の API 呼び出しに渡していた
+        var processor = CreateProcessor(maxSegmentLength: 100);
+        string[] texts = ["あ。" + new string('…', 250), "あ。" + String.Concat(Enumerable.Repeat("……！", 100))];
+
+        foreach (var text in texts)
+        {
+            var result = await processor.ProcessTextAsync(text);
+
+            await Assert.That(result.Max(s => s.Text.Length)).IsLessThanOrEqualTo(100);
+            await Assert.That(String.Concat(result.Select(s => s.Text))).IsEqualTo(text);
+        }
+    }
+
+    [Test]
     public async Task ProcessText_PeriodInsideToken_DoesNotSplit()
     {
         var processor = CreateProcessor();
