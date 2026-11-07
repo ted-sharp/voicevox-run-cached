@@ -53,19 +53,22 @@ public class AudioPlayer : IDisposable
     /// セグメントが届くたびに順次再生する。次のセグメントが <see cref="AudioConstants.FillerStartDelayMs"/>
     /// 以内に届かない場合はフィラー音声で隙間を埋める。
     /// </summary>
+    /// <param name="reader">再生するセグメントの channel</param>
+    /// <param name="getFillerAudio">フィラー音声 (Ogg Opus) を返す。無効・未生成なら null を返す。null ならフィラーを挟まない</param>
+    /// <param name="cancellationToken">キャンセル</param>
     /// <remarks>
     /// 呼び出し元 (producer) が <see cref="ChannelWriter{T}.Complete"/> するまでループする。
     /// AudioData が null のセグメントは合成失敗扱いで読み飛ばす。
     /// </remarks>
     public async Task PlayStreamingAsync(
         ChannelReader<TextSegment> reader,
-        FillerManager? fillerManager = null,
+        Func<CancellationToken, Task<byte[]?>>? getFillerAudio = null,
         CancellationToken cancellationToken = default)
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
-        _logger.LogDebug("PlayStreamingAsync 開始 - フィラーマネージャー: {HasFillerManager}", fillerManager != null);
+        _logger.LogDebug("PlayStreamingAsync 開始 - フィラー: {HasFiller}", getFillerAudio != null);
 
         await _deviceManager.EnsureDeviceReadyAsync();
 
@@ -75,6 +78,8 @@ public class AudioPlayer : IDisposable
 
             bool isFirstPlayback = true;
             int playedCount = 0;
+            // フィラーの取得・再生に失敗したら、この再生の間は null にしてフィラーを使わない
+            var fillerSource = getFillerAudio;
 
             while (true)
             {
@@ -105,10 +110,17 @@ public class AudioPlayer : IDisposable
                 {
                     break;
                 }
-                if (waitOutcome == NextSegmentWait.FillerTimeout
-                    && await TryPlayFillerAsync(wavePlayer, fillerManager, isFirstPlayback, cancellationToken))
+                if (waitOutcome == NextSegmentWait.FillerTimeout && fillerSource != null)
                 {
-                    isFirstPlayback = false;
+                    var filler = await TryPlayFillerAsync(wavePlayer, fillerSource, isFirstPlayback, cancellationToken);
+                    if (filler == FillerOutcome.Played)
+                    {
+                        isFirstPlayback = false;
+                    }
+                    else if (filler == FillerOutcome.Failed)
+                    {
+                        fillerSource = null;
+                    }
                 }
                 // Ready の場合は次ループの TryRead で拾う
             }
@@ -162,21 +174,53 @@ public class AudioPlayer : IDisposable
         return await waitTask ? NextSegmentWait.Ready : NextSegmentWait.NoMore;
     }
 
-    /// <summary>
-    /// フィラー音声を再生する。フィラーが無効/未取得時は何もせず false を返す。
-    /// </summary>
-    private async Task<bool> TryPlayFillerAsync(IWavePlayer wavePlayer, FillerManager? fillerManager, bool isFirstPlayback, CancellationToken cancellationToken)
+    private enum FillerOutcome
     {
-        var fillerAudio = fillerManager != null
-            ? await fillerManager.GetRandomFillerAudioAsync(cancellationToken)
-            : null;
-        if (fillerAudio == null || fillerAudio.Length == 0)
+        /// <summary>フィラーを再生した</summary>
+        Played,
+        /// <summary>フィラーが無効・未生成で、何もしなかった</summary>
+        Skipped,
+        /// <summary>取得・デコード・再生のどこかで失敗した</summary>
+        Failed,
+    }
+
+    /// <summary>
+    /// フィラー音声を再生する。
+    /// </summary>
+    /// <remarks>
+    /// フィラーは無音を埋めるための飾りなので、失敗 (ファイルの読み込み・デコード・再生) で本編の読み上げごと止めない。
+    /// Warning を残して <see cref="FillerOutcome.Failed"/> を返し、呼び出し元はその再生の間フィラーを使わない。
+    /// デバイス自体の故障なら、続く本編セグメントの再生で例外として表に出る。
+    /// ただし再生のタイムアウト (<see cref="TimeoutException"/>) は握らずに投げる。<see cref="PlayWaveAsync"/> は
+    /// 再生の途中で共有 WavePlayer を Stop() しており、そのまま本編を再生すると、遅れて届く停止イベントで本編が途中で切れうるため
+    /// (デバイスの異常として、フィラーを握るようにする前と同じく表に出す)。
+    /// </remarks>
+    private async Task<FillerOutcome> TryPlayFillerAsync(
+        IWavePlayer wavePlayer,
+        Func<CancellationToken, Task<byte[]?>> getFillerAudio,
+        bool isFirstPlayback,
+        CancellationToken cancellationToken)
+    {
+        try
         {
-            return false;
+            var fillerAudio = await getFillerAudio(cancellationToken);
+            if (fillerAudio == null || fillerAudio.Length == 0)
+            {
+                return FillerOutcome.Skipped;
+            }
+            _logger.LogDebug("フィラー音声を挿入 (size: {Size} bytes)", fillerAudio.Length);
+            await PlaySharedSegmentAsync(wavePlayer, fillerAudio, isFirstPlayback, cancellationToken);
+            return FillerOutcome.Played;
         }
-        _logger.LogDebug("フィラー音声を挿入 (size: {Size} bytes)", fillerAudio.Length);
-        await PlaySharedSegmentAsync(wavePlayer, fillerAudio, isFirstPlayback, cancellationToken);
-        return true;
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not TimeoutException)
+        {
+            _logger.LogWarning(ex, "フィラー音声を再生できませんでした。この読み上げではフィラーを使いません");
+            return FillerOutcome.Failed;
+        }
     }
 
     private Task PlaySharedSegmentAsync(IWavePlayer wavePlayer, byte[] audioData, bool isFirstSegment, CancellationToken cancellationToken)

@@ -213,6 +213,18 @@ public class VoiceVoxApiClient : IDisposable
         _ => ErrorCodes.Api.ApiRequestFailed,
     };
 
+    /// <summary>
+    /// エンジンそのものに届かない失敗か (接続できない・503・応答の途中切断 = EngineNotAvailable、リトライ込みのタイムアウト = ApiTimeout)。
+    /// 続けても同じ失敗を繰り返すだけなので、残りの合成 (読み上げの <see cref="SegmentProducer"/>・<c>--init</c> の
+    /// <see cref="FillerManager"/>) を中止する判定に使う。どちらもプロセス間ロックを持っているので、1 件ごとに
+    /// リトライ込みのタイムアウトを待つと後続の読み上げも待たせてしまう。
+    /// </summary>
+    /// <remarks>
+    /// 500 (EngineProcessError) は特定の文だけで起きることがあるので含めない (次の文は合成できる可能性がある)。
+    /// </remarks>
+    public static bool IsEngineUnavailable(Exception ex)
+        => ex is VoicevoxRunCachedException { ErrorCode: ErrorCodes.Engine.EngineNotAvailable or ErrorCodes.Api.ApiTimeout };
+
     private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         _logger.LogDebug("HTTP {Method} {RequestUri}", request.Method, request.RequestUri);

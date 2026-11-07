@@ -81,7 +81,7 @@ public partial class TextSegmentProcessor
     /// <summary>
     /// 上限に達したバッファを区切りの良い位置で切ってセグメントにし、残りはバッファに持ち越す。
     /// </summary>
-    private static void SplitOverlongSegment(List<string> segments, StringBuilder buffer)
+    private void SplitOverlongSegment(List<string> segments, StringBuilder buffer)
     {
         int cut = FindSplitPosition(buffer);
         var rest = buffer.ToString(cut, buffer.Length - cut);
@@ -116,14 +116,32 @@ public partial class TextSegmentProcessor
     private static bool IsSentenceEndingPeriod(string text, int index)
         => text[index] == '.' && (index == text.Length - 1 || Char.IsWhiteSpace(text[index + 1]));
 
-    private static void AddSegmentIfNotEmpty(List<string> segments, StringBuilder buffer)
+    /// <remarks>
+    /// 文字も数字も含まないセグメント (「えっ！？」の「？」、「「完了。」」の「」」、「…」など) は
+    /// 単独で API に渡しても読む音が無く、余分な合成・キャッシュ・無音の間になるだけなので、前のセグメントの末尾に付ける。
+    /// 前が無い (本文の先頭) とき、または付けると上限 (<c>maxSegmentLength</c>) を超えるときはそのまま 1 セグメントにする
+    /// (上限で割った記号の塊まで付け続けると、上限を超える長さを 1 回の API 呼び出しに渡してしまうため)。
+    /// 文字・数字の判定は <see cref="Rune"/> 単位で行う (UTF-16 の 1 文字ずつだと、サロゲートペアの漢字「𩸽」などを記号とみなしてしまう)。
+    /// </remarks>
+    private void AddSegmentIfNotEmpty(List<string> segments, StringBuilder buffer)
     {
         var segment = buffer.ToString().Trim();
-        if (!String.IsNullOrWhiteSpace(segment))
-        {
-            segments.Add(segment);
-        }
         buffer.Clear();
+
+        if (String.IsNullOrWhiteSpace(segment))
+        {
+            return;
+        }
+
+        if (segments.Count > 0
+            && !segment.EnumerateRunes().Any(Rune.IsLetterOrDigit)
+            && segments[^1].Length + segment.Length <= _maxSegmentLength)
+        {
+            segments[^1] += segment;
+            return;
+        }
+
+        segments.Add(segment);
     }
 
     [GeneratedRegex(@"\s+")]

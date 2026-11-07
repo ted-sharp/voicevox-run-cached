@@ -53,10 +53,11 @@ public class ProgressSpinner : IDisposable
     private async Task AnimateAsync()
     {
         int frameIndex = 0;
-        Console.CursorVisible = false;
 
         try
         {
+            SetCursorVisible(false);
+
             while (!_cancellationTokenSource.Token.IsCancellationRequested)
             {
                 string currentMessage;
@@ -79,7 +80,24 @@ public class ProgressSpinner : IDisposable
         finally
         {
             Console.Error.Write($"\r{ClearToEndOfLine}");
-            Console.CursorVisible = true;
+            SetCursorVisible(true);
+        }
+    }
+
+    /// <summary>
+    /// カーソルの表示を切り替える。stdout がリダイレクトされているときは何もしない。
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Console.CursorVisible"/> は stderr ではなく stdout のハンドルを操作するので、
+    /// stdout だけリダイレクトされている (<c>VoicevoxRunCached "…" &gt; out.txt</c>) と IOException になる。
+    /// 以前はこれでアニメーションのタスクが失敗し、Dispose の Wait が例外を投げて
+    /// エンジン起動・<c>--clear</c>・<c>--init</c> が成功していても失敗扱いになっていた。
+    /// </remarks>
+    private static void SetCursorVisible(bool visible)
+    {
+        if (!Console.IsOutputRedirected)
+        {
+            Console.CursorVisible = visible;
         }
     }
 }

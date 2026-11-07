@@ -11,12 +11,15 @@ namespace VoicevoxRunCached.Services;
 /// <summary>
 /// テキスト読み上げコマンドのオプション
 /// </summary>
+/// <param name="NoCache">キャッシュを読みも書きもしない</param>
+/// <param name="Refresh">キャッシュを読まずに全部合成し直し、キャッシュを上書きする (辞書登録・エンジン更新の反映用)</param>
 public record TextToSpeechOptions(
     bool NoCache,
     bool CacheOnly,
     bool Verbose,
     string? OutPath,
-    bool NoPlay);
+    bool NoPlay,
+    bool Refresh = false);
 
 public static class ArgumentParser
 {
@@ -32,6 +35,7 @@ public static class ArgumentParser
         "--verbose",
         "--no-cache",
         "--cache-only",
+        "--refresh",
         "--no-play",
         "--json",
         "--full",
@@ -90,6 +94,51 @@ public static class ArgumentParser
         return (request, options);
     }
 
+    /// <summary>
+    /// <c>--init</c> の引数から、フィラーを生成する話者 (<c>--speaker</c> / <c>-s</c>) を読む。省略時は <c>DefaultSpeaker</c>。
+    /// </summary>
+    /// <remarks>
+    /// フィラーは読み上げと同じ話者の声で再生するので、既定以外の話者で読み上げるならその話者の分を生成しておく。
+    /// <c>--log-level</c> / <c>--log-format</c> と設定の上書き (<c>--Section:Key=値</c>) は設定の読み込み側で扱うので、ここでは読み飛ばす。
+    /// それ以外の <c>-</c> で始まる引数は読み上げと同じく Unknown option として警告する
+    /// (<c>--speaker=3</c> や打ち間違いで、黙って既定の話者のフィラーを作って成功表示しないように)。
+    /// </remarks>
+    public static int ParseInitSpeaker(string[] args, AppSettings settings, ILogger? logger = null)
+    {
+        var processedArgs = PreprocessArgs(args);
+        var speakerId = settings.VoiceVox.DefaultSpeaker;
+        for (int i = 0; i < processedArgs.Length; i++)
+        {
+            var arg = processedArgs[i];
+            if (arg is "--speaker" or "-s")
+            {
+                speakerId = ReadInt(processedArgs, i, min: 0);
+                i++;
+            }
+            else if (arg is "--log-level" or "--log-format")
+            {
+                i++;
+            }
+            else if (arg.StartsWith('-') && !IsInlineLogOption(arg) && !arg.Contains(':'))
+            {
+                WarnUnknownOption(arg, logger);
+            }
+        }
+        return speakerId;
+    }
+
+    /// <summary>
+    /// <c>--log-level=値</c> / <c>--log-format=値</c> か (値は ConfigurationManager.SwitchMappings 経由で反映済み)。
+    /// </summary>
+    private static bool IsInlineLogOption(string arg)
+        => arg.StartsWith("--log-level=", StringComparison.Ordinal) || arg.StartsWith("--log-format=", StringComparison.Ordinal);
+
+    private static void WarnUnknownOption(string arg, ILogger? logger)
+    {
+        ConsoleHelper.WriteWarning($"Warning: Unknown option '{arg}'");
+        logger?.LogWarning("Unknown option: {Option}", arg);
+    }
+
     private static readonly TextToSpeechOptions EmptyOptions = new(
         NoCache: false, CacheOnly: false, Verbose: false, OutPath: null, NoPlay: false);
 
@@ -109,7 +158,7 @@ public static class ArgumentParser
     private static TextToSpeechOptions ApplyOptions(
         string[] processedArgs, int optionsStartIndex, VoiceRequest request, ILogger? logger)
     {
-        bool noCache = false, cacheOnly = false, verbose = false, noPlay = false;
+        bool noCache = false, cacheOnly = false, verbose = false, noPlay = false, refresh = false;
         string? outPath = null;
 
         int i = optionsStartIndex;
@@ -140,6 +189,9 @@ public static class ArgumentParser
                 case "--cache-only":
                     cacheOnly = ReadFlag(processedArgs, ref i);
                     break;
+                case "--refresh":
+                    refresh = ReadFlag(processedArgs, ref i);
+                    break;
                 case "--verbose":
                     verbose = ReadFlag(processedArgs, ref i);
                     break;
@@ -165,20 +217,25 @@ public static class ArgumentParser
                         i++;
                         break;
                     }
-                    if (arg.StartsWith("--log-level=", StringComparison.Ordinal) || arg.StartsWith("--log-format=", StringComparison.Ordinal))
+                    if (IsInlineLogOption(arg))
                     {
-                        // 値は ConfigurationManager.SwitchMappings 経由で反映済み
                         i++;
                         break;
                     }
-                    ConsoleHelper.WriteWarning($"Warning: Unknown option '{arg}'");
-                    logger?.LogWarning("Unknown option: {Option}", arg);
+                    WarnUnknownOption(arg, logger);
                     i++;
                     break;
             }
         }
 
-        return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay);
+        if (refresh && (noCache || cacheOnly))
+        {
+            // --refresh は「合成し直してキャッシュを上書きする」なので、キャッシュを書かない --no-cache・
+            // 合成しない --cache-only とは両立しない。どちらかを黙って優先すると意図と違う動きになる
+            throw InvalidOption("--refresh", "--no-cache / --cache-only と同時には指定できません。");
+        }
+
+        return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay, refresh);
     }
 
     /// <summary>
@@ -281,7 +338,7 @@ Usage:
   VoicevoxRunCached --test [options]
   VoicevoxRunCached speakers
   VoicevoxRunCached devices [--full] [--json]
-  VoicevoxRunCached --init
+  VoicevoxRunCached --init [--speaker <id>]
   VoicevoxRunCached --clear
 
 Arguments:
@@ -292,8 +349,9 @@ Options:
   --speed <value>          Speech speed (default: 1.0)
   --pitch <value>          Speech pitch (default: 0.0)
   --volume <value>         Speech volume (default: 1.0)
-  --no-cache               Skip cache usage
+  --no-cache               Skip cache usage (neither read nor write)
   --cache-only             Use cache only, don't call API
+  --refresh                Re-synthesize all segments and overwrite the cache
   --out, -o <path>         Save output audio to file (.wav or .opus)
   --no-play                Do not play audio (useful with --out)
   --verbose                Show playback time and total execution time
@@ -305,7 +363,7 @@ Commands:
   speakers                 List available speakers
   devices                  List audio output devices
   --test                   Play the configured test message (Test.Message)
-  --init                   Initialize filler audio cache
+  --init                   Initialize filler audio cache for the speaker (default: VoiceVox.DefaultSpeaker)
   --clear                  Clear audio and filler cache files
 
 Enhanced Features:

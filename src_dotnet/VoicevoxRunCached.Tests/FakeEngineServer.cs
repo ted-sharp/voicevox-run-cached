@@ -10,22 +10,32 @@ namespace VoicevoxRunCached.Tests;
 
 /// <summary>
 /// VOICEVOX エンジンの代わりに 127.0.0.1 の空きポートで応答するテスト用 HTTP サーバー。
-/// /version・/initialize_speaker・/audio_query・/synthesis に応答する。
+/// /version・/speakers・/initialize_speaker・/audio_query・/synthesis に応答する。
 /// </summary>
 internal sealed class FakeEngineServer : IDisposable
 {
+    /// <summary>/speakers に載せる話者 (スタイル) の ID。</summary>
+    public const int SpeakerId = 1;
+
     // /audio_query が返す JSON の最小形
     private const string AudioQueryJson =
         """{"accent_phrases":[],"speedScale":1.0,"pitchScale":0.0,"intonationScale":1.0,"volumeScale":1.0,"outputSamplingRate":24000,"kana":"ア"}""";
 
+    private const string SpeakersJson =
+        """[{"name":"テスト話者","speaker_uuid":"00000000-0000-0000-0000-000000000000","styles":[{"name":"ノーマル","id":1}],"version":"0.0.0"}]""";
+
     private readonly HttpListener _listener = new();
     private readonly Func<string, bool> _audioQueryFails;
+    private readonly HttpStatusCode _audioQueryFailureStatus;
     private readonly Task _serveTask;
+    private int _audioQueryRequestCount;
 
-    /// <param name="audioQueryFails">true を返したテキストだけ /audio_query を 400 (リトライ対象外) にする</param>
-    public FakeEngineServer(Func<string, bool>? audioQueryFails = null)
+    /// <param name="audioQueryFails">true を返したテキストだけ /audio_query を失敗させる</param>
+    /// <param name="audioQueryFailureStatus">失敗させるときのステータス。既定の 400 はリトライ対象外</param>
+    public FakeEngineServer(Func<string, bool>? audioQueryFails = null, HttpStatusCode audioQueryFailureStatus = HttpStatusCode.BadRequest)
     {
         _audioQueryFails = audioQueryFails ?? (_ => false);
+        _audioQueryFailureStatus = audioQueryFailureStatus;
         BaseUrl = $"http://127.0.0.1:{GetFreePort()}";
         _listener.Prefixes.Add(BaseUrl + "/");
         _listener.Start();
@@ -33,6 +43,9 @@ internal sealed class FakeEngineServer : IDisposable
     }
 
     public string BaseUrl { get; }
+
+    /// <summary>/audio_query を受けた回数 (リトライも 1 回ずつ数える)。</summary>
+    public int AudioQueryRequestCount => Volatile.Read(ref _audioQueryRequestCount);
 
     /// <summary>
     /// このサーバーに向けた設定 (エンジンの自動起動はしない)。
@@ -81,15 +94,25 @@ internal sealed class FakeEngineServer : IDisposable
         }
     }
 
-    private (HttpStatusCode Status, byte[] Body) Respond(HttpListenerRequest request) => request.Url!.AbsolutePath switch
+    private (HttpStatusCode Status, byte[] Body) Respond(HttpListenerRequest request)
     {
-        "/version" => (HttpStatusCode.OK, Encoding.UTF8.GetBytes("\"0.0.0\"")),
-        "/initialize_speaker" => (HttpStatusCode.NoContent, []),
-        "/audio_query" when _audioQueryFails(request.QueryString["text"] ?? "") => (HttpStatusCode.BadRequest, []),
-        "/audio_query" => (HttpStatusCode.OK, Encoding.UTF8.GetBytes(AudioQueryJson)),
-        "/synthesis" => (HttpStatusCode.OK, TestAudio.SineWav(24000, 200)),
-        _ => (HttpStatusCode.NotFound, []),
-    };
+        var path = request.Url!.AbsolutePath;
+        if (path == "/audio_query")
+        {
+            Interlocked.Increment(ref _audioQueryRequestCount);
+        }
+
+        return path switch
+        {
+            "/version" => (HttpStatusCode.OK, Encoding.UTF8.GetBytes("\"0.0.0\"")),
+            "/speakers" => (HttpStatusCode.OK, Encoding.UTF8.GetBytes(SpeakersJson)),
+            "/initialize_speaker" => (HttpStatusCode.NoContent, []),
+            "/audio_query" when _audioQueryFails(request.QueryString["text"] ?? "") => (_audioQueryFailureStatus, []),
+            "/audio_query" => (HttpStatusCode.OK, Encoding.UTF8.GetBytes(AudioQueryJson)),
+            "/synthesis" => (HttpStatusCode.OK, TestAudio.SineWav(24000, 200)),
+            _ => (HttpStatusCode.NotFound, []),
+        };
+    }
 
     /// <summary>
     /// 空いているポート番号。待ち受けていない (= エンジンが止まっている) URL を作るのにも使う。

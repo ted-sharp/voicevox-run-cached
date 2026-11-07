@@ -294,4 +294,94 @@ public class ArgumentParserTests
         await Assert.That(request.Speed).IsEqualTo(1.0);
         await Assert.That(options.OutPath).IsNull();
     }
+
+    [Test]
+    public async Task Parse_Refresh_SetsFlagWithoutWarning()
+    {
+        var logger = new WarningCountingLogger();
+
+        var (_, options) = ArgumentParser.Parse(["text", "--refresh", "--no-play"], DefaultSettings(), logger);
+
+        await Assert.That(options.Refresh).IsTrue();
+        await Assert.That(options.NoCache).IsFalse();
+        await Assert.That(logger.WarningCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task Parse_WithoutRefresh_RefreshIsFalse()
+    {
+        var (_, options) = ArgumentParser.Parse(["text"], DefaultSettings());
+
+        await Assert.That(options.Refresh).IsFalse();
+    }
+
+    [Test]
+    [Arguments("--no-cache")]
+    [Arguments("--cache-only")]
+    public async Task Parse_RefreshWithCacheOption_ThrowsInvalidArguments(string option)
+    {
+        // --refresh (合成し直して上書き) は、書かない --no-cache・合成しない --cache-only と両立しない
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(["text", "--refresh", option], DefaultSettings())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
+
+    [Test]
+    [Arguments("", 7)]
+    [Arguments("-s 3", 3)]
+    [Arguments("-s3", 3)]
+    [Arguments("--speaker 4 --log-level debug", 4)]
+    [Arguments("--log-level debug --Filler:Enabled=true", 7)]
+    public async Task ParseInitSpeaker_ReadsSpeakerOrDefault(string args, int expected)
+    {
+        var settings = DefaultSettings();
+        settings.VoiceVox.DefaultSpeaker = 7;
+
+        var speakerId = ArgumentParser.ParseInitSpeaker(args.Split(' ', StringSplitOptions.RemoveEmptyEntries), settings);
+
+        await Assert.That(speakerId).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments("-s abc")]
+    [Arguments("-s -1")]
+    [Arguments("-s")]
+    public async Task ParseInitSpeaker_InvalidSpeaker_ThrowsInvalidArguments(string args)
+    {
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.ParseInitSpeaker(args.Split(' '), DefaultSettings())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
+
+    [Test]
+    [Arguments("--speaker=3")]
+    [Arguments("--speakr 3")]
+    public async Task ParseInitSpeaker_UnknownOption_WarnsAndUsesDefault(string args)
+    {
+        // 回帰: 不明な引数を黙って読み飛ばしていたため、--speaker=3 や打ち間違いでも既定の話者のフィラーを作って成功表示していた
+        var settings = DefaultSettings();
+        settings.VoiceVox.DefaultSpeaker = 7;
+        var logger = new WarningCountingLogger();
+
+        var speakerId = ArgumentParser.ParseInitSpeaker(args.Split(' '), settings, logger);
+
+        await Assert.That(speakerId).IsEqualTo(7);
+        await Assert.That(logger.WarningCount).IsEqualTo(1);
+    }
+
+    [Test]
+    [Arguments("--log-level debug --Filler:Enabled=true")]
+    [Arguments("--log-format=json --Filler:Enabled true")]
+    [Arguments("-s 3 --log-level=debug")]
+    public async Task ParseInitSpeaker_LogAndConfigurationArgs_DoNotWarn(string args)
+    {
+        // ログ設定と設定の上書き (--Section:Key=値 / --Section:Key 値) は設定の読み込み側で扱うので警告しない
+        var logger = new WarningCountingLogger();
+
+        ArgumentParser.ParseInitSpeaker(args.Split(' '), DefaultSettings(), logger);
+
+        await Assert.That(logger.WarningCount).IsEqualTo(0);
+    }
 }

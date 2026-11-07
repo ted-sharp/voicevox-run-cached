@@ -8,12 +8,15 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// セグメントを順次合成して <see cref="Channel{T}"/> に流す producer。
 /// </summary>
 /// <remarks>
-/// VOICEVOX API の直列性は <see cref="ProduceAsync"/> 内の <c>foreach</c> で担保している。
+/// VOICEVOX API の直列性は <see cref="ProduceAsync"/> 内のループで 1 件ずつ await することで担保している。
 /// 順序契約 (フィラー誤発火を避けるため厳守):
 ///   1. 全セグメントの write 完了 (または例外) → writer.TryComplete() で再生側を即座に解放
 ///   2. その後に pending cache save を WhenAll で待つ
 ///   3. 新規保存があれば、最後に 1 回だけキャッシュ eviction (期限切れ + 容量上限) を行う
 /// 例外パスでも 2. を必ず実行することで、producer 終了 = 全 cache save 完了を上位に保証する。
+/// エンジンに届かない失敗 (<see cref="VoiceVoxApiClient.IsEngineUnavailable"/>) が起きたら、残りの未キャッシュ分は API を呼ばずに失敗として数える
+/// (1 件ごとにリトライ込みのタイムアウトを待つと、その間プロセス間ロックを持ったまま後続の読み上げも待たせるため)。
+/// キャッシュ済みのセグメントはそのまま流して再生する。
 /// </remarks>
 public class SegmentProducer
 {
@@ -28,25 +31,36 @@ public class SegmentProducer
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <param name="saveToCache">合成した音声をキャッシュに保存するか (<c>--no-cache</c> なら false)</param>
     public async Task<SynthesisResult> ProduceAsync(
         List<TextSegment> segments,
         ChannelWriter<TextSegment> writer,
         VoiceRequest originalRequest,
-        bool noCache,
+        bool saveToCache,
         CancellationToken cancellationToken)
     {
         var stats = new SegmentStats();
         var pendingCacheSaves = new List<Task>();
+        var engineUnavailable = false;
 
         try
         {
-            foreach (var segment in segments)
+            for (int i = 0; i < segments.Count; i++)
             {
+                var segment = segments[i];
                 cancellationToken.ThrowIfCancellationRequested();
 
-                if (segment.IsCached && segment.AudioData != null)
+                if (IsReady(segment))
                 {
                     await writer.WriteAsync(segment, cancellationToken);
+                    continue;
+                }
+
+                if (engineUnavailable)
+                {
+                    // 合成を中止した後の未キャッシュ分。再生側に流しても skip されるだけなので流さない
+                    stats.Attempted++;
+                    stats.Failure++;
                     continue;
                 }
 
@@ -55,9 +69,19 @@ public class SegmentProducer
                 // 合成失敗 (AudioData == null) でも channel には流す。再生側で skip ログを出す
                 await writer.WriteAsync(segment, cancellationToken);
 
-                if (!noCache && synth.WavData != null && synth.Request != null)
+                if (saveToCache && synth.WavData != null && synth.Request != null)
                 {
                     pendingCacheSaves.Add(SaveCacheBestEffortAsync(synth.Request, synth.WavData));
+                }
+
+                if (synth.EngineUnavailable)
+                {
+                    engineUnavailable = true;
+                    var remaining = segments.Skip(i + 1).Count(s => !IsReady(s));
+                    if (remaining > 0)
+                    {
+                        _logger.LogWarning("エンジンに接続できない・応答しないため、残り {Count} セグメントの合成を中止します", remaining);
+                    }
                 }
             }
         }
@@ -123,9 +147,14 @@ public class SegmentProducer
             _logger.LogError(ex, "Failed to synthesize segment: {Text}", segment.Text);
             stats.Failure++;
             // segment.AudioData は null のまま — 再生側で skip される
-            return new SegmentSynthesis(null, null);
+            return new SegmentSynthesis(null, null, VoiceVoxApiClient.IsEngineUnavailable(ex));
         }
     }
+
+    /// <summary>
+    /// 再生できる音声を既に持っている (キャッシュヒットした) セグメントか。
+    /// </summary>
+    private static bool IsReady(TextSegment segment) => segment.IsCached && segment.AudioData != null;
 
     private async Task SaveCacheBestEffortAsync(VoiceRequest request, byte[] wavData)
     {
@@ -155,7 +184,7 @@ public class SegmentProducer
         }
     }
 
-    private readonly record struct SegmentSynthesis(VoiceRequest? Request, byte[]? WavData);
+    private readonly record struct SegmentSynthesis(VoiceRequest? Request, byte[]? WavData, bool EngineUnavailable = false);
 
     private sealed class SegmentStats
     {

@@ -67,8 +67,9 @@ public class TextToSpeechProcessor
         }
 
         // エンジンの確認・起動はここではしない。全セグメントがキャッシュ済み (--cache-only を含む) なら
-        // エンジンは不要なので、合成が必要なときだけ SynthesizeAndPlayAsync で行う
-        var segments = await LoadSegmentsAsync(request, options.NoCache, cancellationToken);
+        // エンジンは不要なので、合成が必要なときだけ SynthesizeAndPlayAsync で行う。
+        // --refresh はキャッシュを読まずに全部合成し直し、保存時に上書きする (--no-cache は読みも書きもしない)
+        var segments = await LoadSegmentsAsync(request, skipLookup: options.NoCache || options.Refresh, cancellationToken);
         if (segments.Count == 0)
         {
             throw new VoicevoxRunCachedException(
@@ -91,7 +92,7 @@ public class TextToSpeechProcessor
             }
         }
 
-        var synthesisResult = await SynthesizeAndPlayAsync(segments, request, options.NoCache, options.NoPlay, options.Verbose, cancellationToken);
+        var synthesisResult = await SynthesizeAndPlayAsync(segments, request, options, cancellationToken);
 
         if (synthesisResult.AttemptedCount > 0 && synthesisResult.SuccessCount == 0)
         {
@@ -126,7 +127,7 @@ public class TextToSpeechProcessor
         return hasPartialFailure ? ErrorCodes.PartialFailureExitCode : 0;
     }
 
-    private async Task<List<TextSegment>> LoadSegmentsAsync(VoiceRequest request, bool noCache, CancellationToken cancellationToken)
+    private async Task<List<TextSegment>> LoadSegmentsAsync(VoiceRequest request, bool skipLookup, CancellationToken cancellationToken)
     {
         ConsoleHelper.WriteLine("Processing segments...");
 
@@ -139,7 +140,7 @@ public class TextToSpeechProcessor
 
         _logger.LogInformation("テキストを {SegmentCount} 個のセグメントに分割しました", segments.Count);
 
-        if (noCache)
+        if (skipLookup)
         {
             return segments;
         }
@@ -158,9 +159,7 @@ public class TextToSpeechProcessor
     private async Task<SynthesisResult> SynthesizeAndPlayAsync(
         List<TextSegment> segments,
         VoiceRequest request,
-        bool noCache,
-        bool noPlay,
-        bool verbose,
+        TextToSpeechOptions options,
         CancellationToken cancellationToken)
     {
         var anyMissing = segments.Any(s => !s.IsCached);
@@ -185,10 +184,10 @@ public class TextToSpeechProcessor
         // 一方が落ちたらもう一方も止めるための Linked CTS
         using var sharedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-        var producerTask = _producer.ProduceAsync(segments, channel.Writer, request, noCache, sharedCts.Token);
-        var playbackTask = noPlay
+        var producerTask = _producer.ProduceAsync(segments, channel.Writer, request, saveToCache: !options.NoCache, sharedCts.Token);
+        var playbackTask = options.NoPlay
             ? Task.CompletedTask
-            : RunPlaybackAsync(channel.Reader, verbose, sharedCts.Token);
+            : RunPlaybackAsync(channel.Reader, request.SpeakerId, options.Verbose, sharedCts.Token);
 
         await WhenAllOrCancelOnFaultAsync(producerTask, playbackTask, sharedCts);
         return await producerTask;
@@ -240,10 +239,14 @@ public class TextToSpeechProcessor
             suggestedSolution: "`VoicevoxRunCached speakers` で利用可能な ID を確認してください。");
     }
 
-    private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, bool verbose, CancellationToken cancellationToken)
+    private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, int speakerId, bool verbose, CancellationToken cancellationToken)
     {
         var playbackStartTime = _clock.UtcNow;
-        await _audioPlayer.PlayStreamingAsync(reader, _fillerManager, cancellationToken);
+        // フィラーも読み上げと同じ話者の声にする (--init -s で話者ごとに生成したものを使う)
+        await _audioPlayer.PlayStreamingAsync(
+            reader,
+            ct => _fillerManager.GetRandomFillerAudioAsync(speakerId, ct),
+            cancellationToken);
 
         if (verbose)
         {

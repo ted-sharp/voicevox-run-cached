@@ -48,22 +48,56 @@ public class TextToSpeechProcessorTests
         await Assert.That(exitCode).IsEqualTo(ErrorCodes.GetExitCode(ErrorCodes.Engine.EngineNotAvailable));
     }
 
+    [Test]
+    public async Task Refresh_ResynthesizesAndOverwritesCache()
+    {
+        // 辞書登録やエンジン更新を反映するため、キャッシュ済みでも合成し直してキャッシュを上書きする
+        using var engine = new FakeEngineServer();
+
+        var run = await RunAsync(engine.BaseUrl, [CachedText, "--refresh", "--no-play"]);
+
+        await Assert.That(run.ExitCode).IsEqualTo(0);
+        await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(1);
+        await Assert.That(run.CacheAfter.SequenceEqual(run.CacheBefore)).IsFalse();
+    }
+
+    [Test]
+    public async Task NoCache_ResynthesizesWithoutOverwritingCache()
+    {
+        // --no-cache は読みも書きもしない (作り直しは --refresh)
+        using var engine = new FakeEngineServer();
+
+        var run = await RunAsync(engine.BaseUrl, [CachedText, "--no-cache", "--no-play"]);
+
+        await Assert.That(run.ExitCode).IsEqualTo(0);
+        await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(1);
+        await Assert.That(run.CacheAfter.SequenceEqual(run.CacheBefore)).IsTrue();
+    }
+
     /// <summary>
     /// 待ち受けていないポートを BaseUrl にし (自動起動なし)、<see cref="CachedText"/> だけキャッシュした状態でコマンドを実行する。
     /// </summary>
     private static async Task<int> RunWithStoppedEngineAsync(string[] args)
+        => (await RunAsync($"http://127.0.0.1:{FakeEngineServer.GetFreePort()}", args)).ExitCode;
+
+    /// <summary>
+    /// <paramref name="baseUrl"/> のエンジンに向け (自動起動なし)、<see cref="CachedText"/> だけキャッシュした状態でコマンドを実行する。
+    /// </summary>
+    /// <returns>終了コードと、実行前後の <see cref="CachedText"/> のキャッシュファイルの中身</returns>
+    private static async Task<(int ExitCode, byte[] CacheBefore, byte[] CacheAfter)> RunAsync(string baseUrl, string[] args)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_tts_" + Guid.NewGuid().ToString("N"));
+        var cacheDir = Path.Combine(dir, "audio");
         var settings = new AppSettings
         {
             VoiceVox = new VoiceVoxSettings
             {
-                BaseUrl = $"http://127.0.0.1:{FakeEngineServer.GetFreePort()}",
+                BaseUrl = baseUrl,
                 AutoStartEngine = false,
                 DefaultSpeaker = 1,
             },
             Audio = new AudioSettings { PrepareDevice = false },
-            Cache = new CacheSettings { Directory = Path.Combine(dir, "audio"), UseExecutableBaseDirectory = false },
+            Cache = new CacheSettings { Directory = cacheDir, UseExecutableBaseDirectory = false },
             Filler = new FillerSettings { Directory = Path.Combine(dir, "filler"), UseExecutableBaseDirectory = false },
         };
 
@@ -72,10 +106,15 @@ public class TextToSpeechProcessorTests
             using var provider = new AppServiceProvider { Settings = settings, Logger = NullLogger.Instance };
 
             // ArgumentParser の既定値 (DefaultSpeaker, speed 1.0, pitch 0.0, volume 1.0) と同じキーで保存する
+            var cachedRequest = new VoiceRequest(CachedText, 1);
             await provider.GetService<AudioCacheManager>()
-                .SaveAudioCacheAsync(new VoiceRequest(CachedText, 1), TestAudio.SineWav(24000, 300));
+                .SaveAudioCacheAsync(cachedRequest, TestAudio.SineWav(24000, 300));
+            var cachePath = Path.Combine(cacheDir, CacheKeyGenerator.Compute(cachedRequest) + DiskCacheStore.AudioExtension);
+            var before = await File.ReadAllBytesAsync(cachePath);
 
-            return await provider.GetService<CommandRouter>().ExecuteCommandAsync(args);
+            var exitCode = await provider.GetService<CommandRouter>().ExecuteCommandAsync(args);
+
+            return (exitCode, before, await File.ReadAllBytesAsync(cachePath));
         }
         finally
         {
