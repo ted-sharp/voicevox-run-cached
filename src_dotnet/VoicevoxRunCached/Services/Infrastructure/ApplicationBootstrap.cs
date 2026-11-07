@@ -110,6 +110,10 @@ public static class ApplicationBootstrap
         settings.Cache.Directory = ResolvePath(settings.Cache.Directory, settings.Cache.UseExecutableBaseDirectory);
         settings.Filler.Directory = ResolvePath(settings.Filler.Directory, settings.Filler.UseExecutableBaseDirectory);
 
+        // API の URL は "{BaseUrl}/version" のように組み立てるので、末尾の "/" を残すと "//version" になり
+        // エンジンが動いていても応答が得られない (未起動と判定して起動を試みてしまう)
+        settings.VoiceVox.BaseUrl = settings.VoiceVox.BaseUrl.TrimEnd('/');
+
         return settings;
     }
 

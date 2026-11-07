@@ -59,6 +59,23 @@ public class ApplicationBootstrapTests
     }
 
     [Test]
+    public async Task BaseUrlTrailingSlash_IsRemoved()
+    {
+        // 末尾の "/" を残すと API の URL が "//version" 等になり、エンジンが動いていても応答が得られない
+        var dir = CreateConfigDirectory("""{ "VoiceVox": { "BaseUrl": "http://127.0.0.1:50021/" } }""");
+        try
+        {
+            var settings = ApplicationBootstrap.LoadSettings(["text"], dir);
+
+            await Assert.That(settings.VoiceVox.BaseUrl).IsEqualTo("http://127.0.0.1:50021");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
     public async Task MissingAppSettings_ThrowsConfigurationError()
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_config_" + Guid.NewGuid().ToString("N"));
