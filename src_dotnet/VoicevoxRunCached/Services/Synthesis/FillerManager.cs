@@ -99,7 +99,7 @@ public class FillerManager
                 File.Move(tempPath, fillerCachePath, overwrite: true);
                 _logger.LogDebug("フィラー音声を生成・保存しました: \"{Text}\"", fillerText);
             }
-            catch (OperationCanceledException)
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
             }
