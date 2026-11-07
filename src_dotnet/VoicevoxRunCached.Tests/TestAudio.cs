@@ -22,7 +22,7 @@ internal static class TestAudio
         {
             var buffer = new float[sampleRate * channels];
             int read;
-            while ((read = signal.Read(buffer, 0, buffer.Length)) > 0)
+            while ((read = signal.Read(buffer)) > 0)
             {
                 writer.WriteSamples(buffer, 0, read);
             }
@@ -41,7 +41,7 @@ internal static class TestAudio
         double sum = 0;
         long count = 0;
         int read;
-        while ((read = provider.Read(buffer, 0, buffer.Length)) > 0)
+        while ((read = provider.Read(buffer)) > 0)
         {
             for (var i = 0; i < read; i++)
             {

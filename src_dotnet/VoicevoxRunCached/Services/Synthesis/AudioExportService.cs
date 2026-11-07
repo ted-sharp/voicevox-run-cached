@@ -106,7 +106,7 @@ public class AudioExportService
 
                 var buffer = new float[OutputFormat.SampleRate];
                 int read;
-                while ((read = provider.Read(buffer, 0, buffer.Length)) > 0)
+                while ((read = provider.Read(buffer)) > 0)
                 {
                     writer.WriteSamples(buffer, 0, read);
                 }

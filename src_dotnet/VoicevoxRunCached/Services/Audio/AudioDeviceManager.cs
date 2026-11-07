@@ -96,7 +96,7 @@ public class AudioDeviceManager : IDisposable
 
             using var audioStream = new MemoryStream(silentWavData);
             using var reader = new WaveFileReader(audioStream);
-            using var wavePlayer = new WaveOutEvent();
+            using var wavePlayer = new WaveOut();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(AudioConstants.DevicePreparationTimeoutSeconds));
 
             if (_settings.OutputDevice >= 0)
@@ -104,7 +104,7 @@ public class AudioDeviceManager : IDisposable
                 wavePlayer.DeviceNumber = _settings.OutputDevice;
             }
 
-            wavePlayer.DesiredLatency = _settings.DesiredLatency;
+            wavePlayer.BufferMilliseconds = WavePlayerManager.GetBufferMilliseconds(_settings);
             wavePlayer.NumberOfBuffers = _settings.NumberOfBuffers;
 
             wavePlayer.Volume = _settings.PreparationVolume <= 0

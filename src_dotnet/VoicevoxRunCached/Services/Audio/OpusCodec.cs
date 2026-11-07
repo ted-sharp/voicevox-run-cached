@@ -97,7 +97,7 @@ public static class OpusCodec
         var samples = new List<short>(source.WaveFormat.SampleRate);
         var buffer = new float[source.WaveFormat.SampleRate];
         int read;
-        while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+        while ((read = source.Read(buffer)) > 0)
         {
             for (var i = 0; i < read; i++)
             {

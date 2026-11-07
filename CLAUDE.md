@@ -246,7 +246,7 @@ Options:
 
 **Engine Management**: 起動時に既存 VOICEVOX プロセスを検査してから launch。`EnginePath` 空なら一般的なインストール場所から自動検出。
 
-**Audio Device**: `OutputDevice = -1` で OS デフォルト、`0+` で WaveOut index (`WaveOutEvent.DeviceNumber`)。`devices` は WASAPI 一覧に加えて WaveOut index 一覧を出す (netstandard 版 NAudio には `WaveOut.GetCapabilities` が無いため `WaveInterop.waveOutGetDevCaps` で取得)。両者の番号は一致しないことがある。`PrepareDevice: true` で再生前に小音量の音を流してデバイスを温め、最初のセグメントの取りこぼしを防ぐ。warm-up は `AudioDeviceManager.StartPreparation` で始め、コンストラクタでは始めない (`CommandRouter` の依存として全コマンドで生成されるため)。読み上げでは `TextToSpeechProcessor` が `--no-play` 以外のときロック取得直後に `AudioPlayer.BeginDevicePreparation` を呼び、キャッシュ参照・エンジン起動と並行させる。
+**Audio Device**: `OutputDevice = -1` で OS デフォルト、`0+` で WaveOut index (`WaveOut.DeviceNumber`)。`devices` は WASAPI 一覧に加えて WaveOut index 一覧 (`WaveOut.GetCapabilities`) を出す。両者の番号は一致しないことがある。NAudio 3 の `WaveOut` には `DesiredLatency` が無いので、`Audio.DesiredLatency` (全バッファ合計) は `WavePlayerManager.GetBufferMilliseconds` でバッファ 1 本の長さに換算して `BufferMilliseconds` に渡す (NAudio 2 の `WaveOutEvent` と同じ計算)。NAudio 3 は Windows 専用 API に `SupportedOSPlatform("windows")` を付けているため、`Directory.Build.props` で全プロジェクトを Windows 専用と宣言している (無いと CA1416)。`PrepareDevice: true` で再生前に小音量の音を流してデバイスを温め、最初のセグメントの取りこぼしを防ぐ。warm-up は `AudioDeviceManager.StartPreparation` で始め、コンストラクタでは始めない (`CommandRouter` の依存として全コマンドで生成されるため)。読み上げでは `TextToSpeechProcessor` が `--no-play` 以外のときロック取得直後に `AudioPlayer.BeginDevicePreparation` を呼び、キャッシュ参照・エンジン起動と並行させる。
 
 ## Code Standards
 
