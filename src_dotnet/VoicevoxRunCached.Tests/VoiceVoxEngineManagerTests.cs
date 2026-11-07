@@ -27,4 +27,52 @@ public class VoiceVoxEngineManagerTests
 
         await Assert.ThrowsAsync<OperationCanceledException>(() => manager.EnsureRunningOrThrowAsync(cts.Token));
     }
+
+    // 起動している間に他のテストがプロセスを起動すると、そちらにパイプが継承されて誤判定するため単独で実行する
+    [Test]
+    [NotInParallel]
+    public async Task StartEngine_DoesNotInheritHandles()
+    {
+        // エンジンが本ツールの継承可能なハンドルを引き継いでいた回帰の検知。
+        // Hooks は本ツールの stdout / stderr をパイプで受けるので、常駐するエンジンに書き込み側が残ると、
+        // 本ツールが終了してもパイプが閉じず、Hooks がタイムアウトまで待たされる。
+        // - 継承可能なパイプを作り、書き込み側を閉じた後に読み込み側が EOF になるか (= 子に残っていないか) を見る
+        // - EnginePath: しばらく終了しない ping.exe を「エンジン」として起動させる
+        using var pipe = new System.IO.Pipes.AnonymousPipeServerStream(
+            System.IO.Pipes.PipeDirection.In, HandleInheritability.Inheritable);
+        var settings = new VoiceVoxSettings
+        {
+            BaseUrl = "not-a-url",
+            AutoStartEngine = true,
+            KeepEngineRunning = false,
+            EnginePath = Path.Combine(Environment.SystemDirectory, "PING.EXE"),
+            EngineArguments = "-n 30 127.0.0.1",
+            StartupTimeoutSeconds = 30,
+        };
+        using (var manager = new VoiceVoxEngineManager(settings, NullLogger.Instance, SystemClock.Instance))
+        {
+            using var startCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            await Assert.ThrowsAsync<OperationCanceledException>(() => manager.EnsureRunningOrThrowAsync(startCts.Token));
+
+            pipe.DisposeLocalCopyOfClientHandle();
+
+            await Assert.That(await IsClosedWithinAsync(pipe, TimeSpan.FromSeconds(3))).IsTrue();
+        }
+    }
+
+    /// <summary>
+    /// 書き込み側がすべて閉じられ、読み込みが EOF になれば true。時間内に閉じなければ false。
+    /// </summary>
+    private static async Task<bool> IsClosedWithinAsync(Stream readSide, TimeSpan timeout)
+    {
+        using var cts = new CancellationTokenSource(timeout);
+        try
+        {
+            return await readSide.ReadAsync(new byte[1], cts.Token) == 0;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
 }
