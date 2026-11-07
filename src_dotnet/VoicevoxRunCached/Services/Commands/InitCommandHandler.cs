@@ -27,8 +27,14 @@ public class InitCommandHandler
 
     /// <param name="speakerId">フィラーを生成する話者。フィラーは読み上げと同じ話者の声で再生されるので、話者ごとに生成する</param>
     /// <param name="cancellationToken">キャンセル</param>
+    /// <remarks>
+    /// 読み上げと同じ <see cref="InterProcessLock.SpeechLockPath"/> で直列化する。読み上げ中に実行しても
+    /// API 呼び出しが並列にならず (VOICEVOX は直列前提)、エンジンの自動起動も二重にならない。
+    /// </remarks>
     public async Task<int> HandleInitAsync(int speakerId, CancellationToken cancellationToken = default)
     {
+        using var speechLock = await InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, _logger, cancellationToken);
+
         await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
 
         // 存在しない話者だと /initialize_speaker が 500 になりリトライで待たされるので、先に確認して即エラーにする
