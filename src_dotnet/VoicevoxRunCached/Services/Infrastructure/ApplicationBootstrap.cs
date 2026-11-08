@@ -102,6 +102,7 @@ public static class ApplicationBootstrap
         configuration.GetSection("Cache").Bind(settings.Cache);
         configuration.GetSection("Audio").Bind(settings.Audio);
         configuration.GetSection("Filler").Bind(settings.Filler);
+        configuration.GetSection("Lock").Bind(settings.Lock);
         configuration.GetSection("Logging").Bind(settings.Logging);
         configuration.GetSection("Test").Bind(settings.Test);
 

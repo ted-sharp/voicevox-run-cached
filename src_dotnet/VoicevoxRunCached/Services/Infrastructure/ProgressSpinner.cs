@@ -6,9 +6,8 @@ namespace VoicevoxRunCached.Services.Infrastructure;
 /// 現在の行に回転アニメーションとメッセージを表示する。
 /// </summary>
 /// <remarks>
-/// 描画は <c>\r</c> で現在行の先頭に戻って書き直すだけで、カーソル位置を保存して戻ることはしない。
-/// 以前は開始時の位置へ戻って上書きしていたため、表示中に出たログ (エンジン起動・キャッシュクリアの info、
-/// フィラー生成失敗の Warning など) がスピナーに消されていた。
+/// 描画は <c>\r</c> で現在行の先頭に戻って書き直すだけで、カーソル位置を保存して戻ることはしない
+/// (開始時の位置へ戻って上書きすると、表示中に出たログ (エンジン起動・キャッシュクリアの info、フィラー生成失敗の Warning など) を消してしまう)。
 /// 描画後はカーソルを行頭に置くので、表示中に出たログは行頭から書かれ、スピナーはその次の行に移って描画を続ける。
 /// 描画先はログと同じ stderr (stdout はコマンドの結果だけにする)。stderr がリダイレクトされているとき (Hooks・パイプ) は何も描画しない。
 /// </remarks>
@@ -90,8 +89,8 @@ public class ProgressSpinner : IDisposable
     /// <remarks>
     /// <see cref="Console.CursorVisible"/> は stderr ではなく stdout のハンドルを操作するので、
     /// stdout だけリダイレクトされている (<c>VoicevoxRunCached "…" &gt; out.txt</c>) と IOException になる。
-    /// 以前はこれでアニメーションのタスクが失敗し、Dispose の Wait が例外を投げて
-    /// エンジン起動・<c>--clear</c>・<c>--init</c> が成功していても失敗扱いになっていた。
+    /// そのまま投げるとアニメーションのタスクが失敗し、Dispose の Wait が例外を投げて
+    /// エンジン起動・<c>--clear</c>・<c>--init</c> が成功していても失敗扱いになる。
     /// </remarks>
     private static void SetCursorVisible(bool visible)
     {

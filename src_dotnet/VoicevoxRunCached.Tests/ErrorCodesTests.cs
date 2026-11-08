@@ -13,6 +13,7 @@ public class ErrorCodesTests
     [Arguments(ErrorCodes.Audio.AudioGenerationFailed, 5)]
     [Arguments(ErrorCodes.Api.ApiTimeout, 6)]
     [Arguments(ErrorCodes.Configuration.InvalidSettings, 7)]
+    [Arguments(ErrorCodes.Lock.LockWaitTimeout, 9)]
     public async Task GetExitCode_MapsCategory(string? errorCode, int expected)
     {
         await Assert.That(ErrorCodes.GetExitCode(errorCode)).IsEqualTo(expected);

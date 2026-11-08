@@ -67,6 +67,11 @@ public class CommandRouter
             {
                 _logger.LogWarning("入力が不正です: {Command}, {Message}", command, ex.Message);
             }
+            else if (ex.ErrorCode == ErrorCodes.Lock.LockWaitTimeout)
+            {
+                // 待つ上限を指定したときの想定内の結果なので、スタックトレースは残さない
+                _logger.LogWarning("ロックを待ちきれなかったため実行しませんでした: {Command}, {Message}", command, ex.Message);
+            }
             else
             {
                 _logger.LogError(ex, "コマンド実行中にエラーが発生しました: {Command}, ErrorCode: {ErrorCode}", command, ex.ErrorCode);

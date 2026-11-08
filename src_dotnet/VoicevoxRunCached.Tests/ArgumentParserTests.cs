@@ -159,6 +159,25 @@ public class ArgumentParserTests
     }
 
     [Test]
+    [Arguments("text", null)]
+    [Arguments("text --max-wait 5", 5)]
+    [Arguments("text --max-wait 0 --no-play", 0)]
+    public async Task Parse_MaxWait(string commandLine, int? expected)
+    {
+        var (_, options) = ArgumentParser.Parse(commandLine.Split(' '), DefaultSettings());
+
+        await Assert.That(options.MaxWaitSeconds).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task ParseTestCommand_MaxWait()
+    {
+        var (_, options) = ArgumentParser.ParseTestCommand("テスト", ["--max-wait", "3"], DefaultSettings());
+
+        await Assert.That(options.MaxWaitSeconds).IsEqualTo(3);
+    }
+
+    [Test]
     [Arguments("--speed", "abc")]
     [Arguments("--speed", "0")]
     [Arguments("--speed", "-1")]
@@ -167,6 +186,9 @@ public class ArgumentParserTests
     [Arguments("--speaker", "1.5")]
     [Arguments("--speaker", "-1")]
     [Arguments("-s", "abc")]
+    [Arguments("--max-wait", "-1")]
+    [Arguments("--max-wait", "1.5")]
+    [Arguments("--max-wait", "--no-play")]
     public async Task Parse_InvalidOptionValue_Throws(string option, string value)
     {
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
@@ -528,6 +550,22 @@ public class ArgumentParserTests
             Task.FromResult(ArgumentParser.ParseInitSpeaker(args.Split(' '), DefaultSettings())));
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
+
+    [Test]
+    public async Task ConfigurationOverride_AcceptsEverySection()
+    {
+        // 回帰: Lock セクションを足したときに一覧へ入れ忘れ、--Lock:MaxWaitSeconds=5 が不明なオプションのエラーになっていた
+        foreach (var section in typeof(AppSettings).GetProperties().Select(p => p.Name))
+        {
+            string[] overrideArgs = [$"--{section}:Key=1"];
+
+            var (_, options) = ArgumentParser.Parse(["text", .. overrideArgs, "--no-play"], DefaultSettings());
+            var speakerId = ArgumentParser.ParseInitSpeaker(overrideArgs, DefaultSettings());
+
+            await Assert.That(options.NoPlay).IsTrue();
+            await Assert.That(speakerId).IsEqualTo(1);
+        }
     }
 
     [Test]

@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Cache;
@@ -143,9 +144,14 @@ public class FillerManager
     }
 
     /// <param name="speakerId">読み上げ中の話者。その話者のフィラーだけを返す</param>
+    /// <param name="volume">読み上げの音量 (<c>--volume</c>)。フィラーの音量もこれに合わせる</param>
     /// <param name="cancellationToken">キャンセル</param>
-    /// <returns>フィラーの Ogg Opus。無効・未生成なら null</returns>
-    public async Task<byte[]?> GetRandomFillerAudioAsync(int speakerId, CancellationToken cancellationToken = default)
+    /// <returns>フィラーの音声。音量が 1.0 なら生成したときの Ogg Opus、それ以外は音量を掛けた WAV。無効・未生成なら null</returns>
+    /// <remarks>
+    /// フィラーは既定のパラメータ (話速 1.0・音高 0.0・音量 1.0) で生成してあり、話速・音高は読み上げと違うことがある。
+    /// 音量は再生時に掛けて合わせる (VOICEVOX の volumeScale も振幅に掛ける線形の倍率なので、効き方が同じになる)。
+    /// </remarks>
+    public async Task<byte[]?> GetRandomFillerAudioAsync(int speakerId, double volume, CancellationToken cancellationToken = default)
     {
         if (!_settings.Enabled || _settings.FillerTexts.Length == 0)
         {
@@ -180,7 +186,37 @@ public class FillerManager
         var data = await File.ReadAllBytesAsync(fillerCachePath, cancellationToken);
         _logger.LogDebug("フィラーキャッシュファイルを読み込みました: {Path} (サイズ: {Size} bytes)",
             Path.GetFileName(fillerCachePath), data.Length);
-        return data;
+
+        var gain = CacheKeyGenerator.NormalizeParameter(volume);
+        return gain == 1.0 ? data : ApplyVolume(data, (float)gain);
+    }
+
+    /// <summary>
+    /// Ogg Opus をデコードし、各サンプルに <paramref name="gain"/> を掛けた 16bit の WAV を返す。
+    /// </summary>
+    /// <remarks>
+    /// 1.0 を超える音量で割れても値が反対側に回り込まないよう、[-1, 1] に収めてから 16bit にする (<see cref="OpusCodec"/> と同じ)。
+    /// </remarks>
+    private static byte[] ApplyVolume(byte[] opusData, float gain)
+    {
+        using var reader = new WaveFileReader(new MemoryStream(OpusCodec.DecodeToWav(opusData)));
+        var source = reader.ToSampleProvider();
+
+        using var output = new MemoryStream();
+        using (var writer = new WaveFileWriter(output, reader.WaveFormat))
+        {
+            var buffer = new float[reader.WaveFormat.SampleRate];
+            int read;
+            while ((read = source.Read(buffer)) > 0)
+            {
+                for (var i = 0; i < read; i++)
+                {
+                    buffer[i] = Math.Clamp(buffer[i] * gain, -1f, 1f);
+                }
+                writer.WriteSamples(buffer, 0, read);
+            }
+        }
+        return output.ToArray();
     }
 
     private string SelectFillerText()

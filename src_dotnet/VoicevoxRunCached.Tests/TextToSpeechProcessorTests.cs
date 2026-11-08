@@ -3,6 +3,7 @@ using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services;
+using VoicevoxRunCached.Services.Audio;
 using VoicevoxRunCached.Services.Cache;
 
 namespace VoicevoxRunCached.Tests;
@@ -49,6 +50,15 @@ public class TextToSpeechProcessorTests
     }
 
     [Test]
+    public async Task PartlyCached_NeedsEngine_ReturnsEngineError()
+    {
+        // 先頭のキャッシュ済みの文は鳴らし (再生を途中で止めない)、終了コードは準備の失敗 (エンジン無し) のまま
+        var exitCode = await RunWithStoppedEngineAsync([CachedText + "キャッシュに無い文です。", "--no-play"]);
+
+        await Assert.That(exitCode).IsEqualTo(ErrorCodes.GetExitCode(ErrorCodes.Engine.EngineNotAvailable));
+    }
+
+    [Test]
     public async Task Refresh_ResynthesizesAndOverwritesCache()
     {
         // 辞書登録やエンジン更新を反映するため、キャッシュ済みでも合成し直してキャッシュを上書きする
@@ -72,6 +82,50 @@ public class TextToSpeechProcessorTests
         await Assert.That(run.ExitCode).IsEqualTo(0);
         await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(1);
         await Assert.That(run.CacheAfter.SequenceEqual(run.CacheBefore)).IsTrue();
+    }
+
+    [Test]
+    public async Task CorruptedCache_IsResynthesizedAndRewritten()
+    {
+        // 壊れた .opus は読み込み時にミスになり、その場で合成し直して保存し直す (今回の読み上げも成功する)
+        using var engine = new FakeEngineServer();
+        byte[] garbage = [.. Enumerable.Range(0, 4096).Select(i => (byte)(i * 31 % 251))];
+
+        var run = await RunAsync(
+            new VoiceVoxSettings { BaseUrl = engine.BaseUrl, AutoStartEngine = false, DefaultSpeaker = 1 },
+            [CachedText, "--no-play"],
+            prepareCache: path => File.WriteAllBytesAsync(path, garbage));
+
+        await Assert.That(run.ExitCode).IsEqualTo(0);
+        await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(1);
+        await Assert.That(run.CacheBefore.SequenceEqual(garbage)).IsTrue();
+        await Assert.That(AudioFormatDetector.DetectFormat(run.CacheAfter)).IsEqualTo(AudioFormat.Opus);
+    }
+
+    [Test]
+    public async Task CorruptedCache_CacheOnly_WithOtherCachedText_IsPartialFailure()
+    {
+        // 回帰: キャッシュから鳴った文を数えず、合成を試みた文 (読めなかった 1 文) が全部失敗したことで「全部失敗」(5) にしていた
+        const string otherText = "もう一つの文です。";
+
+        var run = await RunAsync(
+            new VoiceVoxSettings { BaseUrl = $"http://127.0.0.1:{FakeEngineServer.GetFreePort()}", AutoStartEngine = false, DefaultSpeaker = 1 },
+            [CachedText + otherText, "--cache-only", "--no-play"],
+            prepareCache: path => File.WriteAllBytesAsync(path, [1, 2, 3, 4]),
+            alsoCached: [otherText]);
+
+        await Assert.That(run.ExitCode).IsEqualTo(ErrorCodes.PartialFailureExitCode);
+    }
+
+    [Test]
+    public async Task CorruptedCache_CacheOnly_IsTotalFailure()
+    {
+        var run = await RunAsync(
+            new VoiceVoxSettings { BaseUrl = $"http://127.0.0.1:{FakeEngineServer.GetFreePort()}", AutoStartEngine = false, DefaultSpeaker = 1 },
+            [CachedText, "--cache-only", "--no-play"],
+            prepareCache: path => File.WriteAllBytesAsync(path, [1, 2, 3, 4]));
+
+        await Assert.That(run.ExitCode).IsEqualTo(ErrorCodes.GetExitCode(ErrorCodes.Audio.AudioGenerationFailed));
     }
 
     [Test]
@@ -111,9 +165,12 @@ public class TextToSpeechProcessorTests
     /// <param name="voiceVox">エンジンの設定</param>
     /// <param name="args">コマンドライン引数</param>
     /// <param name="afterCommand">コマンドから戻った後、サービスを破棄する前に呼ぶ</param>
-    /// <returns>終了コードと、実行前後の <see cref="CachedText"/> のキャッシュファイルの中身</returns>
+    /// <param name="prepareCache">キャッシュを保存した後、コマンドの前に呼ぶ (引数は <see cref="CachedText"/> の .opus のパス)</param>
+    /// <param name="alsoCached"><see cref="CachedText"/> のほかにキャッシュしておく文</param>
+    /// <returns>終了コードと、実行前後の <see cref="CachedText"/> のキャッシュファイルの中身 (実行後に無ければ空)</returns>
     private static async Task<(int ExitCode, byte[] CacheBefore, byte[] CacheAfter)> RunAsync(
-        VoiceVoxSettings voiceVox, string[] args, Func<Task>? afterCommand = null)
+        VoiceVoxSettings voiceVox, string[] args, Func<Task>? afterCommand = null, Func<string, Task>? prepareCache = null,
+        string[]? alsoCached = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_tts_" + Guid.NewGuid().ToString("N"));
         var cacheDir = Path.Combine(dir, "audio");
@@ -131,9 +188,17 @@ public class TextToSpeechProcessorTests
 
             // ArgumentParser の既定値 (DefaultSpeaker, speed 1.0, pitch 0.0, volume 1.0) と同じキーで保存する
             var cachedRequest = new VoiceRequest(CachedText, 1);
-            await provider.GetService<AudioCacheManager>()
-                .SaveAudioCacheAsync(cachedRequest, TestAudio.SineWav(24000, 300));
+            var cacheManager = provider.GetService<AudioCacheManager>();
+            await cacheManager.SaveAudioCacheAsync(cachedRequest, TestAudio.SineWav(24000, 300));
+            foreach (var text in alsoCached ?? [])
+            {
+                await cacheManager.SaveAudioCacheAsync(new VoiceRequest(text, 1), TestAudio.SineWav(24000, 300));
+            }
             var cachePath = Path.Combine(cacheDir, CacheKeyGenerator.Compute(cachedRequest) + DiskCacheStore.AudioExtension);
+            if (prepareCache != null)
+            {
+                await prepareCache(cachePath);
+            }
             var before = await File.ReadAllBytesAsync(cachePath);
 
             var exitCode = await provider.GetService<CommandRouter>().ExecuteCommandAsync(args);
@@ -142,7 +207,9 @@ public class TextToSpeechProcessorTests
                 await afterCommand();
             }
 
-            return (exitCode, before, await File.ReadAllBytesAsync(cachePath));
+            // 読めないキャッシュは削除される (--cache-only では作り直さない)
+            var after = File.Exists(cachePath) ? await File.ReadAllBytesAsync(cachePath) : [];
+            return (exitCode, before, after);
         }
         finally
         {

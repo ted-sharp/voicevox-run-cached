@@ -16,7 +16,11 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// 例外パスでも 2. を必ず実行することで、producer 終了 = 全 cache save 完了を上位に保証する。
 /// エンジンに届かない失敗 (<see cref="VoiceVoxApiClient.IsEngineUnavailable"/>) が起きたら、残りの未キャッシュ分は API を呼ばずに失敗として数える
 /// (1 件ごとにタイムアウト (ConnectionTimeout) を待つと、その間プロセス間ロックを持ったまま後続の読み上げも待たせるため)。
-/// キャッシュ済みのセグメントはそのまま流して再生する。
+/// キャッシュ済みのセグメントは WAV にデコードして流す (<see cref="AudioCacheManager.DecodeOrDelete"/>)。デコードは再生と並行させるため
+/// ここで行い、読めなければ削除済みなので未キャッシュとして合成し直す。
+/// エンジンの準備 (起動確認・話者の初期化) は最初に合成が必要になったときに 1 回だけ行う。全部キャッシュから読めればエンジンに接続しない。
+/// 準備に失敗したら以降は合成せず、キャッシュ済みのセグメントだけ流して、失敗を <see cref="SynthesisResult.PreparationError"/> で返す。
+/// ここで投げると、先に流したキャッシュ済みのセグメントの再生が途中で止められる (<c>WhenAllOrCancelOnFaultAsync</c>) ため。
 /// </remarks>
 public class SegmentProducer
 {
@@ -31,18 +35,33 @@ public class SegmentProducer
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <param name="segments">流すセグメント。キャッシュ済みのものは AudioData に Ogg Opus を持つ (WAV に置き換えて流す)</param>
+    /// <param name="writer">再生側への channel</param>
+    /// <param name="originalRequest">話者・パラメータ (キャッシュキーの元)</param>
     /// <param name="saveToCache">合成した音声をキャッシュに保存するか (<c>--no-cache</c> なら false)</param>
+    /// <param name="prepareSynthesis">
+    /// 最初に合成が必要になったときに 1 回だけ呼ぶ準備 (エンジンの起動確認・話者の確認と初期化)。失敗したら以降は合成せず
+    /// (未キャッシュ分は失敗として数える)、例外を <see cref="SynthesisResult.PreparationError"/> で返す (キャンセルは投げる)。
+    /// null なら合成しない (<c>--cache-only</c>)。そのとき読めなかったキャッシュは失敗として数える
+    /// </param>
+    /// <param name="cancellationToken">キャンセル</param>
     public async Task<SynthesisResult> ProduceAsync(
         List<TextSegment> segments,
         ChannelWriter<TextSegment> writer,
         VoiceRequest originalRequest,
         bool saveToCache,
+        Func<CancellationToken, Task>? prepareSynthesis,
         CancellationToken cancellationToken)
     {
         var stats = new SegmentStats();
         var pendingCacheSaves = new List<Task>();
-        var synthesizedByText = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        // 合成した結果 (失敗なら null)。同じ文の 2 回目以降は合成し直さない
+        var synthesizedByText = new Dictionary<string, byte[]?>(StringComparer.Ordinal);
+        // キャッシュのデコード結果 (読めなければ null)。同じ文の 2 回目以降はデコードし直さない
+        var decodedByText = new Dictionary<string, byte[]?>(StringComparer.Ordinal);
         var engineUnavailable = false;
+        var synthesisPrepared = false;
+        Exception? preparationError = null;
 
         try
         {
@@ -53,35 +72,74 @@ public class SegmentProducer
 
                 if (IsReady(segment))
                 {
-                    await writer.WriteAsync(segment, cancellationToken);
-                    continue;
+                    // 同じ文の 2 回目以降は 1 回目の結果を使う。デコードは 1 文 100ms 程度かかるうえ、読めなかった文を
+                    // もう一度デコードすると、1 回目に合成し直した音声の保存中に同じキーを削除し、meta.json の無い .opus が残りうる
+                    if (!decodedByText.TryGetValue(segment.Text, out var wavData))
+                    {
+                        wavData = await DecodeCachedAsync(segment, originalRequest, cancellationToken);
+                        decodedByText[segment.Text] = wavData;
+                    }
+                    if (wavData != null)
+                    {
+                        segment.AudioData = wavData;
+                        await writer.WriteAsync(segment, cancellationToken);
+                        continue;
+                    }
+
+                    // 読めないキャッシュ (削除済み)。未キャッシュとして合成し直す
+                    segment.IsCached = false;
+                    segment.AudioData = null;
                 }
 
-                // 同じ文が 2 回目以降に出てきたら、合成し直さずに 1 回目の音声を使う。合成し直すと API を無駄に呼ぶうえ、
+                // 同じ文が 2 回目以降に出てきたら、合成し直さずに 1 回目の結果を使う。合成し直すと API を無駄に呼ぶうえ、
                 // 同じキーの保存が並行して同じ meta.json / .opus.tmp に書き込み、共有違反で失敗しうる
-                // (話者・パラメータは 1 回の実行で共通なので、文が同じならキャッシュキーも同じ)
+                // (話者・パラメータは 1 回の実行で共通なので、文が同じならキャッシュキーも同じ)。
+                // 1 回目が失敗した文も呼び直さない (500 などはリトライ込みで失敗しており、その間ロックを持ったまま後続を待たせる)
                 if (synthesizedByText.TryGetValue(segment.Text, out var synthesizedWav))
                 {
-                    segment.AudioData = synthesizedWav;
                     stats.Attempted++;
+                    if (synthesizedWav == null)
+                    {
+                        // 1 回目の失敗は再生側で skip ログが出ているので、2 回目以降は流さない
+                        stats.Failure++;
+                        continue;
+                    }
+
+                    segment.AudioData = synthesizedWav;
                     stats.Success++;
                     await writer.WriteAsync(segment, cancellationToken);
                     continue;
                 }
 
-                if (engineUnavailable)
+                if (!synthesisPrepared && preparationError == null && prepareSynthesis != null)
                 {
-                    // 合成を中止した後の未キャッシュ分。再生側に流しても skip されるだけなので流さない
+                    try
+                    {
+                        await prepareSynthesis(cancellationToken);
+                        synthesisPrepared = true;
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        // ログは呼び出し元が投げたときに出る
+                        preparationError = ex;
+                    }
+                }
+
+                if (engineUnavailable || preparationError != null || prepareSynthesis == null)
+                {
+                    // 合成を中止した後・準備に失敗した後・合成しない (--cache-only) ときの未キャッシュ分。
+                    // 再生側に流しても skip されるだけなので流さない
                     stats.Attempted++;
                     stats.Failure++;
                     continue;
                 }
 
                 var synth = await SynthesizeOneAsync(segment, originalRequest, stats, cancellationToken);
-                if (synth.WavData != null)
-                {
-                    synthesizedByText[segment.Text] = synth.WavData;
-                }
+                synthesizedByText[segment.Text] = synth.WavData;
 
                 // 合成失敗 (AudioData == null) でも channel には流す。再生側で skip ログを出す
                 await writer.WriteAsync(segment, cancellationToken);
@@ -126,7 +184,7 @@ public class SegmentProducer
             }
         }
 
-        return new SynthesisResult(stats.Attempted, stats.Success, stats.Failure);
+        return new SynthesisResult(stats.Attempted, stats.Success, stats.Failure, preparationError);
     }
 
     /// <summary>
@@ -155,7 +213,7 @@ public class SegmentProducer
             stats.Success++;
             return new SegmentSynthesis(segmentRequest, wavData);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
@@ -166,6 +224,20 @@ public class SegmentProducer
             // segment.AudioData は null のまま — 再生側で skip される
             return new SegmentSynthesis(null, null, VoiceVoxApiClient.IsEngineUnavailable(ex));
         }
+    }
+
+    /// <summary>
+    /// キャッシュの音声を WAV にデコードする。読めなければ (削除して) null。
+    /// </summary>
+    /// <remarks>
+    /// デコードは CPU で 1 文あたり 100ms 程度かかる同期処理なので thread pool で行う。channel への書き込みは同期で完了するため、
+    /// ここで await しないと最初の await まで全セグメントのデコードが呼び出し元のスレッドで続き、再生の開始がその分遅れる。
+    /// </remarks>
+    private Task<byte[]?> DecodeCachedAsync(TextSegment segment, VoiceRequest originalRequest, CancellationToken cancellationToken)
+    {
+        var cachedAudio = segment.AudioData!;
+        var segmentRequest = originalRequest.WithText(segment.Text);
+        return Task.Run(() => _cacheManager.DecodeOrDelete(segmentRequest, cachedAudio), cancellationToken);
     }
 
     /// <summary>
@@ -191,7 +263,7 @@ public class SegmentProducer
         {
             await _cacheManager.RunMaintenanceAsync(cancellationToken);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Ctrl+C 等。eviction は次回実行で行えばよい
         }
@@ -214,4 +286,7 @@ public class SegmentProducer
 /// <summary>
 /// セグメント (または <c>--init</c> のフィラー) 合成の集計結果。
 /// </summary>
-public readonly record struct SynthesisResult(int AttemptedCount, int SuccessCount, int FailureCount);
+/// <param name="PreparationError">
+/// 合成の準備 (エンジンの起動確認・話者の確認) の失敗。呼び出し元が再生を終えてから投げる。準備しなかった・成功したなら null
+/// </param>
+public readonly record struct SynthesisResult(int AttemptedCount, int SuccessCount, int FailureCount, Exception? PreparationError = null);

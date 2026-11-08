@@ -13,13 +13,15 @@ namespace VoicevoxRunCached.Services;
 /// </summary>
 /// <param name="NoCache">キャッシュを読みも書きもしない</param>
 /// <param name="Refresh">キャッシュを読まずに全部合成し直し、キャッシュを上書きする (辞書登録・エンジン更新の反映用)</param>
+/// <param name="MaxWaitSeconds">先の読み上げが終わるのを待つ上限 (秒、<c>--max-wait</c>)。null なら <c>Lock.MaxWaitSeconds</c> に従う</param>
 public record TextToSpeechOptions(
     bool NoCache,
     bool CacheOnly,
     bool Verbose,
     string? OutPath,
     bool NoPlay,
-    bool Refresh = false);
+    bool Refresh = false,
+    int? MaxWaitSeconds = null);
 
 public static class ArgumentParser
 {
@@ -203,6 +205,7 @@ public static class ArgumentParser
         nameof(AppSettings.Cache),
         nameof(AppSettings.Audio),
         nameof(AppSettings.Filler),
+        nameof(AppSettings.Lock),
         nameof(AppSettings.Logging),
         nameof(AppSettings.Test)
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
@@ -281,6 +284,7 @@ public static class ArgumentParser
     {
         bool noCache = false, cacheOnly = false, verbose = false, noPlay = false, refresh = false;
         string? outPath = null;
+        int? maxWaitSeconds = null;
 
         int i = 0;
         while (i < processedArgs.Length)
@@ -323,6 +327,10 @@ public static class ArgumentParser
                     outPath = ValidateOutPath(arg, ReadValue(processedArgs, i));
                     i += 2;
                     break;
+                case "--max-wait":
+                    maxWaitSeconds = ReadInt(processedArgs, i, min: 0);
+                    i += 2;
+                    break;
                 default:
                     if (arg.StartsWith("--out=", StringComparison.Ordinal))
                     {
@@ -345,7 +353,7 @@ public static class ArgumentParser
             throw InvalidOption("--refresh", "--no-cache / --cache-only と同時には指定できません。");
         }
 
-        return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay, refresh);
+        return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay, refresh, maxWaitSeconds);
     }
 
     /// <summary>
@@ -466,6 +474,8 @@ Options:
   --out, -o <path>         Save output audio to file (.wav or .opus)
   --no-play                Do not play audio (useful with --out)
   --verbose                Show playback time and total execution time
+  --max-wait <seconds>     Give up (exit code 9) if another run does not finish within this time
+                           (default: appsettings Lock.MaxWaitSeconds; unset = wait forever, 0 = do not wait)
   --log-level <level>      Log level: trace|debug|info|warn|error|crit|none (default: appsettings Logging.Level)
   --log-format <fmt>       Log format: simple|json (default: appsettings Logging.Format)
   --help, -h               Show this help message

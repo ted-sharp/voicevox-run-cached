@@ -128,6 +128,17 @@ public class FillerSettingsValidator : AbstractValidator<FillerSettings>
     }
 }
 
+// LockSettings のバリデーター
+public class LockSettingsValidator : AbstractValidator<LockSettings>
+{
+    public LockSettingsValidator()
+    {
+        RuleFor(x => x.MaxWaitSeconds)
+            .GreaterThanOrEqualTo(0).When(x => x.MaxWaitSeconds.HasValue)
+            .WithMessage("MaxWaitSecondsは0以上である必要があります (未設定なら上限なし)");
+    }
+}
+
 // LoggingSettings のバリデーター
 public class LoggingSettingsValidator : AbstractValidator<LoggingSettings>
 {
@@ -179,6 +190,7 @@ public class AppSettingsValidator : AbstractValidator<AppSettings>
         RuleFor(x => x.Cache).SetValidator(new CacheSettingsValidator());
         RuleFor(x => x.Audio).SetValidator(new AudioSettingsValidator());
         RuleFor(x => x.Filler).SetValidator(new FillerSettingsValidator());
+        RuleFor(x => x.Lock).SetValidator(new LockSettingsValidator());
         RuleFor(x => x.Logging).SetValidator(new LoggingSettingsValidator());
 
         // 同じディレクトリだと、キャッシュの容量超過の削除がフィラーの .opus も数えて消し、--clear もまとめて消す。

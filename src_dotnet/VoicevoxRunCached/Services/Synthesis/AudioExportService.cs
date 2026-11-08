@@ -88,9 +88,9 @@ public class AudioExportService
     /// 各セグメントを PCM にデコードして 1 本の WAV に結合する。
     /// </summary>
     /// <remarks>
-    /// キャッシュヒットしたセグメントは Ogg Opus、今回合成したセグメントは WAV なので、
-    /// <see cref="AudioFormatDetector.CreateWaveStream"/> で形式を判定してから読み、<see cref="OutputFormat"/> に揃えて結合する。
-    /// 1 件のみの場合も同じ経路を通す (キャッシュ由来の Opus をそのまま .wav として書き出さないため)。
+    /// キャッシュヒットしたセグメントは Opus をデコードした 48kHz の WAV、今回合成したセグメントは VOICEVOX の 24kHz の WAV なので、
+    /// <see cref="AudioFormatDetector.CreateWaveStream"/> で読み、<see cref="OutputFormat"/> に揃えて結合する。
+    /// 1 件のみの場合も同じ経路を通す (出力の形式を常に <see cref="OutputFormat"/> にするため)。
     /// </remarks>
     private byte[] CombineWavSegments(List<byte[]> audioDataList, CancellationToken cancellationToken)
     {

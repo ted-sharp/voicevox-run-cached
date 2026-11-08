@@ -76,6 +76,26 @@ public class ApplicationBootstrapTests
     }
 
     [Test]
+    [Arguments("""{ "Lock": { "MaxWaitSeconds": 5 } }""", new string[0], 5)]
+    [Arguments("""{ "Lock": { } }""", new string[0], null)]
+    [Arguments("""{ }""", new[] { "--Lock:MaxWaitSeconds=3" }, 3)]
+    public async Task LockMaxWaitSeconds_IsLoaded(string json, string[] extraArgs, int? expected)
+    {
+        // Lock セクションは個別に Bind しているので、追加漏れがあると黙って上限なしになる
+        var dir = CreateConfigDirectory(json);
+        try
+        {
+            var settings = ApplicationBootstrap.LoadSettings(["text", .. extraArgs], dir);
+
+            await Assert.That(settings.Lock.MaxWaitSeconds).IsEqualTo(expected);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
     public async Task MissingAppSettings_ThrowsConfigurationError()
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_config_" + Guid.NewGuid().ToString("N"));

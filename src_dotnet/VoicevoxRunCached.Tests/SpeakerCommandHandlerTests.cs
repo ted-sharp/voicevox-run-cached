@@ -53,7 +53,8 @@ public class SpeakerCommandHandlerTests
     {
         using var engineManager = new VoiceVoxEngineManager(voiceVoxSettings, NullLogger.Instance, SystemClock.Instance);
         using var apiClient = engine.CreateApiClient();
-        var handler = new SpeakerCommandHandler(engineManager, apiClient, NullLogger.Instance);
+        var handler = new SpeakerCommandHandler(
+            engineManager, apiClient, new SpeechLock(engineManager, new LockSettings(), NullLogger.Instance), NullLogger.Instance);
 
         var exitCode = await handler.HandleSpeakersAsync();
         if (afterCommand != null)

@@ -15,6 +15,7 @@ namespace VoicevoxRunCached.Services;
 [Singleton(typeof(CacheSettings), Instance = nameof(Cache))]
 [Singleton(typeof(AudioSettings), Instance = nameof(Audio))]
 [Singleton(typeof(FillerSettings), Instance = nameof(Filler))]
+[Singleton(typeof(LockSettings), Instance = nameof(Lock))]
 // ロガー
 [Singleton(typeof(ILogger), Instance = nameof(Logger))]
 // 時刻プロバイダ (テストで mock 可能にするため抽象化)
@@ -25,6 +26,7 @@ namespace VoicevoxRunCached.Services;
 [Singleton(typeof(AudioCacheManager))]
 [Singleton(typeof(VoiceVoxEngineManager))]
 [Singleton(typeof(TextSegmentProcessor))]
+[Singleton(typeof(SpeechLock))]
 // 音声再生サブシステム (IDisposable はプロバイダの Dispose で破棄される)
 [Singleton(typeof(AudioDeviceManager))]
 [Singleton(typeof(AudioFormatDetector))]
@@ -52,4 +54,5 @@ public partial class AppServiceProvider
     public CacheSettings Cache => Settings.Cache;
     public AudioSettings Audio => Settings.Audio;
     public FillerSettings Filler => Settings.Filler;
+    public LockSettings Lock => Settings.Lock;
 }

@@ -105,6 +105,58 @@ public class AudioCacheManagerIntegrationTests
     }
 
     [Test]
+    public async Task DecodeOrDelete_ReturnsWav48k()
+    {
+        var (mgr, dir) = CreateManager();
+        try
+        {
+            var request = new VoiceRequest("デコード", 1);
+            await mgr.SaveAudioCacheAsync(request, AudioConversionUtility.CreateMinimalWavData(300, 24000));
+
+            var wav = mgr.DecodeOrDelete(request, (await mgr.GetCachedAudioAsync(request))!);
+
+            await Assert.That(wav).IsNotNull();
+            using var reader = new AudioFormatDetector(NullLogger.Instance).CreateWaveStream(wav!);
+            await Assert.That(AudioFormatDetector.DetectFormat(wav!)).IsEqualTo(AudioFormat.Wav);
+            await Assert.That(reader.WaveFormat.SampleRate).IsEqualTo(48000);
+            await Assert.That(reader.TotalTime.TotalMilliseconds).IsGreaterThan(250);
+            await Assert.That(Directory.GetFiles(dir, "*.opus")).IsNotEmpty();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    [Arguments("garbage")]
+    [Arguments("ogg-header-only")]
+    [Arguments("wav")]
+    public async Task DecodeOrDelete_UnplayableAudio_IsDeleted(string kind)
+    {
+        // 壊れた .opus を再生時まで見逃すと、その文を含む読み上げが --refresh / --clear するまで毎回失敗する。
+        // 削除して null を返せば、呼び出し元 (SegmentProducer) が合成し直して保存し直す
+        var (mgr, dir) = CreateManager();
+        try
+        {
+            var request = new VoiceRequest("壊れた", 1);
+            await mgr.SaveAudioCacheAsync(request, AudioConversionUtility.CreateMinimalWavData(300, 24000));
+            var opusPath = Directory.GetFiles(dir, "*.opus").Single();
+            byte[] broken = kind switch
+            {
+                "garbage" => [.. Enumerable.Range(0, 4096).Select(i => (byte)(i * 31 % 251))],
+                "ogg-header-only" => [.. "OggS"u8, .. new byte[60]],
+                _ => AudioConversionUtility.CreateMinimalWavData(300, 24000), // Ogg でない
+            };
+            await File.WriteAllBytesAsync(opusPath, broken);
+
+            var wav = mgr.DecodeOrDelete(request, (await mgr.GetCachedAudioAsync(request))!);
+
+            await Assert.That(wav).IsNull();
+            await Assert.That(Directory.GetFiles(dir, "*.opus")).IsEmpty();
+            await Assert.That(Directory.GetFiles(dir, "*.meta.json")).IsEmpty();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
     public async Task ClearAllCache_RemovesOpusAndLegacyMp3()
     {
         var (mgr, dir) = CreateManager();
