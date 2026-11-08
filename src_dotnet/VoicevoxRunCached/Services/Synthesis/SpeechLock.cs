@@ -1,4 +1,6 @@
 ﻿using Microsoft.Extensions.Logging;
+using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Services.Synthesis;
 
@@ -16,22 +18,29 @@ namespace VoicevoxRunCached.Services.Synthesis;
 public class SpeechLock
 {
     private readonly VoiceVoxEngineManager _engineManager;
+    private readonly LockSettings _settings;
     private readonly ILogger _logger;
 
-    public SpeechLock(VoiceVoxEngineManager engineManager, ILogger logger)
+    public SpeechLock(VoiceVoxEngineManager engineManager, LockSettings settings, ILogger logger)
     {
         _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <summary>
     /// ロックを取得して <paramref name="action"/> を実行する。後から来た方は先の処理が終わるまで待つ。
     /// </summary>
-    public async Task<T> RunAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken = default)
+    /// <param name="action">ロックの中で行う処理</param>
+    /// <param name="cancellationToken">キャンセル</param>
+    /// <param name="maxWaitSeconds">待つ上限 (秒)。null なら <see cref="LockSettings.MaxWaitSeconds"/> に従う (<c>--max-wait</c> の値を渡す)</param>
+    /// <exception cref="VoicevoxRunCachedException">上限までにロックを取得できなかった (<see cref="ErrorCodes.Lock.LockWaitTimeout"/>)</exception>
+    public async Task<T> RunAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken = default, int? maxWaitSeconds = null)
     {
         ArgumentNullException.ThrowIfNull(action);
 
-        using var speechLock = await InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, _logger, cancellationToken);
+        var maxWait = ResolveMaxWait(maxWaitSeconds);
+        using var speechLock = await InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, _logger, maxWait, cancellationToken);
         try
         {
             return await action();
@@ -41,4 +50,10 @@ public class SpeechLock
             _engineManager.StopEngineIfNotKept();
         }
     }
+
+    /// <summary>
+    /// 待つ上限を決める。コマンドラインの値 (<c>--max-wait</c>) を設定値より優先する。どちらも無ければ上限なし (null)。
+    /// </summary>
+    public TimeSpan? ResolveMaxWait(int? maxWaitSeconds)
+        => (maxWaitSeconds ?? _settings.MaxWaitSeconds) is { } seconds ? TimeSpan.FromSeconds(seconds) : null;
 }

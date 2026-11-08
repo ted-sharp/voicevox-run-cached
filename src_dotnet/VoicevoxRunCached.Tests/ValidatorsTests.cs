@@ -285,6 +285,19 @@ public class ValidatorsTests
         }
     }
 
+    // LockSettings --------------------------------------------------------
+
+    [Test]
+    [Arguments(null, true)]
+    [Arguments(0, true)]
+    [Arguments(10, true)]
+    [Arguments(-1, false)]
+    public async Task LockSettings_MaxWaitSeconds(int? maxWaitSeconds, bool expectedValid)
+    {
+        var result = new LockSettingsValidator().Validate(new LockSettings { MaxWaitSeconds = maxWaitSeconds });
+        await Assert.That(result.IsValid).IsEqualTo(expectedValid);
+    }
+
     // LoggingSettings -----------------------------------------------------
 
     [Test]

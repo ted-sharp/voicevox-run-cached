@@ -88,7 +88,7 @@ public class InitCommandHandlerTests
             using var apiClient = engine.CreateApiClient();
             var fillerManager = new FillerManager(fillerSettings, new CacheSettings(), NullLogger.Instance);
             var handler = new InitCommandHandler(
-                engineManager, apiClient, fillerManager, new SpeechLock(engineManager, NullLogger.Instance), NullLogger.Instance);
+                engineManager, apiClient, fillerManager, new SpeechLock(engineManager, new LockSettings(), NullLogger.Instance), NullLogger.Instance);
 
             var exitCode = await handler.HandleInitAsync(speakerId);
             if (afterInit != null)

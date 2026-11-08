@@ -8,8 +8,23 @@ public class AppSettings
     public CacheSettings Cache { get; set; } = new();
     public AudioSettings Audio { get; set; } = new();
     public FillerSettings Filler { get; set; } = new();
+    public LockSettings Lock { get; set; } = new();
     public LoggingSettings Logging { get; set; } = new();
     public TestSettings Test { get; set; } = new();
+}
+
+// プロセス間ロック (読み上げ・--init・speakers・--clear の直列化) の設定
+public class LockSettings
+{
+    /// <summary>
+    /// 先に動いている処理が終わるのを待つ上限 (秒)。null (未設定) なら上限なし、0 なら待たずにすぐ諦める。
+    /// 読み上げでは <c>--max-wait</c> で上書きできる。
+    /// </summary>
+    /// <remarks>
+    /// Hooks が続けて発火したときに、古い通知を後からまとめて読み上げないようにするための設定。
+    /// 上限を超えたら実行せず、終了コード 9 (<c>LOCK_001</c>) で終わる。
+    /// </remarks>
+    public int? MaxWaitSeconds { get; set; }
 }
 
 // VoiceVox engine settings

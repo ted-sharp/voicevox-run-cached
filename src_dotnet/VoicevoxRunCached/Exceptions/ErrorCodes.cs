@@ -38,6 +38,8 @@ public static class ErrorCodes
             "CACHE" => 4,
             "AUDIO" => 5,
             "API" => 6,
+            // 他の処理が終わるのを待ちきれずに読み上げなかった。失敗とは区別できるよう専用の値にする
+            "LOCK" => 9,
             _ => 1,
         };
     }
@@ -64,6 +66,9 @@ public static class ErrorCodes
             Audio.AudioGenerationFailed => "音声の生成に失敗しました",
             Audio.AudioFormatError => "音声フォーマットが無効です",
             Audio.AudioFileExportFailed => "音声ファイルの出力に失敗しました",
+
+            // Lock
+            Lock.LockWaitTimeout => "他の処理が終わるのを待ちきれませんでした",
 
             // API
             Api.ApiRequestFailed => "APIリクエストに失敗しました",
@@ -118,6 +123,15 @@ public static class ErrorCodes
         public const string ApiTimeout = "API_003";
         public const string ApiAuthenticationError = "API_004";
         public const string ApiRateLimitExceeded = "API_005";
+    }
+
+    // プロセス間ロック関連のエラーコード
+    public static class Lock
+    {
+        /// <summary>
+        /// プロセス間ロックを上限時間 (<c>--max-wait</c> / <c>Lock.MaxWaitSeconds</c>) 内に取得できなかった。
+        /// </summary>
+        public const string LockWaitTimeout = "LOCK_001";
     }
 
     // 一般的なエラーコード

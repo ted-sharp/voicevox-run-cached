@@ -15,6 +15,7 @@ namespace VoicevoxRunCached.Services;
 [Singleton(typeof(CacheSettings), Instance = nameof(Cache))]
 [Singleton(typeof(AudioSettings), Instance = nameof(Audio))]
 [Singleton(typeof(FillerSettings), Instance = nameof(Filler))]
+[Singleton(typeof(LockSettings), Instance = nameof(Lock))]
 // ロガー
 [Singleton(typeof(ILogger), Instance = nameof(Logger))]
 // 時刻プロバイダ (テストで mock 可能にするため抽象化)
@@ -53,4 +54,5 @@ public partial class AppServiceProvider
     public CacheSettings Cache => Settings.Cache;
     public AudioSettings Audio => Settings.Audio;
     public FillerSettings Filler => Settings.Filler;
+    public LockSettings Lock => Settings.Lock;
 }

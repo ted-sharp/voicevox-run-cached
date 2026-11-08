@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using System.Diagnostics;
+using Microsoft.Extensions.Logging;
+using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Services.Infrastructure;
 
@@ -25,15 +27,29 @@ public static class InterProcessLock
     private const int ErrorLockViolation = 33;
 
     /// <summary>
-    /// ロックを取得するまで待つ。他が保持している間は <see cref="RetryIntervalMs"/> ごとに再試行する。
+    /// ロックを取得するまで待つ (上限なし)。他が保持している間は <see cref="RetryIntervalMs"/> ごとに再試行する。
     /// </summary>
     /// <returns>Dispose で解放されるロック</returns>
     /// <exception cref="OperationCanceledException">待機中にキャンセルされた</exception>
-    public static async Task<IDisposable> AcquireAsync(string lockFilePath, ILogger logger, CancellationToken cancellationToken = default)
+    public static Task<IDisposable> AcquireAsync(string lockFilePath, ILogger logger, CancellationToken cancellationToken = default)
+        => AcquireAsync(lockFilePath, logger, maxWait: null, cancellationToken);
+
+    /// <summary>
+    /// ロックを取得するまで、最大 <paramref name="maxWait"/> 待つ。他が保持している間は <see cref="RetryIntervalMs"/> ごとに再試行する。
+    /// </summary>
+    /// <param name="lockFilePath">ロックファイル</param>
+    /// <param name="logger">待機を知らせるログ</param>
+    /// <param name="maxWait">待つ上限。null なら上限なし、<see cref="TimeSpan.Zero"/> なら他が保持していればすぐに諦める</param>
+    /// <param name="cancellationToken">キャンセル</param>
+    /// <returns>Dispose で解放されるロック</returns>
+    /// <exception cref="VoicevoxRunCachedException">上限までに取得できなかった (<see cref="ErrorCodes.Lock.LockWaitTimeout"/>)</exception>
+    /// <exception cref="OperationCanceledException">待機中にキャンセルされた</exception>
+    public static async Task<IDisposable> AcquireAsync(string lockFilePath, ILogger logger, TimeSpan? maxWait, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(lockFilePath);
         ArgumentNullException.ThrowIfNull(logger);
 
+        var waited = Stopwatch.StartNew();
         var waitLogged = false;
         while (true)
         {
@@ -44,6 +60,10 @@ public static class InterProcessLock
             }
             catch (IOException ex) when (IsLockConflict(ex))
             {
+                if (maxWait is { } limit && waited.Elapsed >= limit)
+                {
+                    throw WaitTimeout(lockFilePath, limit);
+                }
                 if (!waitLogged)
                 {
                     logger.LogInformation("別の VoicevoxRunCached の処理が終わるまで待機します (ロック: {LockFile})", lockFilePath);
@@ -59,4 +79,14 @@ public static class InterProcessLock
     /// </summary>
     private static bool IsLockConflict(IOException ex)
         => (ex.HResult & 0xFFFF) is ErrorSharingViolation or ErrorLockViolation;
+
+    private static VoicevoxRunCachedException WaitTimeout(string lockFilePath, TimeSpan limit)
+    {
+        var seconds = limit.TotalSeconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+        return new VoicevoxRunCachedException(
+            errorCode: ErrorCodes.Lock.LockWaitTimeout,
+            message: $"Lock was not acquired within {seconds}s: {lockFilePath}",
+            userMessage: $"別の読み上げなどが {seconds} 秒以内に終わらなかったため、実行しませんでした。",
+            suggestedSolution: "待つ上限は --max-wait か appsettings.json の Lock.MaxWaitSeconds で変えられます。");
+    }
 }

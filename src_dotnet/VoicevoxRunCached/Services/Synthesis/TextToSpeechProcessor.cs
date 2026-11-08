@@ -55,10 +55,11 @@ public class TextToSpeechProcessor
     /// <remarks>
     /// 処理全体 (キャッシュ参照 → 合成 → 再生 → <c>--out</c>) を <see cref="SpeechLock"/> で
     /// プロセス間に直列化する。Hooks が同時に発火しても音声が重ならず、VOICEVOX API の直列実行と
-    /// エンジンの起動もプロセスをまたいで 1 つずつになる。後から来た方は先の読み上げが終わるまで待つ。
+    /// エンジンの起動もプロセスをまたいで 1 つずつになる。後から来た方は先の読み上げが終わるまで待つ
+    /// (上限は <c>--max-wait</c> / <c>Lock.MaxWaitSeconds</c>)。
     /// </remarks>
     public Task<int> ProcessTextToSpeechAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken = default)
-        => _speechLock.RunAsync(() => ProcessLockedAsync(request, options, cancellationToken), cancellationToken);
+        => _speechLock.RunAsync(() => ProcessLockedAsync(request, options, cancellationToken), cancellationToken, options.MaxWaitSeconds);
 
     private async Task<int> ProcessLockedAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken)
     {

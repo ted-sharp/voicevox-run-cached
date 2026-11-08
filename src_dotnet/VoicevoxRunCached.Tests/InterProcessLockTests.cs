@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging.Abstractions;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Services.Infrastructure;
 
 namespace VoicevoxRunCached.Tests;
@@ -44,6 +45,83 @@ public class InterProcessLockTests
 
             await Assert.ThrowsAsync<OperationCanceledException>(
                 () => InterProcessLock.AcquireAsync(path, NullLogger.Instance, cts.Token).WaitAsync(TimeSpan.FromSeconds(10)));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Test]
+    public async Task MaxWaitZero_FailsImmediatelyWhenHeld()
+    {
+        var path = NewLockPath();
+        try
+        {
+            using var first = await InterProcessLock.AcquireAsync(path, NullLogger.Instance);
+
+            var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(
+                () => InterProcessLock.AcquireAsync(path, NullLogger.Instance, TimeSpan.Zero).WaitAsync(TimeSpan.FromSeconds(10)));
+
+            await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Lock.LockWaitTimeout);
+            await Assert.That(ErrorCodes.GetExitCode(ex.ErrorCode)).IsEqualTo(9);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Test]
+    public async Task MaxWait_FailsAfterLimit()
+    {
+        var path = NewLockPath();
+        try
+        {
+            using var first = await InterProcessLock.AcquireAsync(path, NullLogger.Instance);
+            var started = System.Diagnostics.Stopwatch.StartNew();
+
+            await Assert.ThrowsAsync<VoicevoxRunCachedException>(
+                () => InterProcessLock.AcquireAsync(path, NullLogger.Instance, TimeSpan.FromMilliseconds(300)).WaitAsync(TimeSpan.FromSeconds(10)));
+
+            await Assert.That(started.ElapsedMilliseconds).IsGreaterThanOrEqualTo(300);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Test]
+    public async Task MaxWait_SucceedsWhenReleasedInTime()
+    {
+        var path = NewLockPath();
+        try
+        {
+            var first = await InterProcessLock.AcquireAsync(path, NullLogger.Instance);
+
+            var second = InterProcessLock.AcquireAsync(path, NullLogger.Instance, TimeSpan.FromSeconds(10));
+            await Task.Delay(300);
+            first.Dispose();
+
+            using var acquired = await second.WaitAsync(TimeSpan.FromSeconds(10));
+            await Assert.That(acquired).IsNotNull();
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Test]
+    public async Task MaxWait_DoesNotApplyWhenFree()
+    {
+        // 上限 0 でも、他が持っていなければ取得できる
+        var path = NewLockPath();
+        try
+        {
+            using var acquired = await InterProcessLock.AcquireAsync(path, NullLogger.Instance, TimeSpan.Zero);
+            await Assert.That(acquired).IsNotNull();
         }
         finally
         {

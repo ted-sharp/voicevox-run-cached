@@ -23,7 +23,7 @@ public class CacheCommandHandlerTests
             var handler = new CacheCommandHandler(
                 new AudioCacheManager(cacheSettings, NullLogger.Instance, SystemClock.Instance),
                 new FillerManager(fillerSettings, cacheSettings, NullLogger.Instance),
-                new SpeechLock(engineManager, NullLogger.Instance),
+                new SpeechLock(engineManager, new LockSettings(), NullLogger.Instance),
                 NullLogger.Instance);
 
             Task<int> clear;
