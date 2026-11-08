@@ -18,7 +18,25 @@ public class SpeakerCommandHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
+    /// <remarks>
+    /// エンジンを自動起動しうるので、読み上げ・<c>--init</c> と同じ <see cref="InterProcessLock.SpeechLockPath"/> で直列化する。
+    /// ロックの外だと、読み上げと同時にエンジンを二重に起動したり、<c>KeepEngineRunning: false</c> で自分が起動したエンジンを
+    /// 終了時に止めて、それを使っていた読み上げを合成の途中で失敗させたりするため。止めるのはロックを解放する前。
+    /// </remarks>
     public async Task<int> HandleSpeakersAsync(CancellationToken cancellationToken = default)
+    {
+        using var speechLock = await InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, _logger, cancellationToken);
+        try
+        {
+            return await ListSpeakersAsync(cancellationToken);
+        }
+        finally
+        {
+            _engineManager.StopEngineIfNotKept();
+        }
+    }
+
+    private async Task<int> ListSpeakersAsync(CancellationToken cancellationToken)
     {
         await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
 

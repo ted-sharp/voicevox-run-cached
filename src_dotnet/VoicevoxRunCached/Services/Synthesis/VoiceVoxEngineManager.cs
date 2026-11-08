@@ -33,7 +33,8 @@ public class VoiceVoxEngineManager : IDisposable
         if (_disposed)
             return;
 
-        // 読み上げ・--init はロックの中で StopEngineIfNotKept を呼び済み。ここは途中で例外になった経路などの取りこぼし用
+        // エンジンを起動するコマンド (読み上げ・--init・speakers) はロックの中で StopEngineIfNotKept を呼び済み。
+        // ここは、ロックの中で止める処理を通らずにエンジンを起動する経路が今後増えたときの保険
         StopEngineIfNotKept();
 
         _engineProcess?.Dispose();
@@ -46,7 +47,7 @@ public class VoiceVoxEngineManager : IDisposable
     /// <c>true</c> (常駐運用) のときと、外部で既に動いていたエンジンを使ったときは何もしない。
     /// </summary>
     /// <remarks>
-    /// 読み上げ・<c>--init</c> はプロセス間ロックを解放する前にこれを呼ぶ。ロックを解放してから (Dispose で) 止めると、
+    /// エンジンを起動するコマンド (読み上げ・<c>--init</c>・<c>speakers</c>) はプロセス間ロックを解放する前にこれを呼ぶ。ロックを解放してから (Dispose で) 止めると、
     /// その間にロックを取った後続のプロセスが動いているエンジンを見て合成を始め、途中で止められて失敗するため。
     /// 先に止めておけば、後続はエンジンが止まっているのを見て自分で起動する。
     /// </remarks>
@@ -183,7 +184,8 @@ public class VoiceVoxEngineManager : IDisposable
         }
     }
 
-    public void StopEngine()
+    // 直接呼ぶと _engineProcess が残るので、外からは StopEngineIfNotKept を使う
+    private void StopEngine()
     {
         if (_engineProcess != null && !_engineProcess.HasExited)
         {
