@@ -69,6 +69,17 @@ public static class ArgumentParser
     public static bool StartsWithTextSeparator(string[] args) => args.Length > 0 && args[0] == TextSeparator;
 
     /// <summary>
+    /// <c>--help</c> / <c>-h</c> が引数のどこかにあるか。本文やオプションの後ろに付けてもヘルプを表示する
+    /// (先頭のときだけ見ると、<c>"こんにちは" --help</c> は読み上げてしまい、<c>--init --help</c> はフィラーを生成してしまう)。
+    /// <c>-- &lt;本文&gt;</c> の本文は本文として読むので除く。
+    /// </summary>
+    public static bool IsHelpRequested(string[] args)
+    {
+        var start = StartsWithTextSeparator(args) ? 2 : 0;
+        return args.Skip(start).Any(arg => arg is "--help" or "-h");
+    }
+
+    /// <summary>
     /// 通常のテキスト読み上げコマンドの引数を解析する。
     /// 先頭引数 (<see cref="TextSeparator"/> で始まるならその次) をテキストとして扱い、残りをオプションとして処理する。
     /// </summary>
@@ -288,9 +299,6 @@ public static class ArgumentParser
                 case "--out" or "-o":
                     outPath = ValidateOutPath(arg, ReadValue(processedArgs, i));
                     i += 2;
-                    break;
-                case "--help" or "-h":
-                    ReadFlag(processedArgs, ref i);
                     break;
                 default:
                     if (arg.StartsWith("--out=", StringComparison.Ordinal))

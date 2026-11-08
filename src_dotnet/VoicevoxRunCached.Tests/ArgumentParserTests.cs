@@ -389,6 +389,31 @@ public class ArgumentParserTests
     }
 
     [Test]
+    [Arguments("--help")]
+    [Arguments("-h")]
+    [Arguments("こんにちは --help")]
+    [Arguments("こんにちは -s 3 -h")]
+    [Arguments("--init --help")]
+    [Arguments("--test -h")]
+    [Arguments("devices --json --help")]
+    [Arguments("-- --help --help")]
+    public async Task IsHelpRequested_HelpAnywhere_ReturnsTrue(string commandLine)
+    {
+        await Assert.That(ArgumentParser.IsHelpRequested(commandLine.Split(' '))).IsTrue();
+    }
+
+    [Test]
+    [Arguments("こんにちは")]
+    [Arguments("こんにちは -s 3")]
+    [Arguments("-- --help")]
+    [Arguments("-- -h -s 3")]
+    public async Task IsHelpRequested_NoHelpOrHelpAsText_ReturnsFalse(string commandLine)
+    {
+        // "-- <本文>" の本文は --help でも本文として読む
+        await Assert.That(ArgumentParser.IsHelpRequested(commandLine.Split(' '))).IsFalse();
+    }
+
+    [Test]
     [Arguments("speakers")]
     [Arguments("devices")]
     [Arguments("--init")]

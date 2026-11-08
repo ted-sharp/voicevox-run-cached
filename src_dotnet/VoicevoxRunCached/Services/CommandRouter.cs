@@ -38,7 +38,7 @@ public class CommandRouter
 
     public async Task<int> ExecuteCommandAsync(string[] args, CancellationToken cancellationToken = default)
     {
-        if (args.Length == 0 || args[0] == "--help" || args[0] == "-h")
+        if (args.Length == 0 || ArgumentParser.IsHelpRequested(args))
         {
             ArgumentParser.ShowUsage();
             return 0;
