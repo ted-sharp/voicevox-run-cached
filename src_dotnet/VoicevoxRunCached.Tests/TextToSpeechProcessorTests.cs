@@ -108,8 +108,9 @@ public class TextToSpeechProcessorTests
         // 回帰: キャッシュから鳴った文を数えず、合成を試みた文 (読めなかった 1 文) が全部失敗したことで「全部失敗」(5) にしていた
         const string otherText = "もう一つの文です。";
 
+        using var stoppedEngine = new StoppedEngine();
         var run = await RunAsync(
-            new VoiceVoxSettings { BaseUrl = $"http://127.0.0.1:{FakeEngineServer.GetFreePort()}", AutoStartEngine = false, DefaultSpeaker = 1 },
+            new VoiceVoxSettings { BaseUrl = stoppedEngine.BaseUrl, AutoStartEngine = false, DefaultSpeaker = 1 },
             [CachedText + otherText, "--cache-only", "--no-play"],
             prepareCache: path => File.WriteAllBytesAsync(path, [1, 2, 3, 4]),
             alsoCached: [otherText]);
@@ -120,8 +121,9 @@ public class TextToSpeechProcessorTests
     [Test]
     public async Task CorruptedCache_CacheOnly_IsTotalFailure()
     {
+        using var stoppedEngine = new StoppedEngine();
         var run = await RunAsync(
-            new VoiceVoxSettings { BaseUrl = $"http://127.0.0.1:{FakeEngineServer.GetFreePort()}", AutoStartEngine = false, DefaultSpeaker = 1 },
+            new VoiceVoxSettings { BaseUrl = stoppedEngine.BaseUrl, AutoStartEngine = false, DefaultSpeaker = 1 },
             [CachedText, "--cache-only", "--no-play"],
             prepareCache: path => File.WriteAllBytesAsync(path, [1, 2, 3, 4]));
 
@@ -151,7 +153,10 @@ public class TextToSpeechProcessorTests
     /// 待ち受けていないポートを BaseUrl にし (自動起動なし)、<see cref="CachedText"/> だけキャッシュした状態でコマンドを実行する。
     /// </summary>
     private static async Task<int> RunWithStoppedEngineAsync(string[] args)
-        => (await RunAsync($"http://127.0.0.1:{FakeEngineServer.GetFreePort()}", args)).ExitCode;
+    {
+        using var stoppedEngine = new StoppedEngine();
+        return (await RunAsync(stoppedEngine.BaseUrl, args)).ExitCode;
+    }
 
     /// <summary>
     /// <paramref name="baseUrl"/> のエンジンに向け (自動起動なし)、<see cref="CachedText"/> だけキャッシュした状態でコマンドを実行する。

@@ -24,7 +24,10 @@ internal sealed class FakeEngineServer : IDisposable
     private const string SpeakersJson =
         """[{"name":"テスト話者","speaker_uuid":"00000000-0000-0000-0000-000000000000","styles":[{"name":"ノーマル","id":1}],"version":"0.0.0"}]""";
 
-    private readonly HttpListener _listener = new();
+    // 待ち受けを開き直す上限 (StartListener)
+    private const int ListenAttempts = 5;
+
+    private readonly HttpListener _listener;
     private readonly Func<string, bool> _audioQueryFails;
     private readonly HttpStatusCode _audioQueryFailureStatus;
     private readonly TimeSpan _initializeSpeakerDelay;
@@ -50,9 +53,7 @@ internal sealed class FakeEngineServer : IDisposable
         _audioQueryFailureStatus = audioQueryFailureStatus;
         _initializeSpeakerDelay = initializeSpeakerDelay;
         _audioQueryDelay = audioQueryDelay;
-        BaseUrl = $"http://127.0.0.1:{GetFreePort()}";
-        _listener.Prefixes.Add(BaseUrl + "/");
-        _listener.Start();
+        (_listener, BaseUrl) = StartListener();
         _serveTask = ServeAsync();
     }
 
@@ -157,9 +158,35 @@ internal sealed class FakeEngineServer : IDisposable
     }
 
     /// <summary>
-    /// 空いているポート番号。待ち受けていない (= エンジンが止まっている) URL を作るのにも使う。
+    /// 空いているポートで待ち受けを始める。開けなければ (<see cref="ListenAttempts"/> 回まで) 別のポートでやり直す。
     /// </summary>
-    public static int GetFreePort()
+    /// <remarks>
+    /// <see cref="GetFreePort"/> で調べたポートは閉じてから開き直すので、その間に並列に走る他のテスト (や他のプロセス) に取られうる。
+    /// Start に失敗した <see cref="HttpListener"/> は使い回せないので、試すたびに作り直す。
+    /// </remarks>
+    private static (HttpListener Listener, string BaseUrl) StartListener()
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            var baseUrl = $"http://127.0.0.1:{GetFreePort()}";
+            var listener = new HttpListener();
+            listener.Prefixes.Add(baseUrl + "/");
+            try
+            {
+                listener.Start();
+                return (listener, baseUrl);
+            }
+            catch (HttpListenerException) when (attempt < ListenAttempts)
+            {
+                listener.Close();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 空いているポート番号。調べた後は閉じるので、止まっているエンジンの URL には使わない (<see cref="StoppedEngine"/> を使う)。
+    /// </summary>
+    private static int GetFreePort()
     {
         using var probe = new TcpListener(IPAddress.Loopback, 0);
         probe.Start();
