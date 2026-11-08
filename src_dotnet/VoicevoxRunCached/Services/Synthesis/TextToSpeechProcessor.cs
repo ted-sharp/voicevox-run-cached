@@ -23,6 +23,7 @@ public class TextToSpeechProcessor
     private readonly TextSegmentProcessor _textProcessor;
     private readonly VoiceVoxApiClient _apiClient;
     private readonly SegmentProducer _producer;
+    private readonly SpeechLock _speechLock;
     private readonly IClock _clock;
 
     public TextToSpeechProcessor(
@@ -34,6 +35,7 @@ public class TextToSpeechProcessor
         VoiceVoxApiClient apiClient,
         FillerManager fillerManager,
         SegmentProducer producer,
+        SpeechLock speechLock,
         IClock clock,
         ILogger logger)
     {
@@ -45,29 +47,18 @@ public class TextToSpeechProcessor
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _fillerManager = fillerManager ?? throw new ArgumentNullException(nameof(fillerManager));
         _producer = producer ?? throw new ArgumentNullException(nameof(producer));
+        _speechLock = speechLock ?? throw new ArgumentNullException(nameof(speechLock));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <remarks>
-    /// 処理全体 (キャッシュ参照 → 合成 → 再生 → <c>--out</c>) を <see cref="InterProcessLock.SpeechLockPath"/> で
+    /// 処理全体 (キャッシュ参照 → 合成 → 再生 → <c>--out</c>) を <see cref="SpeechLock"/> で
     /// プロセス間に直列化する。Hooks が同時に発火しても音声が重ならず、VOICEVOX API の直列実行と
     /// エンジンの起動もプロセスをまたいで 1 つずつになる。後から来た方は先の読み上げが終わるまで待つ。
-    /// <c>KeepEngineRunning: false</c> で自分が起動したエンジンも、ロックを解放する前に止める
-    /// (解放後に止めると、ロックを取った後続の読み上げが合成の途中でエンジンを失う)。
     /// </remarks>
-    public async Task<int> ProcessTextToSpeechAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken = default)
-    {
-        using var speechLock = await InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, _logger, cancellationToken);
-        try
-        {
-            return await ProcessLockedAsync(request, options, cancellationToken);
-        }
-        finally
-        {
-            _engineManager.StopEngineIfNotKept();
-        }
-    }
+    public Task<int> ProcessTextToSpeechAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken = default)
+        => _speechLock.RunAsync(() => ProcessLockedAsync(request, options, cancellationToken), cancellationToken);
 
     private async Task<int> ProcessLockedAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken)
     {

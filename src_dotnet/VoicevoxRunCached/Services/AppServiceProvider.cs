@@ -25,6 +25,7 @@ namespace VoicevoxRunCached.Services;
 [Singleton(typeof(AudioCacheManager))]
 [Singleton(typeof(VoiceVoxEngineManager))]
 [Singleton(typeof(TextSegmentProcessor))]
+[Singleton(typeof(SpeechLock))]
 // 音声再生サブシステム (IDisposable はプロバイダの Dispose で破棄される)
 [Singleton(typeof(AudioDeviceManager))]
 [Singleton(typeof(AudioFormatDetector))]

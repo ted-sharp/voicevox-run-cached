@@ -11,39 +11,31 @@ public class InitCommandHandler
     private readonly VoiceVoxApiClient _apiClient;
     private readonly VoiceVoxEngineManager _engineManager;
     private readonly FillerManager _fillerManager;
+    private readonly SpeechLock _speechLock;
     private readonly ILogger _logger;
 
     public InitCommandHandler(
         VoiceVoxEngineManager engineManager,
         VoiceVoxApiClient apiClient,
         FillerManager fillerManager,
+        SpeechLock speechLock,
         ILogger logger)
     {
         _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _fillerManager = fillerManager ?? throw new ArgumentNullException(nameof(fillerManager));
+        _speechLock = speechLock ?? throw new ArgumentNullException(nameof(speechLock));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <param name="speakerId">フィラーを生成する話者。フィラーは読み上げと同じ話者の声で再生されるので、話者ごとに生成する</param>
     /// <param name="cancellationToken">キャンセル</param>
     /// <remarks>
-    /// 読み上げと同じ <see cref="InterProcessLock.SpeechLockPath"/> で直列化する。読み上げ中に実行しても
+    /// 読み上げと同じ <see cref="SpeechLock"/> で直列化する。読み上げ中に実行しても
     /// API 呼び出しが並列にならず (VOICEVOX は直列前提)、エンジンの自動起動も二重にならない。
-    /// 読み上げと同じく、<c>KeepEngineRunning: false</c> で自分が起動したエンジンはロックを解放する前に止める。
     /// </remarks>
-    public async Task<int> HandleInitAsync(int speakerId, CancellationToken cancellationToken = default)
-    {
-        using var speechLock = await InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, _logger, cancellationToken);
-        try
-        {
-            return await InitializeLockedAsync(speakerId, cancellationToken);
-        }
-        finally
-        {
-            _engineManager.StopEngineIfNotKept();
-        }
-    }
+    public Task<int> HandleInitAsync(int speakerId, CancellationToken cancellationToken = default)
+        => _speechLock.RunAsync(() => InitializeLockedAsync(speakerId, cancellationToken), cancellationToken);
 
     private async Task<int> InitializeLockedAsync(int speakerId, CancellationToken cancellationToken)
     {

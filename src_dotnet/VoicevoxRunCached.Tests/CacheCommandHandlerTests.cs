@@ -19,9 +19,11 @@ public class CacheCommandHandlerTests
         {
             var cacheSettings = new CacheSettings { Directory = Path.Combine(dir, "audio"), UseExecutableBaseDirectory = false };
             var fillerSettings = new FillerSettings { Directory = Path.Combine(dir, "filler"), UseExecutableBaseDirectory = false };
+            using var engineManager = new VoiceVoxEngineManager(new VoiceVoxSettings(), NullLogger.Instance, SystemClock.Instance);
             var handler = new CacheCommandHandler(
                 new AudioCacheManager(cacheSettings, NullLogger.Instance, SystemClock.Instance),
                 new FillerManager(fillerSettings, cacheSettings, NullLogger.Instance),
+                new SpeechLock(engineManager, NullLogger.Instance),
                 NullLogger.Instance);
 
             Task<int> clear;

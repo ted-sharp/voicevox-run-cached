@@ -155,7 +155,7 @@ public class SegmentProducer
             stats.Success++;
             return new SegmentSynthesis(segmentRequest, wavData);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             throw;
         }
@@ -191,7 +191,7 @@ public class SegmentProducer
         {
             await _cacheManager.RunMaintenanceAsync(cancellationToken);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             // Ctrl+C 等。eviction は次回実行で行えばよい
         }
