@@ -5,6 +5,8 @@
 .gitignore text eol=lf
 .gitconfig text eol=lf
 .gitmodules text eol=lf
+# Git hooks (sh。拡張子が無いので明示しないと autocrlf で CRLF になり動かない)
+.githooks/* text eol=lf
 
 ##### Windows
 *.bat text eol=crlf

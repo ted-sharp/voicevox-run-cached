@@ -48,6 +48,11 @@ tasks:
       - task: build:release
       - task: test
 
+  hooks:install:
+    desc: コミット時のチェック (.githooks) を有効にする (clone 後に 1 回)
+    cmds:
+      - git config core.hooksPath .githooks
+
   fix-all:
     desc: _fix-all.ps1 を実行 (例 task fix-all -- -Fast)
     dir: '{{.SRC}}'

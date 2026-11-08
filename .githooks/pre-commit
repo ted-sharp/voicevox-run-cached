@@ -1,0 +1,60 @@
+#!/bin/sh
+# コミット前のチェック (ビルド・整形)。有効にするには `task hooks:install` (core.hooksPath = .githooks)。
+# テストは時間がかかるので走らせない。コミット前に `task check` を実行すること。
+#
+# 速さのために:
+# - ビルドに関係するファイルがステージされていなければ何もしない (ドキュメントだけのコミット)
+# - 整形はステージした .cs だけを --folder モードで見る (ソリューションを読み込まないので速い)。
+#   空白・改行は見るが using の並び順は見ない (task check の task format が直す)
+# - ビルドと整形を並行して走らせる
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+SRC=src_dotnet
+SLN=$SRC/VoicevoxRunCached.slnx
+
+if ! git diff --cached --name-only --diff-filter=ACMR \
+    | grep -qE '\.(cs|csproj|props|slnx)$|(^|/)\.editorconfig$'; then
+    exit 0
+fi
+
+if ! command -v dotnet >/dev/null 2>&1; then
+    echo "pre-commit: dotnet が見つかりません。.NET SDK をインストールしてください。" >&2
+    exit 1
+fi
+
+# --include は --folder に渡したディレクトリからの相対パス
+CS_FILES=$(git diff --cached --name-only --diff-filter=ACMR -- "$SRC/*.cs" | sed "s|^$SRC/||")
+
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+FORMAT_PID=
+if [ -n "$CS_FILES" ]; then
+    # shellcheck disable=SC2086 # ファイル名に空白を含まない前提で分割する
+    dotnet format whitespace "$SRC" --folder --verify-no-changes --include $CS_FILES >"$TMP_DIR/format.log" 2>&1 &
+    FORMAT_PID=$!
+fi
+
+dotnet build "$SLN" --verbosity quiet >"$TMP_DIR/build.log" 2>&1
+BUILD_RC=$?
+
+FORMAT_RC=0
+if [ -n "$FORMAT_PID" ]; then
+    wait "$FORMAT_PID"
+    FORMAT_RC=$?
+fi
+
+if [ "$BUILD_RC" -ne 0 ]; then
+    cat "$TMP_DIR/build.log" >&2
+    echo "pre-commit: ビルドに失敗しました。直してからコミットしてください。" >&2
+fi
+if [ "$FORMAT_RC" -ne 0 ]; then
+    cat "$TMP_DIR/format.log" >&2
+    echo "pre-commit: 整形されていないコードがあります。'task format' を実行し、git add してからコミットし直してください。" >&2
+fi
+if [ "$BUILD_RC" -ne 0 ] || [ "$FORMAT_RC" -ne 0 ]; then
+    exit 1
+fi
+
+echo "pre-commit: OK"
