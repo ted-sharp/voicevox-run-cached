@@ -27,15 +27,25 @@ internal sealed class FakeEngineServer : IDisposable
     private readonly HttpListener _listener = new();
     private readonly Func<string, bool> _audioQueryFails;
     private readonly HttpStatusCode _audioQueryFailureStatus;
+    private readonly TimeSpan _initializeSpeakerDelay;
+    private readonly TimeSpan _audioQueryDelay;
     private readonly Task _serveTask;
     private int _audioQueryRequestCount;
 
     /// <param name="audioQueryFails">true を返したテキストだけ /audio_query を失敗させる</param>
     /// <param name="audioQueryFailureStatus">失敗させるときのステータス。既定の 400 はリトライ対象外</param>
-    public FakeEngineServer(Func<string, bool>? audioQueryFails = null, HttpStatusCode audioQueryFailureStatus = HttpStatusCode.BadRequest)
+    /// <param name="initializeSpeakerDelay">/initialize_speaker の応答を遅らせる時間 (モデルの読み込み)</param>
+    /// <param name="audioQueryDelay">/audio_query の応答を遅らせる時間 (応答しないエンジン)</param>
+    public FakeEngineServer(
+        Func<string, bool>? audioQueryFails = null,
+        HttpStatusCode audioQueryFailureStatus = HttpStatusCode.BadRequest,
+        TimeSpan initializeSpeakerDelay = default,
+        TimeSpan audioQueryDelay = default)
     {
         _audioQueryFails = audioQueryFails ?? (_ => false);
         _audioQueryFailureStatus = audioQueryFailureStatus;
+        _initializeSpeakerDelay = initializeSpeakerDelay;
+        _audioQueryDelay = audioQueryDelay;
         BaseUrl = $"http://127.0.0.1:{GetFreePort()}";
         _listener.Prefixes.Add(BaseUrl + "/");
         _listener.Start();
@@ -60,10 +70,13 @@ internal sealed class FakeEngineServer : IDisposable
     /// <summary>
     /// このサーバーに向けた API クライアント (リトライ待ちは 1ms)。
     /// </summary>
-    public VoiceVoxApiClient CreateApiClient() => new(
-        CreateSettings(),
-        new RetryPolicyService(NullLogger.Instance, baseDelayMs: 1, maxDelayMs: 1),
-        NullLogger.Instance);
+    /// <param name="connectionTimeoutSeconds">VoiceVox.ConnectionTimeout</param>
+    public VoiceVoxApiClient CreateApiClient(int connectionTimeoutSeconds = 30)
+    {
+        var settings = CreateSettings();
+        settings.ConnectionTimeout = connectionTimeoutSeconds;
+        return new(settings, new RetryPolicyService(NullLogger.Instance, baseDelayMs: 1, maxDelayMs: 1), NullLogger.Instance);
+    }
 
     public void Dispose()
     {
@@ -86,11 +99,28 @@ internal sealed class FakeEngineServer : IDisposable
             }
 
             await context.Request.InputStream.CopyToAsync(Stream.Null);
+            var delay = context.Request.Url!.AbsolutePath switch
+            {
+                "/initialize_speaker" => _initializeSpeakerDelay,
+                "/audio_query" => _audioQueryDelay,
+                _ => TimeSpan.Zero,
+            };
+            if (delay > TimeSpan.Zero)
+            {
+                await Task.Delay(delay);
+            }
             var (status, body) = Respond(context.Request);
-            context.Response.StatusCode = (int)status;
-            context.Response.ContentLength64 = body.Length;
-            await context.Response.OutputStream.WriteAsync(body);
-            context.Response.Close();
+            try
+            {
+                context.Response.StatusCode = (int)status;
+                context.Response.ContentLength64 = body.Length;
+                await context.Response.OutputStream.WriteAsync(body);
+                context.Response.Close();
+            }
+            catch (Exception ex) when (ex is HttpListenerException or ObjectDisposedException)
+            {
+                // 応答を遅らせている間にクライアントがタイムアウトで切断した (または Dispose された)
+            }
         }
     }
 

@@ -136,7 +136,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "EngineArguments": "--host 127.0.0.1 --port 50021",
     "DefaultSpeaker": 1,
     "EnginePath": "",             // 空なら一般的なインストール場所から自動検出
-    "ConnectionTimeout": 30,      // 秒。HTTP リクエスト 1 回の上限 (タイムアウトはリトライしない)
+    "ConnectionTimeout": 30,      // 秒。HTTP リクエスト 1 回の上限 (タイムアウトはリトライしない)。話者の初期化 (モデルの読み込み) は完了まで待つ
     "AutoStartEngine": true,
     "StartupTimeoutSeconds": 30,
     "KeepEngineRunning": true     // false ならアプリ終了時にエンジンも停止
