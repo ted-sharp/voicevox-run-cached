@@ -175,7 +175,7 @@ DI は Jab (Source Generator)。`Services/AppServiceProvider.cs` の `[Singleton
 
 ## Pre-Commit Hooks
 
-`.githooks/pre-commit` で `git commit` 時にソリューション全体 (テストプロジェクト含む) の build と `dotnet format --verify-no-changes` が走る。clone 後に `task hooks:install` (`core.hooksPath = .githooks`) で有効にする。整形差分で止まったら `task format` → `git add` してコミットし直す。テストは走らないので、コミット前に `task check` を実行する。`--no-verify` で飛ばさない。
+`.githooks/pre-commit` で `git commit` 時にソリューション全体 (テストプロジェクト含む) の build と、ステージした `.cs` の整形確認 (`dotnet format whitespace --folder --verify-no-changes`) が並行して走る。ビルドに関係するファイル (`.cs` / `.csproj` / `.props` / `.slnx` / `.editorconfig`) をステージしていなければ何もしない。clone 後に `task hooks:install` (`core.hooksPath = .githooks`) で有効にする。整形差分で止まったら `task format` → `git add` してコミットし直す。フックは速さのため using の並び順を見ないので、テストと合わせてコミット前に `task check` (最初の `task format` が直す) を実行する。`--no-verify` で飛ばさない。
 
 ## Command Interface
 
