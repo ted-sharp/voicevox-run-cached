@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Models;
+using VoicevoxRunCached.Services.Audio;
 using VoicevoxRunCached.Services.Cache;
 using VoicevoxRunCached.Services.Infrastructure;
 using VoicevoxRunCached.Services.Synthesis;
@@ -76,18 +77,95 @@ public class SegmentProducerTests
         await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 4, SuccessCount: 2, FailureCount: 2));
     }
 
+    [Test]
+    public async Task AllCached_DoesNotPrepareSynthesis()
+    {
+        // 全部キャッシュから読めればエンジンの準備 (起動確認・話者の初期化) をしない
+        using var engine = new FakeEngineServer();
+        var prepareCount = 0;
+
+        var (result, written) = await ProduceAsync(
+            engine,
+            [Cached("A"), Cached("B")],
+            prepareSynthesis: _ => { prepareCount++; return Task.CompletedTask; });
+
+        await Assert.That(prepareCount).IsEqualTo(0);
+        await Assert.That(String.Join("|", written)).IsEqualTo("A:True|B:True");
+        await Assert.That(result).IsEqualTo(new SynthesisResult(0, 0, 0));
+    }
+
+    [Test]
+    public async Task Synthesis_PreparesOnceBeforeFirstSynthesis()
+    {
+        using var engine = new FakeEngineServer();
+        var prepareCount = 0;
+        var queriesAtPrepare = -1;
+
+        var (result, _) = await ProduceAsync(
+            engine,
+            [Cached("A"), new TextSegment("B"), new TextSegment("C")],
+            prepareSynthesis: _ =>
+            {
+                prepareCount++;
+                queriesAtPrepare = engine.AudioQueryRequestCount;
+                return Task.CompletedTask;
+            });
+
+        await Assert.That(prepareCount).IsEqualTo(1);
+        await Assert.That(queriesAtPrepare).IsEqualTo(0);
+        await Assert.That(result).IsEqualTo(new SynthesisResult(2, 2, 0));
+    }
+
+    [Test]
+    public async Task PrepareFailure_IsThrown()
+    {
+        // エンジンが無い・話者が無い等の準備の失敗は文ごとの失敗にせず、そのまま投げる (終了コード 3 / 1)
+        using var engine = new FakeEngineServer();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => ProduceAsync(
+            engine,
+            [new TextSegment("A")],
+            prepareSynthesis: _ => throw new InvalidOperationException("engine")));
+    }
+
+    [Test]
+    public async Task UnreadableCache_IsResynthesized()
+    {
+        // 読めないキャッシュは削除され、合成し直して流す
+        using var engine = new FakeEngineServer();
+
+        var (result, written) = await ProduceAsync(engine, [new TextSegment("A") { IsCached = true, AudioData = [1, 2, 3, 4] }]);
+
+        await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(1);
+        await Assert.That(String.Join("|", written)).IsEqualTo("A:True");
+        await Assert.That(result).IsEqualTo(new SynthesisResult(1, 1, 0));
+    }
+
+    [Test]
+    public async Task UnreadableCache_WithoutSynthesis_CountsAsFailure()
+    {
+        // --cache-only (prepareSynthesis = null) では合成せず、失敗として数える
+        using var engine = new FakeEngineServer();
+
+        var (result, written) = await ProduceAsync(
+            engine,
+            [Cached("A"), new TextSegment("B") { IsCached = true, AudioData = [1, 2, 3, 4] }],
+            allowSynthesis: false);
+
+        await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(0);
+        await Assert.That(String.Join("|", written)).IsEqualTo("A:True");
+        await Assert.That(result).IsEqualTo(new SynthesisResult(1, 0, 1));
+    }
+
+    private static TextSegment Cached(string text)
+        => new(text) { IsCached = true, AudioData = OpusCodec.EncodeWav(TestAudio.SineWav(24000, 100)) };
+
     /// <summary>
     /// 未キャッシュ A → キャッシュ済み B → 未キャッシュ C を流し、結果と channel に書かれたテキストを返す。
     /// </summary>
     private static async Task<(SynthesisResult Result, List<string> Written)> ProduceAsync(FakeEngineServer engine)
     {
-        var (result, written) = await ProduceAsync(
-            engine,
-            [
-                new TextSegment("A"),
-                new TextSegment("B") { IsCached = true, AudioData = TestAudio.SineWav(24000, 100) },
-                new TextSegment("C"),
-            ]);
+        var (result, written) = await ProduceAsync(engine, [new TextSegment("A"), Cached("B"), new TextSegment("C")]);
         return (result, written.Select(w => w.Split(':')[0]).ToList());
     }
 
@@ -95,8 +173,14 @@ public class SegmentProducerTests
     /// segments を流し、結果と channel に書かれた "テキスト:音声の有無" を返す。
     /// inspectCacheDirectory はキャッシュディレクトリを消す前に呼ぶ (保存は ProduceAsync の終了までに完了している)。
     /// </summary>
+    /// <param name="prepareSynthesis">合成の準備。省略時は何もしない</param>
+    /// <param name="allowSynthesis">false なら合成しない (<c>--cache-only</c>)</param>
     private static async Task<(SynthesisResult Result, List<string> Written)> ProduceAsync(
-        FakeEngineServer engine, List<TextSegment> segments, Action<string>? inspectCacheDirectory = null)
+        FakeEngineServer engine,
+        List<TextSegment> segments,
+        Action<string>? inspectCacheDirectory = null,
+        Func<CancellationToken, Task>? prepareSynthesis = null,
+        bool allowSynthesis = true)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_producer_" + Guid.NewGuid().ToString("N"));
         try
@@ -108,7 +192,12 @@ public class SegmentProducerTests
             var channel = Channel.CreateUnbounded<TextSegment>();
 
             var result = await producer.ProduceAsync(
-                segments, channel.Writer, new VoiceRequest(speakerId: FakeEngineServer.SpeakerId), saveToCache: true, CancellationToken.None);
+                segments,
+                channel.Writer,
+                new VoiceRequest(speakerId: FakeEngineServer.SpeakerId),
+                saveToCache: true,
+                allowSynthesis ? prepareSynthesis ?? (_ => Task.CompletedTask) : null,
+                CancellationToken.None);
 
             var written = new List<string>();
             await foreach (var segment in channel.Reader.ReadAllAsync())

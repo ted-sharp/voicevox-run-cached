@@ -3,6 +3,7 @@ using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services;
+using VoicevoxRunCached.Services.Audio;
 using VoicevoxRunCached.Services.Cache;
 
 namespace VoicevoxRunCached.Tests;
@@ -75,6 +76,24 @@ public class TextToSpeechProcessorTests
     }
 
     [Test]
+    public async Task CorruptedCache_IsResynthesizedAndRewritten()
+    {
+        // 壊れた .opus は読み込み時にミスになり、その場で合成し直して保存し直す (今回の読み上げも成功する)
+        using var engine = new FakeEngineServer();
+        byte[] garbage = [.. Enumerable.Range(0, 4096).Select(i => (byte)(i * 31 % 251))];
+
+        var run = await RunAsync(
+            new VoiceVoxSettings { BaseUrl = engine.BaseUrl, AutoStartEngine = false, DefaultSpeaker = 1 },
+            [CachedText, "--no-play"],
+            prepareCache: path => File.WriteAllBytesAsync(path, garbage));
+
+        await Assert.That(run.ExitCode).IsEqualTo(0);
+        await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(1);
+        await Assert.That(run.CacheBefore.SequenceEqual(garbage)).IsTrue();
+        await Assert.That(AudioFormatDetector.DetectFormat(run.CacheAfter)).IsEqualTo(AudioFormat.Opus);
+    }
+
+    [Test]
     public async Task EngineStartedByUs_IsStoppedBeforeReleasingLock()
     {
         // 回帰: KeepEngineRunning=false で自分が起動したエンジンを、プロセス間ロックを解放した後 (サービスの Dispose) に止めていた。
@@ -111,9 +130,10 @@ public class TextToSpeechProcessorTests
     /// <param name="voiceVox">エンジンの設定</param>
     /// <param name="args">コマンドライン引数</param>
     /// <param name="afterCommand">コマンドから戻った後、サービスを破棄する前に呼ぶ</param>
+    /// <param name="prepareCache">キャッシュを保存した後、コマンドの前に呼ぶ (引数は <see cref="CachedText"/> の .opus のパス)</param>
     /// <returns>終了コードと、実行前後の <see cref="CachedText"/> のキャッシュファイルの中身</returns>
     private static async Task<(int ExitCode, byte[] CacheBefore, byte[] CacheAfter)> RunAsync(
-        VoiceVoxSettings voiceVox, string[] args, Func<Task>? afterCommand = null)
+        VoiceVoxSettings voiceVox, string[] args, Func<Task>? afterCommand = null, Func<string, Task>? prepareCache = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_tts_" + Guid.NewGuid().ToString("N"));
         var cacheDir = Path.Combine(dir, "audio");
@@ -134,6 +154,10 @@ public class TextToSpeechProcessorTests
             await provider.GetService<AudioCacheManager>()
                 .SaveAudioCacheAsync(cachedRequest, TestAudio.SineWav(24000, 300));
             var cachePath = Path.Combine(cacheDir, CacheKeyGenerator.Compute(cachedRequest) + DiskCacheStore.AudioExtension);
+            if (prepareCache != null)
+            {
+                await prepareCache(cachePath);
+            }
             var before = await File.ReadAllBytesAsync(cachePath);
 
             var exitCode = await provider.GetService<CommandRouter>().ExecuteCommandAsync(args);

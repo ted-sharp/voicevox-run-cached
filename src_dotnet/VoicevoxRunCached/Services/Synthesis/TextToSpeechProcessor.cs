@@ -7,7 +7,7 @@ namespace VoicevoxRunCached.Services.Synthesis;
 
 /// <summary>
 /// テキスト読み上げのメイン処理フロー制御。
-/// エンジン確認 → セグメント分割 → キャッシュ参照 → 不足分の合成と再生を <see cref="Channel{T}"/> 経由で並走 → ファイル出力 までを担う。
+/// セグメント分割 → キャッシュ参照 → デコード・不足分の合成と再生を <see cref="Channel{T}"/> 経由で並走 → ファイル出力 までを担う。
 /// </summary>
 /// <remarks>
 /// 合成の詳細は <see cref="SegmentProducer"/>、再生は <see cref="AudioPlayer"/> に委譲する。本クラスは orchestration に専念する。
@@ -71,8 +71,7 @@ public class TextToSpeechProcessor
             _audioPlayer.BeginDevicePreparation();
         }
 
-        // エンジンの確認・起動はここではしない。全セグメントがキャッシュ済み (--cache-only を含む) なら
-        // エンジンは不要なので、合成が必要なときだけ SynthesizeAndPlayAsync で行う。
+        // エンジンの確認・起動はここではしない。合成が必要になったときだけ SegmentProducer が行う。
         // --refresh はキャッシュを読まずに全部合成し直し、保存時に上書きする (--no-cache は読みも書きもしない)
         var segments = await LoadSegmentsAsync(request, skipLookup: options.NoCache || options.Refresh, cancellationToken);
         if (segments.Count == 0)
@@ -167,18 +166,12 @@ public class TextToSpeechProcessor
         TextToSpeechOptions options,
         CancellationToken cancellationToken)
     {
-        var anyMissing = segments.Any(s => !s.IsCached);
-        if (anyMissing)
-        {
-            // 合成が必要なときだけエンジンを確認する (停止中で AutoStartEngine なら起動を待つ)。
-            // 全部キャッシュ済みならエンジンに一切接続しない (起動待ちで通知が遅れない・エンジン停止中でも鳴る)
-            await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
-
-            // 存在しない speaker だとエンジンは /initialize_speaker で 500 を返し、リトライの分だけ待たされたうえ原因の分からないエンジンエラーになる。
-            // /speakers の照会はローカルで数 ms なので、合成が必要なときだけ先に確認して入力ミス (InvalidArguments) として即エラーにする。
-            EnsureSpeakerExists(await _apiClient.GetSpeakersAsync(cancellationToken), request.SpeakerId);
-            await _apiClient.InitializeSpeakerAsync(request.SpeakerId, cancellationToken);
-        }
+        // エンジンの準備は producer が最初に合成が必要になったときに 1 回だけ呼ぶ。全部キャッシュから読めればエンジンに一切接続しない
+        // (起動待ちで通知が遅れない・エンジン停止中でも鳴る)。先頭がキャッシュ済みなら、エンジンの起動を待つ間にそこから鳴り始める。
+        // --cache-only は合成しない (読めないキャッシュは失敗として数える)
+        Func<CancellationToken, Task>? prepareSynthesis = options.CacheOnly
+            ? null
+            : ct => PrepareSynthesisAsync(request.SpeakerId, ct);
 
         var channel = Channel.CreateUnbounded<TextSegment>(new UnboundedChannelOptions
         {
@@ -189,13 +182,27 @@ public class TextToSpeechProcessor
         // 一方が落ちたらもう一方も止めるための Linked CTS
         using var sharedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
 
-        var producerTask = _producer.ProduceAsync(segments, channel.Writer, request, saveToCache: !options.NoCache, sharedCts.Token);
+        var producerTask = _producer.ProduceAsync(
+            segments, channel.Writer, request, saveToCache: !options.NoCache, prepareSynthesis, sharedCts.Token);
         var playbackTask = options.NoPlay
             ? Task.CompletedTask
             : RunPlaybackAsync(channel.Reader, request.SpeakerId, options.Verbose, sharedCts.Token);
 
         await WhenAllOrCancelOnFaultAsync(producerTask, playbackTask, sharedCts);
         return await producerTask;
+    }
+
+    /// <summary>
+    /// 合成の前準備: エンジンの起動確認 (停止中で AutoStartEngine なら起動を待つ)・話者の存在確認・話者の初期化。
+    /// </summary>
+    private async Task PrepareSynthesisAsync(int speakerId, CancellationToken cancellationToken)
+    {
+        await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
+
+        // 存在しない speaker だとエンジンは /initialize_speaker で 500 を返し、リトライの分だけ待たされたうえ原因の分からないエンジンエラーになる。
+        // /speakers の照会はローカルで数 ms なので、合成の前に確認して入力ミス (InvalidArguments) として即エラーにする。
+        EnsureSpeakerExists(await _apiClient.GetSpeakersAsync(cancellationToken), speakerId);
+        await _apiClient.InitializeSpeakerAsync(speakerId, cancellationToken);
     }
 
     /// <summary>

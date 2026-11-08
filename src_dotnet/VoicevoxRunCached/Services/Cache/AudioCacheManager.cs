@@ -1,5 +1,7 @@
 ﻿using Microsoft.Extensions.Logging;
+using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Cache;
@@ -31,7 +33,7 @@ public class AudioCacheManager
     }
 
     /// <summary>
-    /// ディスクキャッシュから音声データ (Ogg Opus) を取得する。
+    /// ディスクキャッシュから音声データ (Ogg Opus) を取得する。デコードはしない (<see cref="DecodeOrDelete"/>)。
     /// </summary>
     /// <remarks>
     /// 破損ファイル等の現実的な I/O エラーは <see cref="DiskCacheStore.LoadAsync"/> 内で
@@ -41,6 +43,58 @@ public class AudioCacheManager
     {
         cancellationToken.ThrowIfCancellationRequested();
         return _disk.LoadAsync(CacheKeyGenerator.Compute(request), cancellationToken);
+    }
+
+    /// <summary>
+    /// キャッシュから読んだ音声 (Ogg Opus) を WAV (<see cref="AudioConstants.OpusDecodeSampleRate"/> mono 16bit) にデコードする。
+    /// 読めなければ (Ogg でない・デコードで例外・サンプルが 0 個) そのキャッシュを削除して null を返す。
+    /// </summary>
+    /// <param name="request">キャッシュキーの元 (話者・パラメータ込み)</param>
+    /// <param name="cachedAudio"><see cref="GetCachedAudioAsync"/> が返した音声</param>
+    /// <remarks>
+    /// 呼び出し元 (<see cref="SegmentProducer"/>) は null なら合成し直して保存し直すので、壊れたキャッシュがあってもその場で直る。
+    /// 再生時まで読めないことに気づかないと、その文を含む読み上げが <c>--refresh</c> / <c>--clear</c> するまで毎回失敗するため。
+    /// 途中で切れたファイル (前半だけ正しく読めるもの) は、デコードできた分だけ鳴るので検出しない。
+    /// デコードは 1 文あたり 100ms 程度かかる (Concentus) ので、再生と並行して呼ぶこと
+    /// (読み込み時にまとめて行うと、全文キャッシュ済みでも鳴り始めがその分遅れる)。
+    /// </remarks>
+    public byte[]? DecodeOrDelete(VoiceRequest request, byte[] cachedAudio)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        ArgumentNullException.ThrowIfNull(cachedAudio);
+
+        byte[]? wavData = null;
+        Exception? decodeError = null;
+        try
+        {
+            wavData = DecodeIfPlayable(cachedAudio);
+        }
+        catch (Exception ex)
+        {
+            decodeError = ex;
+        }
+        if (wavData != null)
+        {
+            return wavData;
+        }
+
+        var cacheKey = CacheKeyGenerator.Compute(request);
+        _logger.LogWarning(decodeError, "キャッシュの音声を読めないため削除します: {CacheKey} ({Text})", cacheKey, request.Text);
+        _disk.Delete(cacheKey);
+        return null;
+    }
+
+    /// <returns>デコードした WAV。Ogg でない・サンプルが 0 個なら null</returns>
+    private static byte[]? DecodeIfPlayable(byte[] opusData)
+    {
+        if (AudioFormatDetector.DetectFormat(opusData) != AudioFormat.Opus)
+        {
+            return null;
+        }
+
+        var wavData = OpusCodec.DecodeToWav(opusData);
+        using var reader = new WaveFileReader(new MemoryStream(wavData));
+        return reader.Length > 0 ? wavData : null;
     }
 
     /// <summary>
