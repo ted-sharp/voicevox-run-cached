@@ -54,7 +54,7 @@ public class AudioPlayer : IDisposable
     /// 以内に届かない場合はフィラー音声で隙間を埋める。
     /// </summary>
     /// <param name="reader">再生するセグメントの channel</param>
-    /// <param name="getFillerAudio">フィラー音声 (Ogg Opus) を返す。無効・未生成なら null を返す。null ならフィラーを挟まない</param>
+    /// <param name="getFillerAudio">フィラー音声 (Ogg Opus か WAV。<see cref="AudioFormatDetector.CreateWaveStream"/> で読む) を返す。無効・未生成なら null を返す。null ならフィラーを挟まない</param>
     /// <param name="cancellationToken">キャンセル</param>
     /// <remarks>
     /// 呼び出し元 (producer) が <see cref="ChannelWriter{T}.Complete"/> するまでループする。
