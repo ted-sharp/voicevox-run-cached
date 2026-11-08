@@ -28,6 +28,7 @@
   - `--log-level` / `--log-format` が反映されていなかった
   - エンジンを自動起動すると、Hooks がタイムアウトまで待たされていた
   - AivisSpeech の自動検出でエンジンではなくエディタを起動していた
+  - VOICEVOX 0.26 でエンジンではなくエディタを起動していた (新しいエンジンの場所 `%APPDATA%\voicevox\vvpp-engines` を探す)
   - 存在しない speaker ID で十数秒待たされていた (合成前に即エラー)
   - 壊れたキャッシュがあると毎回失敗していた (削除して合成し直す)
   - speaker 0 のキャッシュが毎回作り直されていた
@@ -41,6 +42,7 @@
 - 開発環境:
   - DI を DryIoc から Jab に移行、`Taskfile.yml` を追加、バージョンを `Directory.Build.props` に一元化
   - 依存を更新 (NAudio 3.3.0 ほか)
+  - `task install` / `task uninstall` を追加 (ビルドして `%LOCALAPPDATA%\Programs\VoicevoxRunCached` に入れる。設定とキャッシュは残す)
 
 ## v2.0.0 - 2026-01-17
 
