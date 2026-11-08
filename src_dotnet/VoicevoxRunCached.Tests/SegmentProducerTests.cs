@@ -64,6 +64,21 @@ public class SegmentProducerTests
     }
 
     [Test]
+    public async Task DuplicateText_FailedOnce_IsNotSynthesizedAgain()
+    {
+        // 回帰: 1 回目の合成が失敗した文を、出てくるたびに (500 ならリトライ込みで) 呼び直し、その間ロックを持ち続けていた
+        using var engine = new FakeEngineServer(audioQueryFails: text => text == "A", audioQueryFailureStatus: HttpStatusCode.BadRequest);
+
+        var (result, written) = await ProduceAsync(
+            engine,
+            [new TextSegment("A"), new TextSegment("B"), new TextSegment("A")]);
+
+        await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(2);
+        await Assert.That(String.Join("|", written)).IsEqualTo("A:False|B:True");
+        await Assert.That(result).IsEqualTo(new SynthesisResult(3, 1, 2));
+    }
+
+    [Test]
     public async Task EngineUnavailable_StillPlaysTextAlreadySynthesized()
     {
         // エンジンが止まった後でも、この実行で合成済みの文は使い回して再生する
