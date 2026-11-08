@@ -30,6 +30,8 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 
 テストは .NET 10 + Microsoft.Testing.Platform のため `dotnet test` では動かない (`task test` を使う)。
 
+リリース手順 (確認 → リリースノート確定 → 注釈付きタグ → `task publish:zip` → GitHub Release) は `doc/RELEASE.md`。
+
 ## Request Flow
 
 1. `Program.cs` → `ApplicationBootstrap` (設定の読み込み・検証、Serilog) → `CommandRouter.ExecuteCommandAsync` の switch → 各ハンドラ
