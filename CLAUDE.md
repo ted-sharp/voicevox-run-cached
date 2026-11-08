@@ -52,7 +52,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - 起動時の設定検証 (`DirectoryValidation.BeWritableDirectory`) はロックより前に走るので、書き込み確認のファイル名は毎回一意にし (固定名だと同時起動で共有違反)、`FileOptions.DeleteOnClose` で OS に消させる
 
 ### エンジン (`VoiceVoxEngineManager`)
-- 起動済みのプロセスを確認してから起動する。VOICEVOX / AIVIS Speech 両対応。`EnginePath` が空なら一般的なインストール場所から探す。エンジン (`vv-engine\run.exe` / `AivisSpeech-Engine\run.exe`) を先に、エディタ (`{製品名}.exe`) は最後の候補にする (エディタを起動しても自前のエンジンでヘルスチェックが通り、気づけない) — `VoiceVoxEngineManagerTests.EngineRelativePaths_FindEngineBeforeEditor`
+- 起動済みのプロセスを確認してから起動する。VOICEVOX / AIVIS Speech 両対応。`EnginePath` が空なら一般的なインストール場所から探す。VOICEVOX 0.26 以降のインストーラー版はエンジンが `%APPDATA%\voicevox\vvpp-engines\{名前}+{既定エンジンの UUID}\run.exe` (VVPP) にあり `vv-engine` が無いので、これを最初に探す (`FindVoicevoxVvppEngine`。フォルダ名の前半は変わりうるので UUID で探す) — `VoiceVoxEngineManagerTests.VvppEngine_*`。エンジン (`vv-engine\run.exe` / `AivisSpeech-Engine\run.exe`) を先に、エディタ (`{製品名}.exe`) は最後の候補にする (エディタを起動しても自前のエンジンでヘルスチェックが通り、気づけない) — `VoiceVoxEngineManagerTests.EngineRelativePaths_FindEngineBeforeEditor`
 - 外部で起動済みだったエンジンには触れない。`KeepEngineRunning: true` なら常駐させる
 - `UseShellExecute = true` + `WindowStyle = Hidden` で起動する (`false` だと Hooks の stdout / stderr のパイプを常駐エンジンが引き継ぎ、Hooks がタイムアウトまで待たされる) — `VoiceVoxEngineManagerTests.StartEngine_DoesNotInheritHandles`
 - 読み上げでエンジンに接続するのは**合成が必要になったときだけ**。準備 (起動確認・`EnsureSpeakerExists`・`/initialize_speaker`) は `TextToSpeechProcessor.PrepareSynthesisAsync` で、`SegmentProducer` が最初に合成するときに 1 回だけ呼ぶ。全部キャッシュから読めれば (`--cache-only` を含む) エンジン停止中でも鳴り、起動待ちで通知が遅れない。先頭がキャッシュ済みなら起動を待つ間にそこから鳴る (その間フィラーも鳴りうる) — `TextToSpeechProcessorTests` / `SegmentProducerTests`

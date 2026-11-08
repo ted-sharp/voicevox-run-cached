@@ -44,6 +44,21 @@ if %ERRORLEVEL% EQU 0 (
     exit /b 0
 )
 
+rem Version 0.26+ (installer) keeps the engine as a VVPP under %APPDATA%.
+rem The folder name ends with the default engine UUID.
+for /d %%d in ("%APPDATA%\voicevox\vvpp-engines\*+074fc39e-678b-4c13-8916-ffca8d505d1d") do (
+    if exist "%%~d\run.exe" (
+        echo Found VOICEVOX run.exe at: %%~d\run.exe
+        echo Starting VOICEVOX Engine...
+        start "VOICEVOX Engine" "%%~d\run.exe" --host 127.0.0.1 --port 50021
+        echo VOICEVOX Engine started!
+        echo Waiting for engine to initialize...
+        timeout /t 3 /nobreak >nul
+        pause
+        exit /b 0
+    )
+)
+
 rem Search in installation directories
 for %%p in ("%SEARCH_PATHS:;=" "%") do (
     if exist "%%~p\run.exe" (
@@ -79,6 +94,7 @@ echo.
 echo Error: VOICEVOX run.exe not found!
 echo.
 echo VOICEVOX is typically installed at:
+echo   Version 0.26+: %APPDATA%\voicevox\vvpp-engines\VOICEVOX_Engine+...\run.exe
 echo   Version 0.16+: %USERPROFILE%\AppData\Local\Programs\VOICEVOX\vv-engine\run.exe
 echo   Version 0.15-: %USERPROFILE%\AppData\Local\Programs\VOICEVOX\run.exe
 echo.
@@ -86,6 +102,7 @@ echo Please make sure VOICEVOX is installed:
 echo 1. Download VOICEVOX from: https://voicevox.hiroshiba.jp/
 echo 2. Install it using the official installer
 echo 3. The engine (run.exe) should be located in:
+echo    %APPDATA%\voicevox\vvpp-engines\VOICEVOX_Engine+...\ (v0.26+, after the editor's first launch)
 echo    %USERPROFILE%\AppData\Local\Programs\VOICEVOX\vv-engine\ (v0.16+)
 echo    %USERPROFILE%\AppData\Local\Programs\VOICEVOX\ (v0.15-)
 echo.
@@ -93,4 +110,4 @@ echo If you have a custom installation, make sure run.exe is accessible
 echo via PATH environment variable or in one of the searched locations.
 echo.
 pause
-exit /b 1
+exit /b 1
