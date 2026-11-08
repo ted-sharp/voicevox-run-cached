@@ -303,7 +303,7 @@ task run -- "テストメッセージ"
 task hooks:install                # コミット時のチェック (ビルド・整形) を有効にする (clone 後に 1 回)
 ```
 
-バージョンは `src_dotnet/Directory.Build.props` の `<Version>` で一元管理している。
+バージョンは `src_dotnet/Directory.Build.props` の `<Version>` で一元管理している。リリース手順は [`doc/RELEASE.md`](./doc/RELEASE.md)。
 
 設計方針・アーキテクチャ詳細は [`CLAUDE.md`](./CLAUDE.md) を参照。
 
