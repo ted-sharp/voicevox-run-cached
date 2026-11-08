@@ -226,13 +226,36 @@ public class ArgumentParserTests
 
     [Test]
     [Arguments("-sample")]
-    [Arguments("--hello")]
     [Arguments("-s3")]
     public async Task Parse_TextStartingWithHyphen_IsKeptVerbatim(string text)
     {
         var (request, _) = ArgumentParser.Parse([text, "-s", "3"], DefaultSettings());
 
         await Assert.That(request!.Text).IsEqualTo(text);
+        await Assert.That(request.SpeakerId).IsEqualTo(3);
+    }
+
+    [Test]
+    [Arguments("--refresh")]
+    [Arguments("--no-play")]
+    [Arguments("--speeed")]
+    [Arguments("--log-level debug こんにちは")]
+    [Arguments("--speaker 3 こんにちは")]
+    public async Task Parse_OptionInPlaceOfText_ThrowsInvalidArguments(string commandLine)
+    {
+        // 本文を忘れたフラグや打ち間違いを本文として読み上げ・キャッシュしない
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(commandLine.Split(' '), DefaultSettings())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
+
+    [Test]
+    public async Task Parse_TextStartingWithDoubleHyphenAfterSeparator_IsReadAsText()
+    {
+        var (request, _) = ArgumentParser.Parse(["--", "--hello", "-s", "3"], DefaultSettings());
+
+        await Assert.That(request!.Text).IsEqualTo("--hello");
         await Assert.That(request.SpeakerId).IsEqualTo(3);
     }
 

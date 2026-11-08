@@ -95,6 +95,10 @@ public static class ArgumentParser
 
         // 本文は前処理しない。"-sample" のような先頭ハイフンの本文が "-s ample" に割られるのを防ぐ
         var text = args[textIndex];
+        if (textIndex == 0 && text.StartsWith(TextSeparator, StringComparison.Ordinal))
+        {
+            throw OptionInsteadOfText(text);
+        }
         var request = CreateDefaultRequest(text, settings);
         var options = ApplyOptions(PreprocessArgs(args[(textIndex + 1)..]), request);
 
@@ -237,6 +241,16 @@ public static class ArgumentParser
             message: $"Unexpected argument: {arg}",
             userMessage: $"余分な引数です: '{arg}'",
             suggestedSolution: "--help で使い方を確認してください (本文に空白を含めるときは全体を引用符で囲みます)。");
+
+    /// <summary>
+    /// 本文の位置にある <c>--xxx</c>。本文を忘れた <c>--refresh</c> や打ち間違いの <c>--speeed</c> を本文として
+    /// 読み上げ・キャッシュして成功してしまうのでエラーにする。<c>--</c> で始まる文は <c>-- &lt;本文&gt;</c> で読む。
+    /// </summary>
+    private static VoicevoxRunCachedException OptionInsteadOfText(string arg) => new(
+        errorCode: ErrorCodes.General.InvalidArguments,
+        message: $"Option in place of text: {arg}",
+        userMessage: $"本文の位置にオプションがあります: '{arg}'",
+        suggestedSolution: $"本文はオプションより前に書いてください。'--' で始まる文を読み上げるときは -- \"{arg}\" のように前に -- を付けます。");
 
     private static readonly TextToSpeechOptions EmptyOptions = new(
         NoCache: false, CacheOnly: false, Verbose: false, OutPath: null, NoPlay: false);
