@@ -6,7 +6,7 @@ using VoicevoxRunCached.Services.Synthesis;
 namespace VoicevoxRunCached.Tests;
 
 /// <summary>
-/// VoiceVoxApiClient.BuildAudioQueryUrl / ApplyVoiceParameters のテスト。
+/// VoiceVoxApiClient.BuildAudioQueryUrl / ApplyVoiceParameters と、エンジンに送るクエリのテスト。
 /// VOICEVOX の /audio_query はクエリの speed_scale 等を無視するため、話速・音高・音量は JSON 側に設定する。
 /// </summary>
 public class VoiceVoxApiClientUrlTests
@@ -97,5 +97,17 @@ public class VoiceVoxApiClientUrlTests
         {
             Thread.CurrentThread.CurrentCulture = original;
         }
+    }
+
+    [Test]
+    public async Task InitializeSpeaker_SkipsReinitialization()
+    {
+        // 回帰: skip_reinit を付けず、読み込み済みの話者でも毎回初期化し直していた (実測で 1 回 1.7 秒ほど)
+        using var engine = new FakeEngineServer();
+        using var apiClient = engine.CreateApiClient();
+
+        await apiClient.InitializeSpeakerAsync(FakeEngineServer.SpeakerId);
+
+        await Assert.That(engine.LastInitializeSpeakerQuery).Contains("skip_reinit=true");
     }
 }

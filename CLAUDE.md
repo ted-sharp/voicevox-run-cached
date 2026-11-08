@@ -169,7 +169,7 @@ DI コンテナは Jab (Source Generator) で、`Services/AppServiceProvider.cs`
 
 - 現状 `SegmentProducer.ProduceAsync` のループで 1 件ずつ処理されているため OK
 - 並列化を試みる場合は VOICEVOX エンジン側の制約を実機で確認してから、クライアント内に lock を入れること
-- speaker 初期化 (`/initialize_speaker`) は `TextToSpeechProcessor.SynthesizeAndPlayAsync` 側からセッション内 1 回だけ呼ぶ
+- speaker 初期化 (`/initialize_speaker`) は `TextToSpeechProcessor.SynthesizeAndPlayAsync` 側からセッション内 1 回だけ呼ぶ。`skip_reinit=true` を付ける (読み込み済みなら即座に返る。付けないと毎回初期化し直して 1.7 秒ほどかかる)
 - リトライ・エラー変換は `VoiceVoxApiClient.ExecuteApiAsync` の単一 catch ブロック (`MapToApiException` ヘルパ) でまとめて適用 (各メソッドは生の HTTP 呼び出しだけ書く)。エラーコードは `MapToErrorCode` が決める: HTTP ステータスがあればステータス別、無ければ (接続拒否・応答の途中切断) `EngineNotAvailable`
 
 ### Logging Conventions

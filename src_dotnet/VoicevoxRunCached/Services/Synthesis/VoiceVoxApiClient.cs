@@ -60,7 +60,8 @@ public class VoiceVoxApiClient : IDisposable
         _logger.LogDebug("スピーカー {SpeakerId} を初期化中...", speakerId);
         return ExecuteApiAsync($"initialize speaker {speakerId}", async ct =>
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"{_settings.BaseUrl}/initialize_speaker?speaker={speakerId}");
+            // skip_reinit=true: 読み込み済みなら即座に返る (付けないと毎回初期化し直し、実測で 1 回 1.7 秒ほどかかっていた)
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{_settings.BaseUrl}/initialize_speaker?speaker={speakerId}&skip_reinit=true");
             // エンジンはモデルの読み込みが終わってから応答する (応答 = 読み込み完了)。かかる時間はマシンとモデル次第なので
             // ConnectionTimeout で打ち切らない (打ち切ると、エンジン起動直後の最初の読み上げが読み込み中にタイムアウトで失敗する)。
             // エンジンが落ちれば接続エラーですぐ失敗する。固まった場合は Ctrl+C か呼び出し元 (Hooks) のタイムアウトで止まる

@@ -57,6 +57,9 @@ internal sealed class FakeEngineServer : IDisposable
     /// <summary>/audio_query を受けた回数 (リトライも 1 回ずつ数える)。</summary>
     public int AudioQueryRequestCount => Volatile.Read(ref _audioQueryRequestCount);
 
+    /// <summary>最後に受けた /initialize_speaker のクエリ文字列 (<c>?</c> から)。</summary>
+    public string? LastInitializeSpeakerQuery { get; private set; }
+
     /// <summary>
     /// このサーバーに向けた設定 (エンジンの自動起動はしない)。
     /// </summary>
@@ -130,6 +133,10 @@ internal sealed class FakeEngineServer : IDisposable
         if (path == "/audio_query")
         {
             Interlocked.Increment(ref _audioQueryRequestCount);
+        }
+        else if (path == "/initialize_speaker")
+        {
+            LastInitializeSpeakerQuery = request.Url.Query;
         }
 
         return path switch
