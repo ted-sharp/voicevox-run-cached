@@ -98,7 +98,9 @@ public class TextToSpeechProcessor
 
         var synthesisResult = await SynthesizeAndPlayAsync(segments, request, options, cancellationToken);
 
-        if (synthesisResult.AttemptedCount > 0 && synthesisResult.SuccessCount == 0)
+        // キャッシュから鳴ったセグメントは SynthesisResult に数えないので、失敗がセグメント数に達したときだけ「全部失敗」にする
+        // (合成した文が全部失敗しても、キャッシュから鳴った文があれば一部失敗)
+        if (synthesisResult.FailureCount == segments.Count)
         {
             throw new VoicevoxRunCachedException(
                 errorCode: ErrorCodes.Audio.AudioGenerationFailed,

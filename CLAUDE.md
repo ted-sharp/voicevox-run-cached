@@ -103,7 +103,7 @@ task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube 
 - speaker の存在確認 (`EnsureSpeakerExists`) は合成の準備でだけ行う (VOICEVOX は存在しない話者で 500 を返し、リトライの分待たされて原因が分からない)。`InvalidArguments` は `CommandRouter` でスタックトレースなしの Warning
 
 ### 終了コード・キャンセル
-- `ErrorCodes.GetExitCode` がエラーコードの prefix から決める: ENGINE=3, CACHE=4, AUDIO=5, API=6, CONFIG=7, LOCK=9, その他=1。一部セグメントの失敗は `PartialFailureExitCode` (8)、全部失敗は `AudioGenerationFailed` (5)。`--init` も同じ。README の「終了コード」表と揃える
+- `ErrorCodes.GetExitCode` がエラーコードの prefix から決める: ENGINE=3, CACHE=4, AUDIO=5, API=6, CONFIG=7, LOCK=9, その他=1。一部セグメントの失敗は `PartialFailureExitCode` (8)、全部失敗は `AudioGenerationFailed` (5)。キャッシュから鳴った文は `SynthesisResult` に数えないので、「全部」は失敗数 = セグメント数で判定する — `TextToSpeechProcessorTests.CorruptedCache_CacheOnly_*`。`--init` も同じ。README の「終了コード」表と揃える
 - **終了コード 2 は使わない** (Hooks では 2 がブロッキングエラーで、Stop フックの失敗が Claude の停止を止める) — `ErrorCodesTests`
 - Ctrl+C は 130 (`CancelledExitCode`)。`CommandRouter` と `Program` の両方で返す。`CancellationManager` は 1 回目だけ握って `CancelAsync` し、2 回目以降は既定の強制終了に任せる
 - `catch (Exception)` の前には `catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }` を置く (握ると別のエラー扱いになったり、キャッシュを破損扱いで消したりする)
