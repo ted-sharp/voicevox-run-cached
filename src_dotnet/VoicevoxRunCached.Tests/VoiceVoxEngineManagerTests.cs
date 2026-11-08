@@ -21,6 +21,43 @@ public class VoiceVoxEngineManagerTests
     }
 
     [Test]
+    public async Task VvppEngine_IsFoundByDefaultEngineUuid()
+    {
+        // 回帰: VOICEVOX 0.26 でエンジンが %APPDATA%\voicevox\vvpp-engines に移り、vv-engine が無いのでエディタを起動していた
+        var appData = Directory.CreateTempSubdirectory("vvpp-test-").FullName;
+        try
+        {
+            var vvppEngines = Path.Combine(appData, "voicevox", "vvpp-engines");
+            var otherEngine = Directory.CreateDirectory(Path.Combine(vvppEngines, "Other_Engine+00000000-0000-0000-0000-000000000000"));
+            await File.WriteAllTextAsync(Path.Combine(otherEngine.FullName, "run.exe"), "");
+            var defaultEngine = Directory.CreateDirectory(
+                Path.Combine(vvppEngines, $"VOICEVOX_Engine+{VoiceVoxEngineManager.VoicevoxDefaultEngineUuid}"));
+            var runExe = Path.Combine(defaultEngine.FullName, "run.exe");
+            await File.WriteAllTextAsync(runExe, "");
+
+            await Assert.That(VoiceVoxEngineManager.FindVoicevoxVvppEngine(appData)).IsEqualTo(runExe);
+        }
+        finally
+        {
+            Directory.Delete(appData, recursive: true);
+        }
+    }
+
+    [Test]
+    public async Task VvppEngine_NotInstalled_ReturnsNull()
+    {
+        var appData = Directory.CreateTempSubdirectory("vvpp-test-").FullName;
+        try
+        {
+            await Assert.That(VoiceVoxEngineManager.FindVoicevoxVvppEngine(appData)).IsNull();
+        }
+        finally
+        {
+            Directory.Delete(appData, recursive: true);
+        }
+    }
+
+    [Test]
     public async Task EnsureRunningOrThrow_CancelledDuringStartup_ThrowsOperationCanceled()
     {
         // エンジン起動待ち中の Ctrl+C が「エンジンが利用できません」(終了コード 3) になっていた回帰の検知。

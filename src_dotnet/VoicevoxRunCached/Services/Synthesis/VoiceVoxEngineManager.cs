@@ -206,6 +206,15 @@ public class VoiceVoxEngineManager : IDisposable
         var productName = _settings.EngineType == EngineType.AivisSpeech ? "AivisSpeech" : "VOICEVOX";
         var possiblePaths = GetEnginePaths(productName);
 
+        if (_settings.EngineType == EngineType.Voicevox)
+        {
+            var vvppEngine = FindVoicevoxVvppEngine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData));
+            if (vvppEngine is not null)
+            {
+                possiblePaths = possiblePaths.Prepend(vvppEngine);
+            }
+        }
+
         foreach (var path in possiblePaths)
         {
             if (File.Exists(path))
@@ -241,10 +250,37 @@ public class VoiceVoxEngineManager : IDisposable
     }
 
     /// <summary>
+    /// VOICEVOX の既定エンジンの UUID (エディタの設定・<c>engine_manifest.json</c> の <c>uuid</c> と同じ固定値)
+    /// </summary>
+    public const string VoicevoxDefaultEngineUuid = "074fc39e-678b-4c13-8916-ffca8d505d1d";
+
+    /// <summary>
+    /// VOICEVOX 0.26 以降のインストーラー版のエンジン。見つからなければ null。
+    /// </summary>
+    /// <remarks>
+    /// 0.26 からエンジンはエディタと別に更新される VVPP になり、<c>%APPDATA%\voicevox\vvpp-engines\{名前}+{UUID}\run.exe</c> に置かれる
+    /// (VOICEVOX#3172)。インストール先の <c>vv-engine</c> は無くなるので、これを探さないとエディタを起動してしまう。
+    /// フォルダ名の前半は変わりうるので UUID で探す (他の VVPP エンジンを取り違えない)。
+    /// </remarks>
+    public static string? FindVoicevoxVvppEngine(string appDataPath)
+    {
+        var vvppEnginesDirectory = Path.Combine(appDataPath, "voicevox", "vvpp-engines");
+        if (!Directory.Exists(vvppEnginesDirectory))
+        {
+            return null;
+        }
+
+        return Directory.EnumerateDirectories(vvppEnginesDirectory, $"*+{VoicevoxDefaultEngineUuid}")
+            .Select(directory => Path.Combine(directory, "run.exe"))
+            .FirstOrDefault(File.Exists);
+    }
+
+    /// <summary>
     /// インストール先 (<c>%LOCALAPPDATA%\Programs</c> 等) から見たエンジンの候補。同じインストール先の中では前にあるものほど優先する。
     /// </summary>
     /// <remarks>
-    /// エンジン本体はエディタ (Electron) の下にあり、VOICEVOX は <c>vv-engine\run.exe</c>、AivisSpeech は
+    /// VOICEVOX 0.26 以降のエンジンはここに無く、<see cref="FindVoicevoxVvppEngine"/> で先に探す。
+    /// それ以前はエンジン本体がエディタ (Electron) の下にあり、VOICEVOX は <c>vv-engine\run.exe</c>、AivisSpeech は
     /// <c>AivisSpeech-Engine\run.exe</c>。エディタ (<c>{製品名}.exe</c>) は最後の候補にする。前に置くと、エンジンを起動するつもりで
     /// エディタを起動してしまう (エディタも自分のエンジンを起動するのでヘルスチェックは通り、気づきにくい)。
     /// </remarks>

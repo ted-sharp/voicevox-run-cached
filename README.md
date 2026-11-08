@@ -62,9 +62,12 @@ winget install Task.Task      # Task のインストール (入れた後はタ�
 ```bash
 git clone https://github.com/ted-sharp/voicevox-run-cached.git
 cd voicevox-run-cached
-task publish        # 開発用 (src_dotnet/publish/VoicevoxRunCached/)
+task install        # ビルドして %LOCALAPPDATA%\Programs\VoicevoxRunCached に入れる
+task publish        # ビルドのみ (src_dotnet/publish/VoicevoxRunCached/)
 task publish:zip    # 配布用 (バージョン付き ZIP)
 ```
+
+`task install` は場所を `INSTALL_DIR` で変えられる (`task install INSTALL_DIR='C:\Tools\VoicevoxRunCached'`。`task uninstall` にも同じものを渡す)。もう一度実行すると exe だけを入れ替え、編集済みの `appsettings.json` と `cache\` / `logs\` は残す (新しい版で設定項目が変わったときは、`src_dotnet/publish/VoicevoxRunCached/appsettings.json` と見比べる)。PATH は変更しないので、入っていなければ追加するコマンドが表示される。`task uninstall` は exe と `appsettings.json` を消し、`cache\` / `logs\` は残す。
 
 出力は .NET ランタイムを含む単一の `VoicevoxRunCached.exe` (約 74MB) と `appsettings.json` で、実行する PC に .NET を入れる必要はない (リリース版の ZIP も同じ)。一緒に出る `VoicevoxRunCached.pdb` はデバッグ用で、実行には要らない。
 
@@ -160,7 +163,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "BaseUrl": "http://127.0.0.1:50021",  // localhost より 127.0.0.1 推奨 (DNS 解決遅延回避)
     "EngineArguments": "--host 127.0.0.1 --port 50021",
     "DefaultSpeaker": 1,
-    "EnginePath": "",             // 空なら一般的なインストール場所から自動検出 (VOICEVOX\vv-engine\run.exe / AivisSpeech\AivisSpeech-Engine\run.exe)
+    "EnginePath": "",             // 空なら一般的なインストール場所から自動検出 (VOICEVOX 0.26 以降は %APPDATA%\voicevox\vvpp-engines\VOICEVOX_Engine+…\run.exe、それ以前は VOICEVOX\vv-engine\run.exe / AivisSpeech\AivisSpeech-Engine\run.exe)
     "ConnectionTimeout": 30,      // 秒。HTTP リクエスト 1 回の上限 (タイムアウトはリトライしない)。話者の初期化 (モデルの読み込み) は完了まで待つ
     "AutoStartEngine": true,
     "StartupTimeoutSeconds": 30,
