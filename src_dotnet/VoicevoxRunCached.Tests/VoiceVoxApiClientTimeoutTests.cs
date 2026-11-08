@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
