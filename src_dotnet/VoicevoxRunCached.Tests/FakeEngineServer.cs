@@ -31,17 +31,21 @@ internal sealed class FakeEngineServer : IDisposable
     private readonly TimeSpan _audioQueryDelay;
     private readonly Task _serveTask;
     private int _audioQueryRequestCount;
+    private readonly Func<bool> _versionAvailable;
 
     /// <param name="audioQueryFails">true を返したテキストだけ /audio_query を失敗させる</param>
     /// <param name="audioQueryFailureStatus">失敗させるときのステータス。既定の 400 はリトライ対象外</param>
     /// <param name="initializeSpeakerDelay">/initialize_speaker の応答を遅らせる時間 (モデルの読み込み)</param>
     /// <param name="audioQueryDelay">/audio_query の応答を遅らせる時間 (応答しないエンジン)</param>
+    /// <param name="versionAvailable">false の間は /version を 503 にする (止まっているエンジンとして自動起動させる)。null なら常に成功</param>
     public FakeEngineServer(
         Func<string, bool>? audioQueryFails = null,
         HttpStatusCode audioQueryFailureStatus = HttpStatusCode.BadRequest,
         TimeSpan initializeSpeakerDelay = default,
-        TimeSpan audioQueryDelay = default)
+        TimeSpan audioQueryDelay = default,
+        Func<bool>? versionAvailable = null)
     {
+        _versionAvailable = versionAvailable ?? (() => true);
         _audioQueryFails = audioQueryFails ?? (_ => false);
         _audioQueryFailureStatus = audioQueryFailureStatus;
         _initializeSpeakerDelay = initializeSpeakerDelay;
@@ -141,6 +145,7 @@ internal sealed class FakeEngineServer : IDisposable
 
         return path switch
         {
+            "/version" when !_versionAvailable() => (HttpStatusCode.ServiceUnavailable, []),
             "/version" => (HttpStatusCode.OK, Encoding.UTF8.GetBytes("\"0.0.0\"")),
             "/speakers" => (HttpStatusCode.OK, Encoding.UTF8.GetBytes(SpeakersJson)),
             "/initialize_speaker" => (HttpStatusCode.NoContent, []),

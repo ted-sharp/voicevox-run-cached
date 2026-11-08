@@ -12,8 +12,8 @@ public class VoiceVoxEngineManager : IDisposable
     private readonly HttpClient _httpClient;
     private readonly ILogger _logger;
     private readonly IClock _clock;
-    // 自プロセスから起動したエンジンプロセス。外部で既に動いていたエンジンを発見した場合は null。
-    // この区別は Dispose 時の停止対象を「自分が起こしたものだけ」に絞るために必要。
+    // 自プロセスから起動したエンジンプロセス。外部で既に動いていたエンジンを発見した場合と、停止した後は null。
+    // この区別は停止対象を「自分が起こしたものだけ」に絞るために必要。
     private Process? _engineProcess;
     private bool _disposed;
 
@@ -28,26 +28,38 @@ public class VoiceVoxEngineManager : IDisposable
         };
     }
 
-    /// <summary>
-    /// このプロセスがエンジンを起動した場合に true。外部で既に動いていたエンジンを利用している間は false。
-    /// </summary>
-    private bool StartedByUs => _engineProcess != null;
-
     public void Dispose()
     {
         if (_disposed)
             return;
 
-        // KeepEngineRunning=true ならこのプロセスが起動した子も生かしておく (常駐運用)。
-        // false なら自分で起動したものだけ止める (外部起動エンジンには触れない)。
-        if (!_settings.KeepEngineRunning && StartedByUs)
-        {
-            StopEngine();
-        }
+        // 読み上げ・--init はロックの中で StopEngineIfNotKept を呼び済み。ここは途中で例外になった経路などの取りこぼし用
+        StopEngineIfNotKept();
 
         _engineProcess?.Dispose();
         _httpClient.Dispose();
         _disposed = true;
+    }
+
+    /// <summary>
+    /// <c>KeepEngineRunning: false</c> なら、このプロセスが起動したエンジンを止める。
+    /// <c>true</c> (常駐運用) のときと、外部で既に動いていたエンジンを使ったときは何もしない。
+    /// </summary>
+    /// <remarks>
+    /// 読み上げ・<c>--init</c> はプロセス間ロックを解放する前にこれを呼ぶ。ロックを解放してから (Dispose で) 止めると、
+    /// その間にロックを取った後続のプロセスが動いているエンジンを見て合成を始め、途中で止められて失敗するため。
+    /// 先に止めておけば、後続はエンジンが止まっているのを見て自分で起動する。
+    /// </remarks>
+    public void StopEngineIfNotKept()
+    {
+        if (_settings.KeepEngineRunning || _engineProcess is not { } process)
+        {
+            return;
+        }
+
+        StopEngine();
+        process.Dispose();
+        _engineProcess = null;
     }
 
     public async Task<bool> EnsureEngineRunningAsync(CancellationToken cancellationToken = default)

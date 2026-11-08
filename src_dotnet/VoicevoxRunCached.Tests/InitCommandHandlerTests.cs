@@ -54,19 +54,47 @@ public class InitCommandHandlerTests
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
     }
 
-    private static async Task<int> RunInitAsync(FakeEngineServer engine, int speakerId = 1)
+    [Test]
+    public async Task EngineStartedByUs_IsStoppedBeforeReleasingLock()
+    {
+        // 回帰: KeepEngineRunning=false で自分が起動したエンジンを、プロセス間ロックを解放した後 (Dispose) に止めていた。
+        // その間にロックを取った後続の読み上げが合成の途中でエンジンを失う。--init から戻った時点 (Dispose 前) で止まっていること
+        using var engineProcess = new FakeEngineProcess();
+        using var engine = new FakeEngineServer(versionAvailable: () => engineProcess.HasStarted);
+        var stoppedBeforeDispose = false;
+
+        var exitCode = await RunInitAsync(
+            engine,
+            voiceVoxSettings: engineProcess.CreateSettings(engine.BaseUrl),
+            afterInit: async () => stoppedBeforeDispose = await engineProcess.HasStoppedWithinAsync(TimeSpan.FromSeconds(3)));
+
+        await Assert.That(exitCode).IsEqualTo(0);
+        await Assert.That(stoppedBeforeDispose).IsTrue();
+    }
+
+    /// <param name="engine">API の呼び出し先</param>
+    /// <param name="speakerId">フィラーを生成する話者</param>
+    /// <param name="voiceVoxSettings">エンジン管理の設定。null なら <paramref name="engine"/> に向けた自動起動なしの設定</param>
+    /// <param name="afterInit">--init から戻った後、エンジン管理を破棄する前に呼ぶ</param>
+    private static async Task<int> RunInitAsync(
+        FakeEngineServer engine, int speakerId = 1, VoiceVoxSettings? voiceVoxSettings = null, Func<Task>? afterInit = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
         try
         {
-            var voiceVoxSettings = engine.CreateSettings();
+            voiceVoxSettings ??= engine.CreateSettings();
             var fillerSettings = new FillerSettings { Enabled = true, Directory = dir, FillerTexts = ["a", "b"] };
             using var engineManager = new VoiceVoxEngineManager(voiceVoxSettings, NullLogger.Instance, SystemClock.Instance);
             using var apiClient = engine.CreateApiClient();
             var fillerManager = new FillerManager(fillerSettings, new CacheSettings(), NullLogger.Instance);
             var handler = new InitCommandHandler(engineManager, apiClient, fillerManager, NullLogger.Instance);
 
-            return await handler.HandleInitAsync(speakerId);
+            var exitCode = await handler.HandleInitAsync(speakerId);
+            if (afterInit != null)
+            {
+                await afterInit();
+            }
+            return exitCode;
         }
         finally
         {

@@ -30,11 +30,23 @@ public class InitCommandHandler
     /// <remarks>
     /// 読み上げと同じ <see cref="InterProcessLock.SpeechLockPath"/> で直列化する。読み上げ中に実行しても
     /// API 呼び出しが並列にならず (VOICEVOX は直列前提)、エンジンの自動起動も二重にならない。
+    /// 読み上げと同じく、<c>KeepEngineRunning: false</c> で自分が起動したエンジンはロックを解放する前に止める。
     /// </remarks>
     public async Task<int> HandleInitAsync(int speakerId, CancellationToken cancellationToken = default)
     {
         using var speechLock = await InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, _logger, cancellationToken);
+        try
+        {
+            return await InitializeLockedAsync(speakerId, cancellationToken);
+        }
+        finally
+        {
+            _engineManager.StopEngineIfNotKept();
+        }
+    }
 
+    private async Task<int> InitializeLockedAsync(int speakerId, CancellationToken cancellationToken)
+    {
         await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
 
         // 存在しない話者だと /initialize_speaker が 500 (原因の分からないエンジンエラー) になり、リトライの分だけ待たされるので、先に確認して入力ミスとして即エラーにする
