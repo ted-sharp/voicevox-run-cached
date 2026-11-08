@@ -74,6 +74,25 @@ public class TextToSpeechProcessorTests
         await Assert.That(run.CacheAfter.SequenceEqual(run.CacheBefore)).IsTrue();
     }
 
+    [Test]
+    public async Task EngineStartedByUs_IsStoppedBeforeReleasingLock()
+    {
+        // 回帰: KeepEngineRunning=false で自分が起動したエンジンを、プロセス間ロックを解放した後 (サービスの Dispose) に止めていた。
+        // その間にロックを取った後続の読み上げが、動いているエンジンを見て合成を始め、途中で止められて失敗する。
+        // コマンドから戻った時点 (= ロック解放後、Dispose 前) で止まっていることを確かめる
+        using var engineProcess = new FakeEngineProcess();
+        using var engine = new FakeEngineServer(versionAvailable: () => engineProcess.HasStarted);
+        var stoppedBeforeDispose = false;
+
+        var run = await RunAsync(
+            engineProcess.CreateSettings(engine.BaseUrl),
+            ["キャッシュに無い文です。", "--no-play"],
+            afterCommand: async () => stoppedBeforeDispose = await engineProcess.HasStoppedWithinAsync(TimeSpan.FromSeconds(3)));
+
+        await Assert.That(run.ExitCode).IsEqualTo(0);
+        await Assert.That(stoppedBeforeDispose).IsTrue();
+    }
+
     /// <summary>
     /// 待ち受けていないポートを BaseUrl にし (自動起動なし)、<see cref="CachedText"/> だけキャッシュした状態でコマンドを実行する。
     /// </summary>
@@ -83,19 +102,24 @@ public class TextToSpeechProcessorTests
     /// <summary>
     /// <paramref name="baseUrl"/> のエンジンに向け (自動起動なし)、<see cref="CachedText"/> だけキャッシュした状態でコマンドを実行する。
     /// </summary>
+    private static Task<(int ExitCode, byte[] CacheBefore, byte[] CacheAfter)> RunAsync(string baseUrl, string[] args)
+        => RunAsync(new VoiceVoxSettings { BaseUrl = baseUrl, AutoStartEngine = false, DefaultSpeaker = 1 }, args);
+
+    /// <summary>
+    /// <see cref="CachedText"/> だけキャッシュした状態でコマンドを実行する。
+    /// </summary>
+    /// <param name="voiceVox">エンジンの設定</param>
+    /// <param name="args">コマンドライン引数</param>
+    /// <param name="afterCommand">コマンドから戻った後、サービスを破棄する前に呼ぶ</param>
     /// <returns>終了コードと、実行前後の <see cref="CachedText"/> のキャッシュファイルの中身</returns>
-    private static async Task<(int ExitCode, byte[] CacheBefore, byte[] CacheAfter)> RunAsync(string baseUrl, string[] args)
+    private static async Task<(int ExitCode, byte[] CacheBefore, byte[] CacheAfter)> RunAsync(
+        VoiceVoxSettings voiceVox, string[] args, Func<Task>? afterCommand = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_tts_" + Guid.NewGuid().ToString("N"));
         var cacheDir = Path.Combine(dir, "audio");
         var settings = new AppSettings
         {
-            VoiceVox = new VoiceVoxSettings
-            {
-                BaseUrl = baseUrl,
-                AutoStartEngine = false,
-                DefaultSpeaker = 1,
-            },
+            VoiceVox = voiceVox,
             Audio = new AudioSettings { PrepareDevice = false },
             Cache = new CacheSettings { Directory = cacheDir, UseExecutableBaseDirectory = false },
             Filler = new FillerSettings { Directory = Path.Combine(dir, "filler"), UseExecutableBaseDirectory = false },
@@ -113,6 +137,10 @@ public class TextToSpeechProcessorTests
             var before = await File.ReadAllBytesAsync(cachePath);
 
             var exitCode = await provider.GetService<CommandRouter>().ExecuteCommandAsync(args);
+            if (afterCommand != null)
+            {
+                await afterCommand();
+            }
 
             return (exitCode, before, await File.ReadAllBytesAsync(cachePath));
         }
