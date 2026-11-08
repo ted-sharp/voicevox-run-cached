@@ -41,6 +41,7 @@ public class SegmentProducer
     {
         var stats = new SegmentStats();
         var pendingCacheSaves = new List<Task>();
+        var synthesizedByText = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         var engineUnavailable = false;
 
         try
@@ -56,6 +57,18 @@ public class SegmentProducer
                     continue;
                 }
 
+                // 同じ文が 2 回目以降に出てきたら、合成し直さずに 1 回目の音声を使う。合成し直すと API を無駄に呼ぶうえ、
+                // 同じキーの保存が並行して同じ meta.json / .opus.tmp に書き込み、共有違反で失敗しうる
+                // (話者・パラメータは 1 回の実行で共通なので、文が同じならキャッシュキーも同じ)
+                if (synthesizedByText.TryGetValue(segment.Text, out var synthesizedWav))
+                {
+                    segment.AudioData = synthesizedWav;
+                    stats.Attempted++;
+                    stats.Success++;
+                    await writer.WriteAsync(segment, cancellationToken);
+                    continue;
+                }
+
                 if (engineUnavailable)
                 {
                     // 合成を中止した後の未キャッシュ分。再生側に流しても skip されるだけなので流さない
@@ -65,6 +78,10 @@ public class SegmentProducer
                 }
 
                 var synth = await SynthesizeOneAsync(segment, originalRequest, stats, cancellationToken);
+                if (synth.WavData != null)
+                {
+                    synthesizedByText[segment.Text] = synth.WavData;
+                }
 
                 // 合成失敗 (AudioData == null) でも channel には流す。再生側で skip ログを出す
                 await writer.WriteAsync(segment, cancellationToken);
@@ -77,7 +94,7 @@ public class SegmentProducer
                 if (synth.EngineUnavailable)
                 {
                     engineUnavailable = true;
-                    var remaining = segments.Skip(i + 1).Count(s => !IsReady(s));
+                    var remaining = segments.Skip(i + 1).Count(s => !IsReady(s) && !synthesizedByText.ContainsKey(s.Text));
                     if (remaining > 0)
                     {
                         _logger.LogWarning("エンジンに接続できない・応答しないため、残り {Count} セグメントの合成を中止します", remaining);

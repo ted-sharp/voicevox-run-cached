@@ -44,10 +44,59 @@ public class SegmentProducerTests
         await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 2, SuccessCount: 0, FailureCount: 2));
     }
 
+    [Test]
+    public async Task DuplicateText_SynthesizesOnceAndReusesAudio()
+    {
+        // 回帰: 同じ文を 2 回合成し、同じキーの保存が並行して同じファイルに書き込んで共有違反になりえた
+        using var engine = new FakeEngineServer();
+        string[] cachedAudioFiles = [];
+
+        var (result, written) = await ProduceAsync(
+            engine,
+            [new TextSegment("A"), new TextSegment("A")],
+            dir => cachedAudioFiles = Directory.GetFiles(dir, "*.opus"));
+
+        await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(1);
+        await Assert.That(String.Join("|", written)).IsEqualTo("A:True|A:True");
+        await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 2, SuccessCount: 2, FailureCount: 0));
+        await Assert.That(cachedAudioFiles.Length).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task EngineUnavailable_StillPlaysTextAlreadySynthesized()
+    {
+        // エンジンが止まった後でも、この実行で合成済みの文は使い回して再生する
+        using var engine = new FakeEngineServer(audioQueryFails: text => text == "B", audioQueryFailureStatus: HttpStatusCode.ServiceUnavailable);
+
+        var (result, written) = await ProduceAsync(
+            engine,
+            [new TextSegment("A"), new TextSegment("B"), new TextSegment("A"), new TextSegment("C")]);
+
+        await Assert.That(String.Join("|", written)).IsEqualTo("A:True|B:False|A:True");
+        await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 4, SuccessCount: 2, FailureCount: 2));
+    }
+
     /// <summary>
     /// 未キャッシュ A → キャッシュ済み B → 未キャッシュ C を流し、結果と channel に書かれたテキストを返す。
     /// </summary>
     private static async Task<(SynthesisResult Result, List<string> Written)> ProduceAsync(FakeEngineServer engine)
+    {
+        var (result, written) = await ProduceAsync(
+            engine,
+            [
+                new TextSegment("A"),
+                new TextSegment("B") { IsCached = true, AudioData = TestAudio.SineWav(24000, 100) },
+                new TextSegment("C"),
+            ]);
+        return (result, written.Select(w => w.Split(':')[0]).ToList());
+    }
+
+    /// <summary>
+    /// segments を流し、結果と channel に書かれた "テキスト:音声の有無" を返す。
+    /// inspectCacheDirectory はキャッシュディレクトリを消す前に呼ぶ (保存は ProduceAsync の終了までに完了している)。
+    /// </summary>
+    private static async Task<(SynthesisResult Result, List<string> Written)> ProduceAsync(
+        FakeEngineServer engine, List<TextSegment> segments, Action<string>? inspectCacheDirectory = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_producer_" + Guid.NewGuid().ToString("N"));
         try
@@ -56,13 +105,6 @@ public class SegmentProducerTests
             var cacheManager = new AudioCacheManager(
                 new CacheSettings { Directory = dir, UseExecutableBaseDirectory = false }, NullLogger.Instance, SystemClock.Instance);
             var producer = new SegmentProducer(apiClient, cacheManager, NullLogger.Instance);
-
-            List<TextSegment> segments =
-            [
-                new TextSegment("A"),
-                new TextSegment("B") { IsCached = true, AudioData = TestAudio.SineWav(24000, 100) },
-                new TextSegment("C"),
-            ];
             var channel = Channel.CreateUnbounded<TextSegment>();
 
             var result = await producer.ProduceAsync(
@@ -71,8 +113,9 @@ public class SegmentProducerTests
             var written = new List<string>();
             await foreach (var segment in channel.Reader.ReadAllAsync())
             {
-                written.Add(segment.Text);
+                written.Add($"{segment.Text}:{segment.AudioData != null}");
             }
+            inspectCacheDirectory?.Invoke(dir);
             return (result, written);
         }
         finally
