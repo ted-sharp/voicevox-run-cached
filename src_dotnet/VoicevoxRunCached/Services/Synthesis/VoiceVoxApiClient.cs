@@ -253,9 +253,10 @@ public class VoiceVoxApiClient : IDisposable
         {
             response = await _httpClient.SendAsync(request, timeoutCts.Token);
         }
-        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException ex) when (applyTimeout && !cancellationToken.IsCancellationRequested)
         {
-            // ユーザーのキャンセルではなくタイムアウト。HttpClient.Timeout で打ち切られたときと同じく
+            // ユーザーのキャンセルではなくタイムアウト (タイムアウトを掛けていないとき (/initialize_speaker) は、
+            // HttpClient の破棄などタイムアウト以外の理由なので変換しない)。HttpClient.Timeout で打ち切られたときと同じく
             // TaskCanceledException にする (MapToErrorCode が ApiTimeout にし、RetryPolicyService はリトライしない)
             throw new TaskCanceledException($"{_settings.ConnectionTimeout} 秒以内にエンジンから応答がありませんでした", ex);
         }

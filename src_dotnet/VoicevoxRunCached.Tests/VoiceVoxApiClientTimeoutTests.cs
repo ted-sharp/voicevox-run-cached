@@ -33,6 +33,21 @@ public class VoiceVoxApiClientTimeoutTests
     }
 
     [Test]
+    public async Task InitializeSpeaker_CanceledOtherThanByUser_IsNotReportedAsConnectionTimeout()
+    {
+        // タイムアウトを掛けていないので、HttpClient の破棄などで止まっても「N 秒以内に応答がありませんでした」と言わない
+        using var engine = new FakeEngineServer(initializeSpeakerDelay: TimeSpan.FromSeconds(3));
+        var apiClient = engine.CreateApiClient(connectionTimeoutSeconds: 1);
+        var initialize = apiClient.InitializeSpeakerAsync(FakeEngineServer.SpeakerId);
+        await Task.Delay(200);
+
+        apiClient.Dispose();
+        var ex = await Assert.ThrowsAsync<Exception>(() => initialize);
+
+        await Assert.That(ex!.ToString()).DoesNotContain("秒以内");
+    }
+
+    [Test]
     public async Task AudioQuery_NoResponseWithinConnectionTimeout_FailsAsApiTimeoutWithoutRetry()
     {
         // 文ごとの合成は ConnectionTimeout で打ち切り、リトライしない (リトライすると 1 文で約 93 秒ロックを握る)
