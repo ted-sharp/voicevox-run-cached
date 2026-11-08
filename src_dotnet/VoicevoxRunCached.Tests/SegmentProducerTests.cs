@@ -117,15 +117,41 @@ public class SegmentProducerTests
     }
 
     [Test]
-    public async Task PrepareFailure_IsThrown()
+    public async Task PrepareFailure_IsReturnedAndCachedSegmentsStillFlow()
     {
-        // エンジンが無い・話者が無い等の準備の失敗は文ごとの失敗にせず、そのまま投げる (終了コード 3 / 1)
+        // 回帰: 準備の失敗 (エンジンが無い・話者が無い) を producer が投げ、先に流したキャッシュ済みの文の再生が途中で止められていた。
+        // 投げずに返し (呼び出し元が再生を終えてから投げる)、以降は合成せずにキャッシュ済みの文だけ流す
         using var engine = new FakeEngineServer();
+        var prepareCount = 0;
+        var error = new InvalidOperationException("engine");
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => ProduceAsync(
+        var (result, written) = await ProduceAsync(
+            engine,
+            [Cached("A"), new TextSegment("B"), Cached("C"), new TextSegment("D")],
+            prepareSynthesis: _ => { prepareCount++; throw error; });
+
+        await Assert.That(prepareCount).IsEqualTo(1);
+        await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(0);
+        await Assert.That(String.Join("|", written)).IsEqualTo("A:True|C:True");
+        await Assert.That(result).IsEqualTo(new SynthesisResult(2, 0, 2, error));
+    }
+
+    [Test]
+    public async Task PrepareCancellation_IsThrown()
+    {
+        using var engine = new FakeEngineServer();
+        using var cts = new CancellationTokenSource();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => ProduceAsync(
             engine,
             [new TextSegment("A")],
-            prepareSynthesis: _ => throw new InvalidOperationException("engine")));
+            prepareSynthesis: _ =>
+            {
+                cts.Cancel();
+                cts.Token.ThrowIfCancellationRequested();
+                return Task.CompletedTask;
+            },
+            cancellationToken: cts.Token));
     }
 
     [Test]
@@ -244,7 +270,8 @@ public class SegmentProducerTests
         Action<string>? inspectCacheDirectory = null,
         Func<CancellationToken, Task>? prepareSynthesis = null,
         bool allowSynthesis = true,
-        Microsoft.Extensions.Logging.ILogger? cacheLogger = null)
+        Microsoft.Extensions.Logging.ILogger? cacheLogger = null,
+        CancellationToken cancellationToken = default)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_producer_" + Guid.NewGuid().ToString("N"));
         try
@@ -261,7 +288,7 @@ public class SegmentProducerTests
                 new VoiceRequest(speakerId: FakeEngineServer.SpeakerId),
                 saveToCache: true,
                 allowSynthesis ? prepareSynthesis ?? (_ => Task.CompletedTask) : null,
-                CancellationToken.None);
+                cancellationToken);
 
             var written = new List<string>();
             await foreach (var segment in channel.Reader.ReadAllAsync())

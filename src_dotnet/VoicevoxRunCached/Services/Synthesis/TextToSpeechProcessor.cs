@@ -1,4 +1,5 @@
-﻿using System.Threading.Channels;
+﻿using System.Runtime.ExceptionServices;
+using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
@@ -98,6 +99,13 @@ public class TextToSpeechProcessor
 
         var synthesisResult = await SynthesizeAndPlayAsync(segments, request, options, cancellationToken);
 
+        // 準備の失敗 (エンジン無し・話者無し) は、キャッシュ済みの文を鳴らし終えてから投げる (終了コード 3 / 1)。
+        // 一部失敗 (8) にはしない (原因がエンジンの設定・入力にあり、文ごとの失敗ではないため)。--out も保存しない
+        if (synthesisResult.PreparationError is { } preparationError)
+        {
+            ExceptionDispatchInfo.Throw(preparationError);
+        }
+
         // キャッシュから鳴ったセグメントは SynthesisResult に数えないので、失敗がセグメント数に達したときだけ「全部失敗」にする
         // (合成した文が全部失敗しても、キャッシュから鳴った文があれば一部失敗)
         if (synthesisResult.FailureCount == segments.Count)
@@ -170,7 +178,7 @@ public class TextToSpeechProcessor
     {
         // エンジンの準備は producer が最初に合成が必要になったときに 1 回だけ呼ぶ。全部キャッシュから読めればエンジンに一切接続しない
         // (起動待ちで通知が遅れない・エンジン停止中でも鳴る)。先頭がキャッシュ済みなら、エンジンの起動を待つ間にそこから鳴り始める。
-        // --cache-only は合成しない (読めないキャッシュは失敗として数える)
+        // 準備の失敗は producer が投げずに返す (投げると鳴っているキャッシュ済みの文が途中で止められる)。--cache-only は合成しない (読めないキャッシュは失敗として数える)
         Func<CancellationToken, Task>? prepareSynthesis = options.CacheOnly
             ? null
             : ct => PrepareSynthesisAsync(request.SpeakerId, ct);

@@ -50,6 +50,15 @@ public class TextToSpeechProcessorTests
     }
 
     [Test]
+    public async Task PartlyCached_NeedsEngine_ReturnsEngineError()
+    {
+        // 先頭のキャッシュ済みの文は鳴らし (再生を途中で止めない)、終了コードは準備の失敗 (エンジン無し) のまま
+        var exitCode = await RunWithStoppedEngineAsync([CachedText + "キャッシュに無い文です。", "--no-play"]);
+
+        await Assert.That(exitCode).IsEqualTo(ErrorCodes.GetExitCode(ErrorCodes.Engine.EngineNotAvailable));
+    }
+
+    [Test]
     public async Task Refresh_ResynthesizesAndOverwritesCache()
     {
         // 辞書登録やエンジン更新を反映するため、キャッシュ済みでも合成し直してキャッシュを上書きする

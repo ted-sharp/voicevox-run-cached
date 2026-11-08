@@ -51,7 +51,7 @@ task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube 
 - 外部で起動済みだったエンジンには触れない。`KeepEngineRunning: true` なら常駐させる
 - `UseShellExecute = true` + `WindowStyle = Hidden` で起動する (`false` だと Hooks の stdout / stderr のパイプを常駐エンジンが引き継ぎ、Hooks がタイムアウトまで待たされる) — `VoiceVoxEngineManagerTests.StartEngine_DoesNotInheritHandles`
 - 読み上げでエンジンに接続するのは**合成が必要になったときだけ**。準備 (起動確認・`EnsureSpeakerExists`・`/initialize_speaker`) は `TextToSpeechProcessor.PrepareSynthesisAsync` で、`SegmentProducer` が最初に合成するときに 1 回だけ呼ぶ。全部キャッシュから読めれば (`--cache-only` を含む) エンジン停止中でも鳴り、起動待ちで通知が遅れない。先頭がキャッシュ済みなら起動を待つ間にそこから鳴る (その間フィラーも鳴りうる) — `TextToSpeechProcessorTests` / `SegmentProducerTests`
-- 準備の失敗 (エンジン無し・話者無し) は文ごとの失敗にせず、そのまま投げる (終了コード 3 / 1)
+- 準備の失敗 (エンジン無し・話者無し) は文ごとの失敗にせず、終了コード 3 / 1 にする。ただし producer は投げずに `SynthesisResult.PreparationError` で返し、以降は合成せずキャッシュ済みの文だけ流す。`TextToSpeechProcessor` が再生を終えてから投げる (producer が投げると `WhenAllOrCancelOnFaultAsync` が鳴っている文を途中で止める) — `SegmentProducerTests.PrepareFailure_IsReturnedAndCachedSegmentsStillFlow`
 
 ### VOICEVOX API (`VoiceVoxApiClient`)
 - 呼び出しは直列。直列性は `SegmentProducer.ProduceAsync` のループで 1 件ずつ await することで担保していて、クライアント自身にロックは無い。並列化するなら実機でエンジンの制約を確かめ、クライアント内に lock を入れる
