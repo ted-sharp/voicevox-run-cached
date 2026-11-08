@@ -95,7 +95,7 @@ public static class ArgumentParser
 
         // 本文は前処理しない。"-sample" のような先頭ハイフンの本文が "-s ample" に割られるのを防ぐ
         var text = args[textIndex];
-        if (textIndex == 0 && text.StartsWith(TextSeparator, StringComparison.Ordinal))
+        if (textIndex == 0 && IsOptionLike(text))
         {
             throw OptionInsteadOfText(text);
         }
@@ -243,14 +243,23 @@ public static class ArgumentParser
             suggestedSolution: "--help で使い方を確認してください (本文に空白を含めるときは全体を引用符で囲みます)。");
 
     /// <summary>
-    /// 本文の位置にある <c>--xxx</c>。本文を忘れた <c>--refresh</c> や打ち間違いの <c>--speeed</c> を本文として
-    /// 読み上げ・キャッシュして成功してしまうのでエラーにする。<c>--</c> で始まる文は <c>-- &lt;本文&gt;</c> で読む。
+    /// オプションの形をした引数か (<c>--</c> の直後が英字で空白を含まない <c>--refresh</c> / <c>--speeed</c> 等と、<c>-s</c> / <c>-o</c> そのもの)。
+    /// 本文の位置にあれば、本文を忘れたか打ち間違えたかなので、本文として読み上げ・キャッシュして成功しないようエラーにする。
+    /// <c>--- 完了 ---</c> や <c>--verbose を追加しました</c> のような文は、Hooks 等が渡す本文としてありうるので本文として読む。
+    /// </summary>
+    private static bool IsOptionLike(string arg)
+        => ShortArgs.Contains(arg)
+            || (arg.Length > 2 && arg.StartsWith(TextSeparator, StringComparison.Ordinal) && Char.IsAsciiLetter(arg[2])
+                && !arg.Any(Char.IsWhiteSpace));
+
+    /// <summary>
+    /// 本文の位置にあるオプション (<see cref="IsOptionLike"/>)。オプションと同じ形の文は <c>-- &lt;本文&gt;</c> で読む。
     /// </summary>
     private static VoicevoxRunCachedException OptionInsteadOfText(string arg) => new(
         errorCode: ErrorCodes.General.InvalidArguments,
         message: $"Option in place of text: {arg}",
         userMessage: $"本文の位置にオプションがあります: '{arg}'",
-        suggestedSolution: $"本文はオプションより前に書いてください。'--' で始まる文を読み上げるときは -- \"{arg}\" のように前に -- を付けます。");
+        suggestedSolution: $"本文はオプションより前に書いてください。オプションと同じ形の文を読み上げるときは -- \"{arg}\" のように前に -- を付けます。");
 
     private static readonly TextToSpeechOptions EmptyOptions = new(
         NoCache: false, CacheOnly: false, Verbose: false, OutPath: null, NoPlay: false);

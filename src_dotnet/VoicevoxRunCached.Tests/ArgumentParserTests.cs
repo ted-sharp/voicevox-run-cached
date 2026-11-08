@@ -227,6 +227,11 @@ public class ArgumentParserTests
     [Test]
     [Arguments("-sample")]
     [Arguments("-s3")]
+    [Arguments("--- 完了 ---")]
+    [Arguments("---")]
+    [Arguments("-- メモ: 確認済み")]
+    [Arguments("--verbose を追加しました")]
+    [Arguments("--1")]
     public async Task Parse_TextStartingWithHyphen_IsKeptVerbatim(string text)
     {
         var (request, _) = ArgumentParser.Parse([text, "-s", "3"], DefaultSettings());
@@ -241,6 +246,9 @@ public class ArgumentParserTests
     [Arguments("--speeed")]
     [Arguments("--log-level debug こんにちは")]
     [Arguments("--speaker 3 こんにちは")]
+    [Arguments("--Cache:Directory=x こんにちは")]
+    [Arguments("-o")]
+    [Arguments("-s 3 こんにちは")]
     public async Task Parse_OptionInPlaceOfText_ThrowsInvalidArguments(string commandLine)
     {
         // 本文を忘れたフラグや打ち間違いを本文として読み上げ・キャッシュしない
