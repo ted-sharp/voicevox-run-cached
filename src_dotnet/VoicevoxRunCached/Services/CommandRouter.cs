@@ -44,17 +44,18 @@ public class CommandRouter
             return 0;
         }
 
-        var command = args[0].ToLowerInvariant();
-        var subArgs = args.Skip(1).ToArray();
+        // コマンド名はオプションと同じく大文字小文字を区別する ("Speakers" は本文として読む)
+        var command = args[0];
+        var subArgs = args[1..];
 
         try
         {
             return command switch
             {
-                "speakers" => await _speakerHandler.HandleSpeakersAsync(cancellationToken),
-                "devices" => _deviceHandler.HandleDevices(subArgs),
+                "speakers" => await HandleSpeakersCommandAsync(subArgs, cancellationToken),
+                "devices" => HandleDevicesCommand(subArgs),
                 "--init" => await _initHandler.HandleInitAsync(ArgumentParser.ParseInitSpeaker(subArgs, _settings), cancellationToken),
-                "--clear" => await _cacheHandler.HandleClearCacheAsync(cancellationToken),
+                "--clear" => await HandleClearCommandAsync(subArgs, cancellationToken),
                 "--test" => await HandleTestCommandAsync(subArgs, cancellationToken),
                 // "--" (ArgumentParser.TextSeparator) もここに来る。続く引数はコマンド名と同じでも本文として読む
                 _ => await ExecuteTextToSpeechCommandAsync(args, cancellationToken)
@@ -95,6 +96,25 @@ public class CommandRouter
         {
             return ErrorHandlingUtility.HandleExceptionAndGetExitCode(ex, _logger, $"コマンド実行: {command}", String.Join(" ", subArgs));
         }
+    }
+
+    // 引数の検証はロックを待つ前に行う (打ち間違いで先の読み上げが終わるまで待たされないように)
+    private Task<int> HandleSpeakersCommandAsync(string[] args, CancellationToken cancellationToken)
+    {
+        ArgumentParser.EnsureNoCommandArguments(args);
+        return _speakerHandler.HandleSpeakersAsync(cancellationToken);
+    }
+
+    private Task<int> HandleClearCommandAsync(string[] args, CancellationToken cancellationToken)
+    {
+        ArgumentParser.EnsureNoCommandArguments(args);
+        return _cacheHandler.HandleClearCacheAsync(cancellationToken);
+    }
+
+    private int HandleDevicesCommand(string[] args)
+    {
+        var (json, full) = ArgumentParser.ParseDevicesOptions(args);
+        return _deviceHandler.HandleDevices(json, full);
     }
 
     private async Task<int> HandleTestCommandAsync(string[] args, CancellationToken cancellationToken)

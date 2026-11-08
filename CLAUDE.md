@@ -96,7 +96,8 @@ task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube 
 
 ### CLI 引数 (`ArgumentParser`)
 - 数値でない値・負の speaker/volume・0 以下の speed は `InvalidArguments` (黙って既定値で続けない)。範囲判定は F2 に丸めた後の値
-- 値の位置に `--xxx` が来たら値の指定漏れ。不明なオプション・余分な引数も `InvalidArguments` (`UnexpectedArgument`。読み上げ・`--test`・`--init` 共通)
+- 値の位置に `--xxx` が来たら値の指定漏れ。不明なオプション・余分な引数も `InvalidArguments` (`UnexpectedArgument`。全コマンド共通。`speakers` / `--clear` は `EnsureNoCommandArguments`、`devices` は `ParseDevicesOptions` で、ロックを待つ前に検証する) — `ArgumentParserTests` / `CommandRouterTests`
+- コマンド名 (`speakers` / `devices` / `--init` / `--clear` / `--test`) はオプションと同じく大文字小文字を区別する (`Speakers` は本文) — `CommandRouterTests.CommandName_IsCaseSensitive`
 - `--log-level` / `--log-format` / `--Section:Key=値` は設定側が扱うので `TrySkipConfigurationArgs` で値ごと読み飛ばす (値が無ければエラー)
 - オプションを足すときは `ApplyOptions` に追加する。値を取らないフラグは `FlagArgs` にも (無いと設定の読み込みで直後の引数が値として消費される) — `CommandLineConfigurationTests`
 - 本文は `PreprocessArgs` にかけない (`-sample` が `-s ample` に割られる)。本文の位置にオプションの形 (`IsOptionLike`: `--` の直後が英字で空白を含まない、または `-s` / `-o`) があれば `InvalidArguments` (`--- 完了 ---` は読む)。先頭が `--` (`TextSeparator`) なら次を本文にする (`ConfigurationManager` も区切りと本文を設定から外す)
@@ -163,6 +164,7 @@ DI は Jab (Source Generator)。`Services/AppServiceProvider.cs` の `[Singleton
 2. エンジンかキャッシュに触れるなら `SpeechLock.RunAsync` で囲む
 3. `AppServiceProvider` に `[Singleton(typeof(XxxCommandHandler))]` を追加し、`CommandRouter` のコンストラクタで受け取って switch に分岐を足す
 4. 値を取らない `--xxx` なら `ArgumentParser.FlagArgs` にも追加する (`CommandLineConfigurationTests`)
+5. コマンドの引数は `ArgumentParser` でロックの前に検証し、不明なものは `UnexpectedArgument` にする (引数を取らないなら `EnsureNoCommandArguments`)
 
 読み上げ系の機能は独立したハンドラを作らず、`TextToSpeechProcessor` に足すか `AudioExportService` のような単機能ヘルパに分ける。
 

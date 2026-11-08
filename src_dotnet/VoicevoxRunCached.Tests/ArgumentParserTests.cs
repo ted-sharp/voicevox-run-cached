@@ -553,6 +553,58 @@ public class ArgumentParserTests
     }
 
     [Test]
+    [Arguments("", false, false)]
+    [Arguments("--json", true, false)]
+    [Arguments("--full --json", true, true)]
+    [Arguments("--full --log-level debug --Audio:OutputDevice=1", false, true)]
+    public async Task ParseDevicesOptions_ReadsFlags(string args, bool json, bool full)
+    {
+        var options = ArgumentParser.ParseDevicesOptions(args.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
+        await Assert.That(options).IsEqualTo((json, full));
+    }
+
+    [Test]
+    [Arguments("--jsn")]
+    [Arguments("--json extra")]
+    [Arguments("--log-level")]
+    public async Task ParseDevicesOptions_UnexpectedArgument_ThrowsInvalidArguments(string args)
+    {
+        // 回帰: 不明な引数を読み飛ばしていたため、devices --jsn で JSON のつもりの stdout に人向けの一覧を出して成功していた
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.ParseDevicesOptions(args.Split(' '))));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
+
+    [Test]
+    [Arguments("")]
+    [Arguments("--log-level debug --log-format=json")]
+    [Arguments("--Cache:Directory=x --VoiceVox:BaseUrl http://127.0.0.1:50021")]
+    public async Task EnsureNoCommandArguments_AcceptsLogAndConfigurationArgs(string args)
+    {
+        await Assert.That(() => ArgumentParser.EnsureNoCommandArguments(args.Split(' ', StringSplitOptions.RemoveEmptyEntries)))
+            .ThrowsNothing();
+    }
+
+    [Test]
+    [Arguments("--speaker 3")]
+    [Arguments("extra")]
+    [Arguments("--verbose")]
+    [Arguments("--Filler:Enabled")]
+    public async Task EnsureNoCommandArguments_UnexpectedArgument_ThrowsInvalidArguments(string args)
+    {
+        // 回帰: speakers / --clear は引数を見ておらず、--clear --speaker 3 でも全部消して成功していた
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+        {
+            ArgumentParser.EnsureNoCommandArguments(args.Split(' '));
+            return Task.CompletedTask;
+        });
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
+
+    [Test]
     public async Task ConfigurationOverride_AcceptsEverySection()
     {
         // 回帰: Lock セクションを足したときに一覧へ入れ忘れ、--Lock:MaxWaitSeconds=5 が不明なオプションのエラーになっていた

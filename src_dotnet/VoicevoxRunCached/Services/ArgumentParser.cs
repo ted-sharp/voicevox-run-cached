@@ -154,6 +154,59 @@ public static class ArgumentParser
     }
 
     /// <summary>
+    /// <c>devices</c> の引数から <c>--json</c> / <c>--full</c> を読む。
+    /// </summary>
+    /// <remarks>
+    /// それ以外は <see cref="ErrorCodes.General.InvalidArguments"/> にする (<c>devices --jsn</c> のような打ち間違いで、
+    /// JSON のつもりの stdout に人向けの一覧を出して成功しないように)。ログ・設定の上書きは <see cref="ParseInitSpeaker"/> と同じく読み飛ばす。
+    /// </remarks>
+    public static (bool Json, bool Full) ParseDevicesOptions(string[] args)
+    {
+        var processedArgs = PreprocessArgs(args);
+        bool json = false, full = false;
+        int i = 0;
+        while (i < processedArgs.Length)
+        {
+            switch (processedArgs[i])
+            {
+                case "--json":
+                    json = ReadFlag(processedArgs, ref i);
+                    break;
+                case "--full":
+                    full = ReadFlag(processedArgs, ref i);
+                    break;
+                default:
+                    if (!TrySkipConfigurationArgs(processedArgs, ref i))
+                    {
+                        throw UnexpectedArgument(processedArgs[i]);
+                    }
+                    break;
+            }
+        }
+        return (json, full);
+    }
+
+    /// <summary>
+    /// 引数を取らないコマンド (<c>speakers</c> / <c>--clear</c>) に引数が付いていたら <see cref="ErrorCodes.General.InvalidArguments"/> にする。
+    /// </summary>
+    /// <remarks>
+    /// 読み飛ばすと、<c>--clear --speaker 3</c> (話者 3 の分だけ消すつもり) で全部消して成功表示してしまう。
+    /// ログ・設定の上書きは <see cref="ParseInitSpeaker"/> と同じく読み飛ばす。
+    /// </remarks>
+    public static void EnsureNoCommandArguments(string[] args)
+    {
+        var processedArgs = PreprocessArgs(args);
+        int i = 0;
+        while (i < processedArgs.Length)
+        {
+            if (!TrySkipConfigurationArgs(processedArgs, ref i))
+            {
+                throw UnexpectedArgument(processedArgs[i]);
+            }
+        }
+    }
+
+    /// <summary>
     /// 設定の読み込み側 (ConfigurationManager) が扱う引数 (<c>--log-level</c> / <c>--log-format</c> と設定の上書き) なら、
     /// 値ごと読み飛ばして true を返す。
     /// </summary>
