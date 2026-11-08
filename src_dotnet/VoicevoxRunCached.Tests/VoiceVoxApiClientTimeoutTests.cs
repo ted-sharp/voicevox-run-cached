@@ -44,7 +44,8 @@ public class VoiceVoxApiClientTimeoutTests
             apiClient.GenerateAudioQueryAsync(new VoiceRequest("テスト", FakeEngineServer.SpeakerId)));
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Api.ApiTimeout);
-        // リトライしていれば 2 回目のタイムアウト分 (1 秒) も待つ
-        await Assert.That(stopwatch.Elapsed).IsLessThan(TimeSpan.FromMilliseconds(1900));
+        // リトライしていれば 3 回分のタイムアウト (約 3 秒) を待つ (偽エンジンは要求を 1 件ずつ処理するので、2 回目以降も
+        // 1 回目の応答の遅延 (3 秒) が終わるまで処理されず、それぞれ 1 秒でタイムアウトする)。負荷で遅れても落ちないよう余裕を取る
+        await Assert.That(stopwatch.Elapsed).IsLessThan(TimeSpan.FromMilliseconds(2500));
     }
 }
