@@ -300,6 +300,7 @@ task build                        # Debug ビルド
 task test                         # テスト
 task check                        # format → Release ビルド → テスト (コミット前に実行)
 task run -- "テストメッセージ"
+task hooks:install                # コミット時のチェック (ビルド・整形) を有効にする (clone 後に 1 回)
 ```
 
 バージョンは `src_dotnet/Directory.Build.props` の `<Version>` で一元管理している。

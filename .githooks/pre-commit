@@ -1,0 +1,26 @@
+#!/bin/sh
+# コミット前のチェック (ビルド・整形)。有効にするには `task hooks:install` (core.hooksPath = .githooks)。
+# テストは時間がかかるので走らせない。コミット前に `task check` を実行すること。
+
+cd "$(git rev-parse --show-toplevel)" || exit 1
+
+SLN=src_dotnet/VoicevoxRunCached.slnx
+
+if ! command -v dotnet >/dev/null 2>&1; then
+    echo "pre-commit: dotnet が見つかりません。.NET SDK をインストールしてください。" >&2
+    exit 1
+fi
+
+echo "pre-commit: ビルド中..."
+if ! dotnet build "$SLN" --verbosity quiet; then
+    echo "pre-commit: ビルドに失敗しました。直してからコミットしてください。" >&2
+    exit 1
+fi
+
+echo "pre-commit: 整形を確認中..."
+if ! dotnet format "$SLN" --verify-no-changes --verbosity quiet; then
+    echo "pre-commit: 整形されていないコードがあります。'task format' を実行し、git add してからコミットし直してください。" >&2
+    exit 1
+fi
+
+echo "pre-commit: OK"

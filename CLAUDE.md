@@ -25,6 +25,7 @@ task publish                  # standalone EXE を src_dotnet/publish に出力
 task publish:zip              # 同上 + バージョン付き ZIP
 task clean                    # bin / obj / publish を削除
 task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube + ReSharper まで)
+task hooks:install            # コミット時のチェック (.githooks) を有効にする (clone 後に 1 回)
 ```
 
 テストは .NET 10 + Microsoft.Testing.Platform のため `dotnet test` では動かない (`task test` を使う)。
@@ -174,7 +175,7 @@ DI は Jab (Source Generator)。`Services/AppServiceProvider.cs` の `[Singleton
 
 ## Pre-Commit Hooks
 
-`.pre-commit-config.yaml` で `git commit` 時に dotnet-build・dotnet-format・ファイル系チェックが走る。テストは走らないので、コミット前に `task check` を実行する。`dotnet-format` で失敗したら `task format` をやり直す。`--no-verify` で飛ばさない。
+`.githooks/pre-commit` で `git commit` 時にソリューション全体 (テストプロジェクト含む) の build と `dotnet format --verify-no-changes` が走る。clone 後に `task hooks:install` (`core.hooksPath = .githooks`) で有効にする。整形差分で止まったら `task format` → `git add` してコミットし直す。テストは走らないので、コミット前に `task check` を実行する。`--no-verify` で飛ばさない。
 
 ## Command Interface
 
