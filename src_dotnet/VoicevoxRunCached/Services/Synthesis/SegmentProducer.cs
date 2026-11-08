@@ -15,7 +15,7 @@ namespace VoicevoxRunCached.Services.Synthesis;
 ///   3. 新規保存があれば、最後に 1 回だけキャッシュ eviction (期限切れ + 容量上限) を行う
 /// 例外パスでも 2. を必ず実行することで、producer 終了 = 全 cache save 完了を上位に保証する。
 /// エンジンに届かない失敗 (<see cref="VoiceVoxApiClient.IsEngineUnavailable"/>) が起きたら、残りの未キャッシュ分は API を呼ばずに失敗として数える
-/// (1 件ごとにリトライ込みのタイムアウトを待つと、その間プロセス間ロックを持ったまま後続の読み上げも待たせるため)。
+/// (1 件ごとにタイムアウト (ConnectionTimeout) を待つと、その間プロセス間ロックを持ったまま後続の読み上げも待たせるため)。
 /// キャッシュ済みのセグメントはそのまま流して再生する。
 /// </remarks>
 public class SegmentProducer

@@ -20,7 +20,7 @@ public static class ConfigurationManager
     {
         // "-- <本文>" は区切りと本文を設定の読み込みから外す (コマンド名やオプションと同じ文字列の本文を読むための書き方なので、
         // 本文が "--init" や "--Logging:Level=error" でも設定として解釈しない)
-        if (args.Length > 0 && args[0] == ArgumentParser.TextSeparator)
+        if (ArgumentParser.StartsWithTextSeparator(args))
         {
             args = args[Math.Min(2, args.Length)..];
         }

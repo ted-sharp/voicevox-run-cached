@@ -37,8 +37,8 @@ public class FillerManager
     /// <returns>生成を試みた件数と成否。生成済みでスキップしたフィラーは数えない</returns>
     /// <remarks>
     /// エンジンに届かない失敗 (<see cref="VoiceVoxApiClient.IsEngineUnavailable"/>) が起きたら、残りの未生成分は
-    /// API を呼ばずに失敗として数える (<c>--init</c> は読み上げと同じロックを持つので、1 件ごとにリトライ込みの
-    /// タイムアウトを待つと、その間 Hooks の読み上げも待たせてしまう)。
+    /// API を呼ばずに失敗として数える (<c>--init</c> は読み上げと同じロックを持つので、1 件ごとにタイムアウト
+    /// (ConnectionTimeout) を待つと、その間 Hooks の読み上げも待たせてしまう)。
     /// </remarks>
     public async Task<SynthesisResult> InitializeFillerCacheAsync(VoiceVoxApiClient apiClient, int speakerId, CancellationToken cancellationToken = default)
     {

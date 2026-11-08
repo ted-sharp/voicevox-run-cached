@@ -64,6 +64,11 @@ public static class ArgumentParser
     public const string TextSeparator = "--";
 
     /// <summary>
+    /// 引数が <see cref="TextSeparator"/> で始まる (次の引数が本文) か。本文の位置と、本文を設定の読み込みから外すかの判定に使う。
+    /// </summary>
+    public static bool StartsWithTextSeparator(string[] args) => args.Length > 0 && args[0] == TextSeparator;
+
+    /// <summary>
     /// 通常のテキスト読み上げコマンドの引数を解析する。
     /// 先頭引数 (<see cref="TextSeparator"/> で始まるならその次) をテキストとして扱い、残りをオプションとして処理する。
     /// </summary>
@@ -71,7 +76,7 @@ public static class ArgumentParser
     public static (VoiceRequest? Request, TextToSpeechOptions Options) Parse(
         string[] args, AppSettings settings, ILogger? logger = null)
     {
-        int textIndex = args.Length > 0 && args[0] == TextSeparator ? 1 : 0;
+        int textIndex = StartsWithTextSeparator(args) ? 1 : 0;
         if (textIndex >= args.Length)
         {
             return (null, EmptyOptions);
