@@ -44,7 +44,7 @@ public class InterProcessLockTests
             using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(200));
 
             await Assert.ThrowsAsync<OperationCanceledException>(
-                () => InterProcessLock.AcquireAsync(path, NullLogger.Instance, cts.Token).WaitAsync(TimeSpan.FromSeconds(10)));
+                () => InterProcessLock.AcquireAsync(path, NullLogger.Instance, cancellationToken: cts.Token).WaitAsync(TimeSpan.FromSeconds(10)));
         }
         finally
         {

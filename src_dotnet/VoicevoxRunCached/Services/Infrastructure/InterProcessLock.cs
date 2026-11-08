@@ -27,14 +27,6 @@ public static class InterProcessLock
     private const int ErrorLockViolation = 33;
 
     /// <summary>
-    /// ロックを取得するまで待つ (上限なし)。他が保持している間は <see cref="RetryIntervalMs"/> ごとに再試行する。
-    /// </summary>
-    /// <returns>Dispose で解放されるロック</returns>
-    /// <exception cref="OperationCanceledException">待機中にキャンセルされた</exception>
-    public static Task<IDisposable> AcquireAsync(string lockFilePath, ILogger logger, CancellationToken cancellationToken = default)
-        => AcquireAsync(lockFilePath, logger, maxWait: null, cancellationToken);
-
-    /// <summary>
     /// ロックを取得するまで、最大 <paramref name="maxWait"/> 待つ。他が保持している間は <see cref="RetryIntervalMs"/> ごとに再試行する。
     /// </summary>
     /// <param name="lockFilePath">ロックファイル</param>
@@ -44,7 +36,7 @@ public static class InterProcessLock
     /// <returns>Dispose で解放されるロック</returns>
     /// <exception cref="VoicevoxRunCachedException">上限までに取得できなかった (<see cref="ErrorCodes.Lock.LockWaitTimeout"/>)</exception>
     /// <exception cref="OperationCanceledException">待機中にキャンセルされた</exception>
-    public static async Task<IDisposable> AcquireAsync(string lockFilePath, ILogger logger, TimeSpan? maxWait, CancellationToken cancellationToken = default)
+    public static async Task<IDisposable> AcquireAsync(string lockFilePath, ILogger logger, TimeSpan? maxWait = null, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(lockFilePath);
         ArgumentNullException.ThrowIfNull(logger);
