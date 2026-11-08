@@ -137,7 +137,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "BaseUrl": "http://127.0.0.1:50021",  // localhost より 127.0.0.1 推奨 (DNS 解決遅延回避)
     "EngineArguments": "--host 127.0.0.1 --port 50021",
     "DefaultSpeaker": 1,
-    "EnginePath": "",             // 空なら一般的なインストール場所から自動検出
+    "EnginePath": "",             // 空なら一般的なインストール場所から自動検出 (VOICEVOX\vv-engine\run.exe / AivisSpeech\AivisSpeech-Engine\run.exe)
     "ConnectionTimeout": 30,      // 秒。HTTP リクエスト 1 回の上限 (タイムアウトはリトライしない)。話者の初期化 (モデルの読み込み) は完了まで待つ
     "AutoStartEngine": true,
     "StartupTimeoutSeconds": 30,

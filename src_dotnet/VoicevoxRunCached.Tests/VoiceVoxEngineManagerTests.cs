@@ -8,6 +8,19 @@ namespace VoicevoxRunCached.Tests;
 public class VoiceVoxEngineManagerTests
 {
     [Test]
+    [Arguments("VOICEVOX", @"VOICEVOX\vv-engine\run.exe")]
+    [Arguments("AivisSpeech", @"AivisSpeech\AivisSpeech-Engine\run.exe")]
+    public async Task EngineRelativePaths_FindEngineBeforeEditor(string productName, string enginePath)
+    {
+        // 回帰: AivisSpeech のエンジン (AivisSpeech-Engine\run.exe) が候補に無く、EnginePath が空だとエディタ (AivisSpeech.exe) を起動していた
+        var paths = VoiceVoxEngineManager.GetEngineRelativePaths(productName);
+        var editorPath = Path.Combine(productName, $"{productName}.exe");
+
+        await Assert.That(paths).Contains(enginePath);
+        await Assert.That(paths[^1]).IsEqualTo(editorPath);
+    }
+
+    [Test]
     public async Task EnsureRunningOrThrow_CancelledDuringStartup_ThrowsOperationCanceled()
     {
         // エンジン起動待ち中の Ctrl+C が「エンジンが利用できません」(終了コード 3) になっていた回帰の検知。

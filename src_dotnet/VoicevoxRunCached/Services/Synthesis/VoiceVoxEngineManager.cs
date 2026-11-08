@@ -231,19 +231,28 @@ public class VoiceVoxEngineManager : IDisposable
             Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")
         };
 
-        var relativePaths = new[]
-        {
-            Path.Combine(productName, "vv-engine", "run.exe"),
-            Path.Combine(productName, "run.exe"),
-            Path.Combine(productName, $"{productName}.exe")
-        };
-
         foreach (var basePath in basePaths)
         {
-            foreach (var relativePath in relativePaths)
+            foreach (var relativePath in GetEngineRelativePaths(productName))
             {
                 yield return Path.Combine(basePath, relativePath);
             }
         }
     }
+
+    /// <summary>
+    /// インストール先 (<c>%LOCALAPPDATA%\Programs</c> 等) から見たエンジンの候補。同じインストール先の中では前にあるものほど優先する。
+    /// </summary>
+    /// <remarks>
+    /// エンジン本体はエディタ (Electron) の下にあり、VOICEVOX は <c>vv-engine\run.exe</c>、AivisSpeech は
+    /// <c>AivisSpeech-Engine\run.exe</c>。エディタ (<c>{製品名}.exe</c>) は最後の候補にする。前に置くと、エンジンを起動するつもりで
+    /// エディタを起動してしまう (エディタも自分のエンジンを起動するのでヘルスチェックは通り、気づきにくい)。
+    /// </remarks>
+    public static IReadOnlyList<string> GetEngineRelativePaths(string productName) =>
+    [
+        Path.Combine(productName, "vv-engine", "run.exe"),
+        Path.Combine(productName, $"{productName}-Engine", "run.exe"),
+        Path.Combine(productName, "run.exe"),
+        Path.Combine(productName, $"{productName}.exe"),
+    ];
 }
