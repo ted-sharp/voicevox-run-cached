@@ -86,6 +86,17 @@ tasks:
       - powershell -NoProfile -Command "Compress-Archive -Path '{{.PUBLISH_DIR}}/VoicevoxRunCached/*' -DestinationPath '{{.ZIP}}' -Force"
       - 'echo "Created: {{.ZIP}}"'
 
+  install:
+    desc: publish して INSTALL_DIR (既定 %LOCALAPPDATA%\Programs\VoicevoxRunCached) に入れる (例 task install INSTALL_DIR='C:\Tools\VoicevoxRunCached')
+    cmds:
+      - task: publish
+      - powershell -NoProfile -ExecutionPolicy Bypass -File {{.SRC}}/_install.ps1 -SourceDir {{.PUBLISH_DIR}}/VoicevoxRunCached {{if .INSTALL_DIR}}-InstallDir '{{.INSTALL_DIR}}'{{end}}
+
+  uninstall:
+    desc: task install で入れた exe と appsettings.json を消す (cache / logs は残す)
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File {{.SRC}}/_uninstall.ps1 {{if .INSTALL_DIR}}-InstallDir '{{.INSTALL_DIR}}'{{end}}
+
   clean:
     desc: bin / obj / publish を削除 (キャッシュ・ログは残す)
     cmds:

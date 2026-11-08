@@ -23,6 +23,8 @@ task run -- "こんにちは" -s 0  # サンプル実行 (エンジンはアプ�
 task run:test                 # appsettings.json の Test.Message で実行
 task publish                  # standalone EXE を src_dotnet/publish に出力
 task publish:zip              # 同上 + バージョン付き ZIP
+task install                  # publish して %LOCALAPPDATA%\Programs\VoicevoxRunCached に入れる (INSTALL_DIR=... で変更。設定・cache・logs は残す)
+task uninstall                # 同上の exe と appsettings.json を消す
 task clean                    # bin / obj / publish を削除
 task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube + ReSharper まで)
 task hooks:install            # コミット時のチェック (.githooks) を有効にする (clone 後に 1 回)
