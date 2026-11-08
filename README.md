@@ -141,7 +141,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "ConnectionTimeout": 30,      // 秒。HTTP リクエスト 1 回の上限 (タイムアウトはリトライしない)。話者の初期化 (モデルの読み込み) は完了まで待つ
     "AutoStartEngine": true,
     "StartupTimeoutSeconds": 30,
-    "KeepEngineRunning": true     // false ならアプリ終了時にエンジンも停止
+    "KeepEngineRunning": true     // false ならアプリ終了時にエンジンも停止 (強制終了時を除く。Hooks の注意を参照)
   },
   "Cache": {
     "Directory": "./cache/audio/",
@@ -281,6 +281,7 @@ Total execution time: 2445.4ms
 - 複数のフック (複数セッションなど) が同時に発火した場合は、後から来た方が先の読み上げの終了を待ってから読み上げる (音声は重ならない)。待ち時間も Hooks の `timeout` に含まれるので、長い文を続けて読ませる場合は `timeout` を長めにする
 - エンジンに接続するのは合成が必要なときだけ。決まった文言の通知は 2 回目以降キャッシュから再生されるので、エンジンが止まっていても起動を待たずにすぐ鳴る
 - キャッシュに無い文を合成するとき、既定 (`AutoStartEngine: true`) ではエンジンが停止していても自動起動されるが、起動を待つ分だけ通知が遅れる。遅延を避けたい場合はエンジンを事前に起動しておく (`KeepEngineRunning: true` (既定) なら一度起動したエンジンは常駐する)
+- `KeepEngineRunning: false` でも、自分が起動したエンジンを止めるのはプロセスが終了処理まで進んだとき (エラー終了・1 回目の Ctrl+C を含む) だけ。Hooks の `timeout` で強制終了されたときや Ctrl+C を 2 回押したときはエンジンが動いたまま残り、以後の実行はそれを外部で起動済みのエンジンとみなして止めない。残ったエンジンは手動で終了する
 
 ## 開発
 
