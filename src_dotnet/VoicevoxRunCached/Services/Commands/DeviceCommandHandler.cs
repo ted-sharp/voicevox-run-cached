@@ -43,11 +43,10 @@ public class DeviceCommandHandler
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public int HandleDevices(string[] args)
+    /// <param name="outputJson"><c>--json</c></param>
+    /// <param name="full"><c>--full</c></param>
+    public int HandleDevices(bool outputJson, bool full)
     {
-        bool outputJson = args.Contains("--json");
-        bool full = args.Contains("--full");
-
         using var enumerator = new MMDeviceEnumerator();
 
         var (defaultName, defaultId) = GetDefaultAudioEndpoint(enumerator);
