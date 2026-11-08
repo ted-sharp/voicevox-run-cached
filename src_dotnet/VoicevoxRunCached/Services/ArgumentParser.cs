@@ -205,6 +205,7 @@ public static class ArgumentParser
         nameof(AppSettings.Cache),
         nameof(AppSettings.Audio),
         nameof(AppSettings.Filler),
+        nameof(AppSettings.Lock),
         nameof(AppSettings.Logging),
         nameof(AppSettings.Test)
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);

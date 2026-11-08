@@ -119,7 +119,7 @@ task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube 
 - **`DEBUG` / `if DEBUG` のような prefix・条件付きログは付けない**
 
 ### 設定 (`appsettings.json` → `AppSettings`)
-- セクション: `VoiceVox` / `Cache` / `Audio` / `Filler` / `Lock` / `Logging` / `Test`。`ApplicationBootstrap.BuildAppSettings` が**セクションごとに Bind する**ので、セクションを足したらそこにも追加する — `ApplicationBootstrapTests.LockMaxWaitSeconds_IsLoaded`
+- セクション: `VoiceVox` / `Cache` / `Audio` / `Filler` / `Lock` / `Logging` / `Test`。セクションを足したら、`ApplicationBootstrap.BuildAppSettings` (**セクションごとに Bind する**) と `ArgumentParser.ConfigurationSections` (`--Section:Key=値` を読み飛ばす対象) にも追加する — `ApplicationBootstrapTests.LockMaxWaitSeconds_IsLoaded` / `ArgumentParserTests.ConfigurationOverride_AcceptsEverySection`
 - `Validators.cs` (FluentValidation) で検証。読み込み・バインドの失敗 (構文エラー・型の不一致・ファイル無し) も `ConfigurationException` (終了コード 7)。`Test` は `--test` のときだけ検証
 - `Cache.Directory` と `Filler.Directory` が同じならエラー (容量超過の eviction がフィラーも消す。`--init` は `Enabled` に関係なく生成するので常に検証)
 - 検証の前に、キャッシュ・フィラーの相対パスを (`UseExecutableBaseDirectory: true` なら実行ファイル基準の) 絶対パスにし、`VoiceVox.BaseUrl` の末尾 `/` を取る (`//version` になるため)

@@ -553,6 +553,22 @@ public class ArgumentParserTests
     }
 
     [Test]
+    public async Task ConfigurationOverride_AcceptsEverySection()
+    {
+        // 回帰: Lock セクションを足したときに一覧へ入れ忘れ、--Lock:MaxWaitSeconds=5 が不明なオプションのエラーになっていた
+        foreach (var section in typeof(AppSettings).GetProperties().Select(p => p.Name))
+        {
+            string[] overrideArgs = [$"--{section}:Key=1"];
+
+            var (_, options) = ArgumentParser.Parse(["text", .. overrideArgs, "--no-play"], DefaultSettings());
+            var speakerId = ArgumentParser.ParseInitSpeaker(overrideArgs, DefaultSettings());
+
+            await Assert.That(options.NoPlay).IsTrue();
+            await Assert.That(speakerId).IsEqualTo(1);
+        }
+    }
+
+    [Test]
     [Arguments("--log-level debug --Filler:Enabled=true", 1)]
     [Arguments("--log-format=json --Filler:Enabled true", 1)]
     [Arguments("-s 3 --log-level=debug", 3)]
