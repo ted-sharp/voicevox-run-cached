@@ -12,7 +12,7 @@ namespace VoicevoxRunCached.Services.Audio;
 /// <remarks>
 /// warm-up は <see cref="StartPreparation"/> で始める (コンストラクタでは始めない)。
 /// このクラスは CommandRouter の依存として全コマンドで生成されるため、コンストラクタで始めると
-/// <c>speakers</c> / <c>devices</c> / <c>--clear</c> / <c>--no-play</c> でもウォームアップ音が鳴っていた。
+/// <c>speakers</c> / <c>devices</c> / <c>--clear</c> / <c>--no-play</c> でもウォームアップ音が鳴ってしまう。
 /// </remarks>
 public class AudioDeviceManager : IDisposable
 {

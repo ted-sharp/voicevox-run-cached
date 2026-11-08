@@ -89,11 +89,16 @@
   - エンジンの起動待ちで、死活確認の HTTP 応答を解放していなかった問題を修正
   - 話者の初期化 (`/initialize_speaker`) はモデルの読み込みが終わるまで待ち、`ConnectionTimeout` で打ち切らない。エンジンは読み込みが終わってから応答するので、読み込みに 30 秒以上かかる環境では、エンジン起動直後の最初の読み上げがタイムアウトで失敗していた
   - 読み込み済みの話者を毎回初期化し直していた問題を修正 (`/initialize_speaker` に `skip_reinit=true` を付ける)。合成が必要な読み上げ・`--init` のたびに 1.7 秒ほど (実測) 余分にかかっていた
+  - 読めないキャッシュ (`.opus`) を削除して合成し直す。これまでは壊れたファイルが残り続け、その文を含む読み上げが毎回失敗していた (`--cache-only` では合成せず失敗として数える)
+  - エンジンの起動確認・話者の初期化を、最初に合成が必要になったときに行う。先頭の文がキャッシュ済みなら、エンジンの起動を待つ間にそこから再生する (その間フィラーも鳴りうる)
+  - プロセス間ロックを待つ上限を設けられるようにする (`Lock.MaxWaitSeconds`、読み上げ・`--test` は `--max-wait <秒>` で上書き)。超えたら実行せず終了コード 9 (`LOCK_001`)
+  - フィラーの音量を読み上げの `--volume` に合わせる (これまでは常に音量 1.0。話速・音高は既定のまま)
 - 削除:
   - メモリキャッシュ層と `Cache.MemoryCacheSizeMb` 設定 (1 実行ごとに終了する CLI では効果がないため。既存設定に残っていても無視される)
   - `--benchmark` コマンド (BenchmarkDotNet によるベンチマークと合わせて廃止)
   - `Audio.OutputDeviceId` 設定 (実装されておらず効果が無かったため。出力デバイスは `Audio.OutputDevice` の WaveOut index で指定する。既存設定に残っていても無視される)
   - 未使用だった Polly 依存 (リトライは `RetryPolicyService` の自前実装)
+  - Cursor 用の設定 (`.mcp.json`)
   - 未使用の NuGet パッケージ: `Microsoft.Extensions.Logging.Console`, `FluentValidation.DependencyInjectionExtensions`, `Serilog.Sinks.Seq`, `Serilog.Settings.Configuration`, `Serilog.Enrichers.Environment`, `Serilog.Enrichers.Thread`
 - 開発環境:
   - `Taskfile.yml` を追加 (`task build` / `task test` / `task check` / `task publish:zip` 等)

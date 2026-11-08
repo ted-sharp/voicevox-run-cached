@@ -33,8 +33,8 @@ public class VoiceVoxEngineManager : IDisposable
         if (_disposed)
             return;
 
-        // エンジンを起動するコマンド (読み上げ・--init・speakers) はロックの中で StopEngineIfNotKept を呼び済み。
-        // ここは、ロックの中で止める処理を通らずにエンジンを起動する経路が今後増えたときの保険
+        // エンジンを起動するコマンド (読み上げ・--init・speakers) は SpeechLock がロックの中で StopEngineIfNotKept を呼び済み。
+        // ここは、SpeechLock を通らずにエンジンを起動する経路が今後増えたときの保険
         StopEngineIfNotKept();
 
         _engineProcess?.Dispose();
@@ -47,9 +47,7 @@ public class VoiceVoxEngineManager : IDisposable
     /// <c>true</c> (常駐運用) のときと、外部で既に動いていたエンジンを使ったときは何もしない。
     /// </summary>
     /// <remarks>
-    /// エンジンを起動するコマンド (読み上げ・<c>--init</c>・<c>speakers</c>) はプロセス間ロックを解放する前にこれを呼ぶ。ロックを解放してから (Dispose で) 止めると、
-    /// その間にロックを取った後続のプロセスが動いているエンジンを見て合成を始め、途中で止められて失敗するため。
-    /// 先に止めておけば、後続はエンジンが止まっているのを見て自分で起動する。
+    /// <see cref="SpeechLock"/> がプロセス間ロックを解放する前にこれを呼ぶ (理由は <see cref="SpeechLock"/> を参照)。
     /// </remarks>
     public void StopEngineIfNotKept()
     {
