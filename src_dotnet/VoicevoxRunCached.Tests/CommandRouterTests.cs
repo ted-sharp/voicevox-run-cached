@@ -13,10 +13,11 @@ public class CommandRouterTests
     private static async Task WithRouterAsync(Func<CommandRouter, string, Task> test)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_router_" + Guid.NewGuid().ToString("N"));
+        using var stoppedEngine = new StoppedEngine();
         var settings = new AppSettings
         {
             // 振り分けを誤ってエンジンに接続しても、手元で動いているエンジンには届かないようにする
-            VoiceVox = new VoiceVoxSettings { BaseUrl = $"http://127.0.0.1:{FakeEngineServer.GetFreePort()}", AutoStartEngine = false },
+            VoiceVox = new VoiceVoxSettings { BaseUrl = stoppedEngine.BaseUrl, AutoStartEngine = false },
             Audio = new AudioSettings { PrepareDevice = false },
             Cache = new CacheSettings { Directory = Path.Combine(dir, "audio"), UseExecutableBaseDirectory = false },
             Filler = new FillerSettings { Directory = Path.Combine(dir, "filler"), UseExecutableBaseDirectory = false },
