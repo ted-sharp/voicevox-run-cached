@@ -73,6 +73,7 @@ VoicevoxRunCached.exe "メッセージ" --verbose
 
 ```
 VoicevoxRunCached <text> [options]
+VoicevoxRunCached -- <text> [options]   # <text> がコマンド名 (speakers など) と同じでも本文として読み上げる
 VoicevoxRunCached --test [options]      # appsettings.json の Test.Message で実行
 VoicevoxRunCached speakers              # スピーカー一覧
 VoicevoxRunCached devices [--full] [--json]  # オーディオデバイス一覧
@@ -94,9 +95,11 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 | `--verbose` | 再生時間と総実行時間を表示 | false |
 | `--log-level <level>` | `trace`/`debug`/`info`/`warn`/`error`/`crit`/`none` (`none` はログを一切出さない) | info |
 | `--log-format <fmt>` | `simple` / `json` (`json` は 1 イベント 1 行の JSON。ファイル出力も同じ書式) | simple |
-| `--help, -h` | ヘルプ表示 | — |
+| `--help, -h` | ヘルプ表示 (引数のどこにあっても表示し、読み上げ・コマンドは実行しない) | — |
 
 `--speed` / `--pitch` / `--volume` は小数第 2 位に丸めて使われる (キャッシュキーも丸めた値で作る)。「目安」は VOICEVOX エディタの調整範囲で、本ツールが検証するのは数値であること・speed が 0 より大きいこと・volume と speaker が 0 以上であることだけ。不正な値はエラーで終了する。
+
+不明なオプション (`--speeed` などの打ち間違い) と余分な引数もエラーで終了する (終了コード 1。既定値のまま読み上げない)。本文に空白を含めるときは全体を引用符で囲む。本文が `speakers` / `devices` / `--init` のようにコマンドやオプションと同じ文字列のときは、`VoicevoxRunCached -- speakers` のように前に `--` を置く。本文の位置にオプションの形をした引数 (`--refresh` のように `--` の直後が英字で空白を含まないもの、`-s` / `-o`) があるときは本文の書き忘れとしてエラーにするので、その形の文を読み上げるときも前に `--` を置く (`--- 完了 ---` のような文はそのまま読む)。
 
 ### 終了コード
 
@@ -133,7 +136,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "EngineArguments": "--host 127.0.0.1 --port 50021",
     "DefaultSpeaker": 1,
     "EnginePath": "",             // 空なら一般的なインストール場所から自動検出
-    "ConnectionTimeout": 30,      // 秒
+    "ConnectionTimeout": 30,      // 秒。HTTP リクエスト 1 回の上限 (タイムアウトはリトライしない)。話者の初期化 (モデルの読み込み) は完了まで待つ
     "AutoStartEngine": true,
     "StartupTimeoutSeconds": 30,
     "KeepEngineRunning": true     // false ならアプリ終了時にエンジンも停止
@@ -156,7 +159,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
   },
   "Filler": {
     "Enabled": false,             // true で生成待機中に相槌音声を再生して無音を回避 (初回は --init で事前生成)
-    "Directory": "./cache/filler/",
+    "Directory": "./cache/filler/",  // Cache.Directory と同じにはできない (設定エラー)
     "UseExecutableBaseDirectory": true,
     "FillerTexts": ["えーっと、", "あのー、", "あのう、", "ええと、", "ええっと、", "えとえと、"]
   },
@@ -183,6 +186,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 - **即時再生**: キャッシュ済みセグメントは待機なしで再生開始
 - **バックグラウンド生成**: 未キャッシュ分は再生と並行して API 呼び出し
 - **エンジン異常時の打ち切り**: 合成中にエンジンに接続できなくなった (接続拒否・503・タイムアウト) ら、残りの未キャッシュ分の合成は中止する (キャッシュ済みの文は再生する)。1 文ごとにリトライとタイムアウトを待ち続けない
+- **リトライ**: エンジンが 500 / 502 / 503 / 504 / 429 を返したときは最大 3 回まで試す。タイムアウト (`ConnectionTimeout`) と、エンジンに接続できないときはリトライしない (上記のとおり残りの合成を中止する)
 
 キャッシュは最後に使った日から `ExpirationDays` で期限切れになるので、よく使う文ほど作り直されない。VOICEVOX のユーザー辞書で読みを直したときやエンジンを更新したときは、その文を `--refresh` 付きで一度実行してキャッシュを上書きする。
 

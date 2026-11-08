@@ -44,6 +44,20 @@ public class CommandLineConfigurationTests
     }
 
     [Test]
+    [Arguments("--log-level")]
+    [Arguments("--Logging:Level=error")]
+    [Arguments("--init")]
+    public async Task TextAfterSeparator_IsNotReadAsConfiguration(string text)
+    {
+        // "-- <本文>" の本文はオプションと同じ文字列でも設定に混ぜない。後ろのオプションは効く
+        var configuration = ConfigurationManager.BuildConfigurationWithCommandLine(
+            ["--", text, "--log-format", "json"]);
+
+        await Assert.That(configuration["Logging:Level"]).IsEqualTo("info");
+        await Assert.That(configuration["Logging:Format"]).IsEqualTo("json");
+    }
+
+    [Test]
     public async Task WithoutLogOptions_UsesAppSettings()
     {
         var configuration = ConfigurationManager.BuildConfigurationWithCommandLine(["テキスト", "-s", "3", "--no-play"]);

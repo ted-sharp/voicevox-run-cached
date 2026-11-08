@@ -114,17 +114,20 @@ public class DiskCacheStore
             Volume = request.Volume
         };
 
-        // 一時ファイルに書いてから置き換える。--refresh は既存のペアをその場で上書きするので、.opus に直接書くと
-        // 途中で落ちた (Hooks のタイムアウトで止められた等) ときに、正しい古い meta.json と途中までの .opus が残り、
-        // 以後ずっとキャッシュヒットして再生に失敗する
-        var tempPath = audioPath + TemporarySuffix;
-        await File.WriteAllBytesAsync(tempPath, audioData, cancellationToken);
-        File.Move(tempPath, audioPath, overwrite: true);
-
+        // meta.json を先に書き、.opus は最後に置く。途中で落ちた (Hooks のタイムアウトで止められた等) ときに残るのが
+        // meta.json だけになるようにするため。meta.json だけなら LoadAsync はミスとして扱い、期限切れの掃除
+        // (meta.json を数える) でも消える。逆順だと .opus だけが残り、容量超過で消されるまで溜まる。
+        // --refresh で既存のペアを上書きする途中で落ちても、キーが同じなので新しい meta.json と古い .opus の組は正しい
         var metaJson = JsonSerializer.Serialize(metadata, JsonSerializerOptionsCache.Indented);
         await File.WriteAllTextAsync(metaPath, metaJson, cancellationToken);
         // 最終利用日時 (meta.json の更新日時) を IClock の時刻に揃える (期限・eviction の判定は IClock と比べるため)
         File.SetLastWriteTimeUtc(metaPath, metadata.CreatedAt);
+
+        // .opus は一時ファイルに書いてから置き換える。直接書くと、途中で落ちたときに正しい meta.json と途中までの .opus が残り、
+        // 以後ずっとキャッシュヒットして再生に失敗する
+        var tempPath = audioPath + TemporarySuffix;
+        await File.WriteAllBytesAsync(tempPath, audioData, cancellationToken);
+        File.Move(tempPath, audioPath, overwrite: true);
 
         _logger.LogDebug("キャッシュファイルを保存しました: {CacheKey}, サイズ: {Size} bytes", cacheKey, audioData.Length);
     }

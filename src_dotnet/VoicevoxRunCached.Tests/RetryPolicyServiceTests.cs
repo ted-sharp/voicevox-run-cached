@@ -65,8 +65,13 @@ public class RetryPolicyServiceTests
     }
 
     [Test]
-    public async Task HttpRequestException_5xx_RetriesUpToMaxAttempts()
+    [Arguments(HttpStatusCode.InternalServerError)]
+    [Arguments(HttpStatusCode.BadGateway)]
+    [Arguments(HttpStatusCode.ServiceUnavailable)]
+    [Arguments(HttpStatusCode.GatewayTimeout)]
+    public async Task HttpRequestException_5xx_RetriesUpToMaxAttempts(HttpStatusCode statusCode)
     {
+        // 500 もリトライする (文に依存する失敗とは限らず、エンジン側の一時的な失敗でも返る)
         var policy = Create(maxAttempts: 3);
         var calls = 0;
 
@@ -75,11 +80,30 @@ public class RetryPolicyServiceTests
             await policy.ExecuteWithRetryAsync<int>(() =>
             {
                 calls++;
-                throw new HttpRequestException("server error", null, HttpStatusCode.InternalServerError);
+                throw new HttpRequestException("server error", null, statusCode);
             }, "op");
         });
 
         await Assert.That(calls).IsEqualTo(3);
+    }
+
+    [Test]
+    public async Task HttpRequestException_WithoutStatus_IsNotRetried()
+    {
+        // 接続拒否など。エンジンが止まっているとみなし、呼び出し元が残りの合成を打ち切る
+        var policy = Create(maxAttempts: 3);
+        var calls = 0;
+
+        await Assert.ThrowsAsync<HttpRequestException>(async () =>
+        {
+            await policy.ExecuteWithRetryAsync<int>(() =>
+            {
+                calls++;
+                throw new HttpRequestException("connection refused");
+            }, "op");
+        });
+
+        await Assert.That(calls).IsEqualTo(1);
     }
 
     [Test]
@@ -173,8 +197,9 @@ public class RetryPolicyServiceTests
     }
 
     [Test]
-    public async Task TaskCanceledException_WithoutUserCancel_IsRetried()
+    public async Task TaskCanceledException_WithoutUserCancel_IsNotRetried()
     {
+        // HttpClient のタイムアウト。リトライすると 1 件で約 93 秒 (30 秒 × 3 回 + バックオフ) ロックを握るため 1 回で投げる
         var policy = Create();
         var calls = 0;
 
@@ -187,7 +212,7 @@ public class RetryPolicyServiceTests
             }, "op");
         });
 
-        await Assert.That(calls).IsEqualTo(3);
+        await Assert.That(calls).IsEqualTo(1);
     }
 
     [Test]

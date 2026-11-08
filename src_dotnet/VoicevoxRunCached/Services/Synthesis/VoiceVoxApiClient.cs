@@ -30,7 +30,9 @@ public class VoiceVoxApiClient : IDisposable
         _httpClient = new HttpClient
         {
             BaseAddress = new Uri(_settings.BaseUrl),
-            Timeout = TimeSpan.FromSeconds(_settings.ConnectionTimeout)
+            // タイムアウト (ConnectionTimeout) は SendAsync でリクエストごとに掛ける。
+            // /initialize_speaker だけはモデルの読み込みが終わるまで待つため
+            Timeout = Timeout.InfiniteTimeSpan
         };
 
         _logger.LogDebug("VoiceVoxApiClient を初期化しました - BaseUrl: {BaseUrl}, Timeout: {Timeout}s",
@@ -58,8 +60,12 @@ public class VoiceVoxApiClient : IDisposable
         _logger.LogDebug("スピーカー {SpeakerId} を初期化中...", speakerId);
         return ExecuteApiAsync($"initialize speaker {speakerId}", async ct =>
         {
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"{_settings.BaseUrl}/initialize_speaker?speaker={speakerId}");
-            using var response = await SendAsync(request, ct);
+            // skip_reinit=true: 読み込み済みなら即座に返る (付けないと毎回初期化し直し、実測で 1 回 1.7 秒ほどかかっていた)
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{_settings.BaseUrl}/initialize_speaker?speaker={speakerId}&skip_reinit=true");
+            // エンジンはモデルの読み込みが終わってから応答する (応答 = 読み込み完了)。かかる時間はマシンとモデル次第なので
+            // ConnectionTimeout で打ち切らない (打ち切ると、エンジン起動直後の最初の読み上げが読み込み中にタイムアウトで失敗する)。
+            // エンジンが落ちれば接続エラーですぐ失敗する。固まった場合は Ctrl+C か呼び出し元 (Hooks) のタイムアウトで止まる
+            using var response = await SendAsync(request, ct, applyTimeout: false);
             _logger.LogInformation("スピーカー {SpeakerId} の初期化が完了しました", speakerId);
             return true;
         }, cancellationToken);
@@ -214,10 +220,10 @@ public class VoiceVoxApiClient : IDisposable
     };
 
     /// <summary>
-    /// エンジンそのものに届かない失敗か (接続できない・503・応答の途中切断 = EngineNotAvailable、リトライ込みのタイムアウト = ApiTimeout)。
+    /// エンジンそのものに届かない失敗か (接続できない・503・応答の途中切断 = EngineNotAvailable、タイムアウト = ApiTimeout)。
     /// 続けても同じ失敗を繰り返すだけなので、残りの合成 (読み上げの <see cref="SegmentProducer"/>・<c>--init</c> の
     /// <see cref="FillerManager"/>) を中止する判定に使う。どちらもプロセス間ロックを持っているので、1 件ごとに
-    /// リトライ込みのタイムアウトを待つと後続の読み上げも待たせてしまう。
+    /// タイムアウト (ConnectionTimeout) を待つと後続の読み上げも待たせてしまう。
     /// </summary>
     /// <remarks>
     /// 500 (EngineProcessError) は特定の文だけで起きることがあるので含めない (次の文は合成できる可能性がある)。
@@ -225,10 +231,35 @@ public class VoiceVoxApiClient : IDisposable
     public static bool IsEngineUnavailable(Exception ex)
         => ex is VoicevoxRunCachedException { ErrorCode: ErrorCodes.Engine.EngineNotAvailable or ErrorCodes.Api.ApiTimeout };
 
-    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    /// <param name="request">送るリクエスト</param>
+    /// <param name="cancellationToken">ユーザーのキャンセル (Ctrl+C)</param>
+    /// <param name="applyTimeout">false なら ConnectionTimeout で打ち切らず、応答が来るまで待つ</param>
+    /// <remarks>
+    /// 応答本文は SendAsync の中で読み終わる (既定の <see cref="HttpCompletionOption.ResponseContentRead"/>) ので、
+    /// タイムアウトは本文の受信まで含む (HttpClient.Timeout と同じ範囲)。
+    /// </remarks>
+    private async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken, bool applyTimeout = true)
     {
         _logger.LogDebug("HTTP {Method} {RequestUri}", request.Method, request.RequestUri);
-        var response = await _httpClient.SendAsync(request, cancellationToken);
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (applyTimeout)
+        {
+            timeoutCts.CancelAfter(TimeSpan.FromSeconds(_settings.ConnectionTimeout));
+        }
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _httpClient.SendAsync(request, timeoutCts.Token);
+        }
+        catch (OperationCanceledException ex) when (applyTimeout && !cancellationToken.IsCancellationRequested)
+        {
+            // ユーザーのキャンセルではなくタイムアウト (タイムアウトを掛けていないとき (/initialize_speaker) は、
+            // HttpClient の破棄などタイムアウト以外の理由なので変換しない)。HttpClient.Timeout で打ち切られたときと同じく
+            // TaskCanceledException にする (MapToErrorCode が ApiTimeout にし、RetryPolicyService はリトライしない)
+            throw new TaskCanceledException($"{_settings.ConnectionTimeout} 秒以内にエンジンから応答がありませんでした", ex);
+        }
         _logger.LogDebug("HTTP response: {StatusCode}", response.StatusCode);
 
         try

@@ -180,5 +180,29 @@ public class AppSettingsValidator : AbstractValidator<AppSettings>
         RuleFor(x => x.Audio).SetValidator(new AudioSettingsValidator());
         RuleFor(x => x.Filler).SetValidator(new FillerSettingsValidator());
         RuleFor(x => x.Logging).SetValidator(new LoggingSettingsValidator());
+
+        // 同じディレクトリだと、キャッシュの容量超過の削除がフィラーの .opus も数えて消し、--clear もまとめて消す。
+        // --init は Filler.Enabled に関係なく生成するので、Enabled でなくても検証する
+        RuleFor(x => x)
+            .Must(x => !IsSameDirectory(x.Cache.Directory, x.Filler.Directory))
+            .WithName("Filler.Directory")
+            .WithMessage("Cache Directory と Filler Directory には別のディレクトリを指定する必要があります");
+    }
+
+    /// <remarks>
+    /// <c>UseExecutableBaseDirectory</c> が true の相対パスは、検証前に <c>ApplicationBootstrap.BuildAppSettings</c> で
+    /// 実行ファイル基準の絶対パスにしてある。false の相対パスは実行時と同じくカレントディレクトリ基準で <c>GetFullPath</c> して比べる。
+    /// 末尾の区切り文字の有無と大文字小文字 (Windows のファイルシステムは区別しない) は無視する。
+    /// </remarks>
+    private static bool IsSameDirectory(string first, string second)
+    {
+        if (String.IsNullOrWhiteSpace(first) || String.IsNullOrWhiteSpace(second))
+        {
+            return false;
+        }
+        return String.Equals(
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(first)),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(second)),
+            StringComparison.OrdinalIgnoreCase);
     }
 }

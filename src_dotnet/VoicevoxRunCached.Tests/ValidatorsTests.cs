@@ -380,6 +380,64 @@ public class ValidatorsTests
     }
 
     [Test]
+    [Arguments("")]
+    [Arguments("\\")]
+    [Arguments("UPPER")]
+    public async Task AppSettings_SameCacheAndFillerDirectory_FailsValidation(string variant)
+    {
+        // 同じディレクトリだと容量超過の削除がフィラーも消す。末尾の区切り・大文字小文字の違いでも同じとみなす。
+        // --init は Filler.Enabled に関係なく生成するので、無効でも弾く
+        var dir = CreateTempCacheDir();
+        try
+        {
+            var fillerDir = variant switch
+            {
+                "UPPER" => dir.ToUpperInvariant(),
+                _ => dir + variant,
+            };
+            var settings = new AppSettings
+            {
+                Cache = new CacheSettings { Directory = dir },
+                Filler = new FillerSettings { Directory = fillerDir, Enabled = false },
+                Logging = new LoggingSettings { Level = "info", Format = "simple" }
+            };
+
+            var result = new AppSettingsValidator().Validate(settings);
+
+            await Assert.That(result.IsValid).IsFalse();
+            await Assert.That(result.Errors.Any(e => e.ErrorMessage.Contains("Filler Directory"))).IsTrue();
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public async Task AppSettings_FillerDirectoryInsideCacheDirectory_PassesValidation()
+    {
+        // キャッシュの走査は直下のみなので、サブディレクトリに置くのは問題ない
+        var dir = CreateTempCacheDir();
+        try
+        {
+            var settings = new AppSettings
+            {
+                Cache = new CacheSettings { Directory = dir },
+                Filler = new FillerSettings { Directory = Path.Combine(dir, "filler") },
+                Logging = new LoggingSettings { Level = "info", Format = "simple" }
+            };
+
+            var result = new AppSettingsValidator().Validate(settings);
+
+            await Assert.That(result.IsValid).IsTrue();
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
     public async Task LoggingSettings_DefaultLevel_PassesValidation()
     {
         // appsettings.json で上書きされない前提のフォールバック値も validator を通る必要がある

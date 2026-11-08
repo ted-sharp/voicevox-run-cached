@@ -169,8 +169,8 @@ public class TextToSpeechProcessor
             // 全部キャッシュ済みならエンジンに一切接続しない (起動待ちで通知が遅れない・エンジン停止中でも鳴る)
             await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
 
-            // 存在しない speaker だとエンジンは /initialize_speaker で 500 を返し、リトライ込みで十数秒待たされる。
-            // /speakers の照会はローカルで数 ms なので、合成が必要なときだけ先に確認して即エラーにする。
+            // 存在しない speaker だとエンジンは /initialize_speaker で 500 を返し、リトライの分だけ待たされたうえ原因の分からないエンジンエラーになる。
+            // /speakers の照会はローカルで数 ms なので、合成が必要なときだけ先に確認して入力ミス (InvalidArguments) として即エラーにする。
             EnsureSpeakerExists(await _apiClient.GetSpeakersAsync(cancellationToken), request.SpeakerId);
             await _apiClient.InitializeSpeakerAsync(request.SpeakerId, cancellationToken);
         }

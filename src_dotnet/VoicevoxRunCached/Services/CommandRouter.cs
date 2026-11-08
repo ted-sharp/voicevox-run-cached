@@ -38,7 +38,7 @@ public class CommandRouter
 
     public async Task<int> ExecuteCommandAsync(string[] args, CancellationToken cancellationToken = default)
     {
-        if (args.Length == 0 || args[0] == "--help" || args[0] == "-h")
+        if (args.Length == 0 || ArgumentParser.IsHelpRequested(args))
         {
             ArgumentParser.ShowUsage();
             return 0;
@@ -53,9 +53,10 @@ public class CommandRouter
             {
                 "speakers" => await _speakerHandler.HandleSpeakersAsync(cancellationToken),
                 "devices" => _deviceHandler.HandleDevices(subArgs),
-                "--init" => await _initHandler.HandleInitAsync(ArgumentParser.ParseInitSpeaker(subArgs, _settings, _logger), cancellationToken),
+                "--init" => await _initHandler.HandleInitAsync(ArgumentParser.ParseInitSpeaker(subArgs, _settings), cancellationToken),
                 "--clear" => await _cacheHandler.HandleClearCacheAsync(),
                 "--test" => await HandleTestCommandAsync(subArgs, cancellationToken),
+                // "--" (ArgumentParser.TextSeparator) もここに来る。続く引数はコマンド名と同じでも本文として読む
                 _ => await ExecuteTextToSpeechCommandAsync(args, cancellationToken)
             };
         }
@@ -112,7 +113,7 @@ public class CommandRouter
 
         // --test 自体は引数の先頭にテキストを取らないので、Test.Message を直接乗せて
         // 残りのオプション (--speed/--pitch/--out 等) を args そのまま再利用する。
-        var (request, options) = ArgumentParser.ParseTestCommand(testMessage, args, _settings, _logger);
+        var (request, options) = ArgumentParser.ParseTestCommand(testMessage, args, _settings);
         return await _ttsProcessor.ProcessTextToSpeechAsync(request, options, cancellationToken);
     }
 

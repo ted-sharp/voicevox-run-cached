@@ -42,17 +42,8 @@ public class AudioDeviceManager : IDisposable
         }
 
         _logger.LogDebug("デバイス事前準備を開始します");
-        _devicePreparationTask = Task.Run(async () =>
-        {
-            try
-            {
-                await PrewarmAudioDeviceAsync(_settings.PreparationDurationMs);
-            }
-            catch
-            {
-                _logger.LogDebug("デバイス事前準備でエラーが発生しましたが、継続します");
-            }
-        });
+        // 失敗は PrewarmAudioDeviceAsync が例外付きの Warning にして握る (warm-up に失敗しても再生は続ける) ので、このタスクは失敗しない
+        _devicePreparationTask = Task.Run(() => PrewarmAudioDeviceAsync(_settings.PreparationDurationMs));
     }
 
     public void Dispose()
@@ -81,9 +72,7 @@ public class AudioDeviceManager : IDisposable
 
         if (_devicePreparationTask != null)
         {
-            try
-            { await _devicePreparationTask; }
-            catch { _logger.LogDebug("デバイス準備が失敗しましたが、再生を継続します"); }
+            await _devicePreparationTask;
         }
     }
 
