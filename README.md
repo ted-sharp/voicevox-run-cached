@@ -9,17 +9,27 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
 
 ## 目次
 
+- [目次](#目次)
 - [必要環境](#必要環境)
 - [インストール](#インストール)
+  - [リリース版](#リリース版)
+  - [ソースからビルド](#ソースからビルド)
 - [使い方](#使い方)
 - [コマンドリファレンス](#コマンドリファレンス)
+  - [終了コード](#終了コード)
+  - [出力先と文字コード](#出力先と文字コード)
 - [設定 (`appsettings.json`)](#設定-appsettingsjson)
 - [仕組み](#仕組み)
+  - [セグメント単位キャッシュ](#セグメント単位キャッシュ)
+  - [フィラー音声](#フィラー音声)
+  - [同時実行](#同時実行)
+  - [vs `curl` 直叩き](#vs-curl-直叩き)
 - [パフォーマンス計測](#パフォーマンス計測)
 - [トラブルシューティング](#トラブルシューティング)
 - [Claude Code Hooks との連携](#claude-code-hooks-との連携)
 - [開発](#開発)
 - [ライセンス](#ライセンス)
+- [関連リンク](#関連リンク)
 
 ## 必要環境
 
@@ -32,11 +42,22 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
 ### リリース版
 
 1. [Releases](https://github.com/ted-sharp/voicevox-run-cached/releases) から `VoicevoxRunCached-v[x.x.x]-win-x64.zip` をダウンロード
-2. 任意のフォルダ (例: `C:\Tools\VoicevoxRunCached\`) に展開
-3. 必要に応じて `appsettings.json` を編集
+2. 書き込めるフォルダ (例: `C:\Tools\VoicevoxRunCached\`) に展開。キャッシュを exe と同じフォルダに作るので、`C:\Program Files` のような管理者権限が要る場所に置くと起動時に設定エラー (終了コード 7) になる
+3. 必要に応じて `appsettings.json` を編集 (項目は「[設定](#設定-appsettingsjson)」)
+   - キャッシュは既定で `VoicevoxRunCached.exe` と同じフォルダの `cache\audio\` (フィラーは `cache\filler\`) にできる。場所は `Cache.Directory` / `Filler.Directory` で変えられ、相対パスは `UseExecutableBaseDirectory: true` なら exe 基準、`false` ならカレントディレクトリ基準
+   - ログをファイルに出す (`Logging.EnableFileLogging: true`) と、exe と同じフォルダの `logs\` に日ごとのファイル (`voicevox-run-cached-YYYYMMDD.log`) ができる。場所は変えられない
 4. (任意) 環境変数 `PATH` に追加するとどこからでも `VoicevoxRunCached.exe` で実行可能
 
 ### ソースからビルド
+
+必要なもの:
+
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [Task](https://taskfile.dev) (タスクランナー。ビルド・テストなどの操作を `Taskfile.yml` にまとめている)
+
+```bash
+winget install Task.Task      # Task のインストール (入れた後はターミナルを開き直す)
+```
 
 ```bash
 git clone https://github.com/ted-sharp/voicevox-run-cached.git
@@ -44,6 +65,8 @@ cd voicevox-run-cached
 task publish        # 開発用 (src_dotnet/publish/VoicevoxRunCached/)
 task publish:zip    # 配布用 (バージョン付き ZIP)
 ```
+
+出力は .NET ランタイムを含む単一の `VoicevoxRunCached.exe` (約 74MB) と `appsettings.json` で、実行する PC に .NET を入れる必要はない (リリース版の ZIP も同じ)。一緒に出る `VoicevoxRunCached.pdb` はデバッグ用で、実行には要らない。
 
 [Task](https://taskfile.dev) が無い場合は `src_dotnet/_publish.cmd` / `_publish_zip.cmd` でも同じ出力になる。
 
@@ -86,7 +109,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 | `--speaker, -s <id>` | スピーカー ID (0 以上) | `VoiceVox.DefaultSpeaker` (1) |
 | `--speed <value>` | 速度。0 より大きい値 (目安 0.5–2.0) | 1.0 |
 | `--pitch <value>` | ピッチ (目安 -0.15–0.15) | 0.0 |
-| `--volume <value>` | 音量。0 以上 (目安 0.0–2.0) | 1.0 |
+| `--volume <value>` | 合成する音声の音量。0 以上 (目安 0.0–2.0)。キャッシュと `--out` にも反映される (再生時の音量は `Audio.Volume`) | 1.0 |
 | `--no-cache` | キャッシュを使わない (読みも書きもしない) | false |
 | `--cache-only` | キャッシュのみ使う (API を呼ばず、エンジンにも接続しない。キャッシュに無い文があれば終了コード 4) | false |
 | `--refresh` | キャッシュを読まずに全部合成し直し、キャッシュを上書きする (`--no-cache` / `--cache-only` とは併用不可) | false |
@@ -152,7 +175,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
   },
   "Audio": {
     "OutputDevice": -1,           // -1 = OS デフォルト, 0+ = WaveOut index
-    "Volume": 1.0,                // 再生音量 0.0-1.0 (WaveOut の上限が 1.0)
+    "Volume": 1.0,                // 再生時の音量 0.0-1.0 (WaveOut の上限が 1.0)。キャッシュ・--out には影響しない。音声そのものの音量は --volume
     "PrepareDevice": false,       // true で再生前に小音量の音を流してデバイスを温める (読み上げで再生するときだけ)
     "PreparationDurationMs": 200,
     "PreparationVolume": 0.01,
@@ -263,7 +286,7 @@ Total execution time: 2445.4ms
         "hooks": [
           {
             "type": "command",
-            "command": "\"C:\\Program Files\\VoicevoxRunCached\\VoicevoxRunCached.exe\" \"作業が完了しました。\" --speaker 3"
+            "command": "\"C:\\Tools\\VoicevoxRunCached\\VoicevoxRunCached.exe\" \"作業が完了しました。\" --speaker 3"
           }
         ]
       }
@@ -293,7 +316,7 @@ Total execution time: 2445.4ms
 - **Jab**: DI コンテナ (Source Generator によるコンパイル時 DI。登録漏れはビルドエラー)
 - **TUnit**: ユニットテスト
 
-リポジトリ直下の `Taskfile.yml` でよく使う操作をまとめている (`task` で一覧表示)。
+リポジトリ直下の `Taskfile.yml` でよく使う操作をまとめている (`task` で一覧表示)。実行には [Task](https://taskfile.dev) が要る (入れ方は「[ソースからビルド](#ソースからビルド)」)。
 
 ```bash
 task build                        # Debug ビルド
@@ -309,7 +332,9 @@ task hooks:install                # コミット時のチェック (ビルド・
 
 ## ライセンス
 
-MIT License。
+MIT License (本ツールのコード)。
+
+生成した音声の利用は、VOICEVOX の[利用規約](https://voicevox.hiroshiba.jp/term/)と話者 (キャラクター) ごとの利用規約に従うこと。`--out` で保存した音声などを公開するときは、多くの話者で「VOICEVOX:ずんだもん」のようなクレジット表記が必要になる。AivisSpeech では、使う音声合成モデルのライセンスに従う。
 
 ## 関連リンク
 
