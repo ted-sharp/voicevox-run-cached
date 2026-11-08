@@ -53,6 +53,8 @@ public class SegmentProducer
         var stats = new SegmentStats();
         var pendingCacheSaves = new List<Task>();
         var synthesizedByText = new Dictionary<string, byte[]>(StringComparer.Ordinal);
+        // キャッシュのデコード結果 (読めなければ null)。同じ文の 2 回目以降はデコードし直さない
+        var decodedByText = new Dictionary<string, byte[]?>(StringComparer.Ordinal);
         var engineUnavailable = false;
         var synthesisPrepared = false;
 
@@ -65,7 +67,13 @@ public class SegmentProducer
 
                 if (IsReady(segment))
                 {
-                    var wavData = await DecodeCachedAsync(segment, originalRequest, cancellationToken);
+                    // 同じ文の 2 回目以降は 1 回目の結果を使う。デコードは 1 文 100ms 程度かかるうえ、読めなかった文を
+                    // もう一度デコードすると、1 回目に合成し直した音声の保存中に同じキーを削除し、meta.json の無い .opus が残りうる
+                    if (!decodedByText.TryGetValue(segment.Text, out var wavData))
+                    {
+                        wavData = await DecodeCachedAsync(segment, originalRequest, cancellationToken);
+                        decodedByText[segment.Text] = wavData;
+                    }
                     if (wavData != null)
                     {
                         segment.AudioData = wavData;

@@ -63,7 +63,7 @@ task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube 
 
 ### 合成・再生パイプライン (`SegmentProducer` / `AudioPlayer`)
 - キャッシュ由来の音声は producer が `AudioCacheManager.DecodeOrDelete` で WAV にデコードしてから流す。デコードは 1 文 100ms 程度かかるので `Task.Run` で再生と並行させる (読み込み時にまとめると、全文キャッシュ済みでも鳴り始めが遅れる)。読めなければ削除済みなので未キャッシュとして合成し直す。`--cache-only` (`prepareSynthesis = null`) なら失敗として数える — `SegmentProducerTests` / `AudioCacheManagerIntegrationTests` / `TextToSpeechProcessorTests.CorruptedCache_IsResynthesizedAndRewritten`
-- 1 回の入力に同じ文が複数あれば、2 回目以降は合成せず 1 回目の音声を使い、保存も 1 回だけ (同じキーの保存が並行すると共有違反) — `SegmentProducerTests`
+- 1 回の入力に同じ文が複数あれば、2 回目以降は合成もデコードもせず 1 回目の結果を使い、保存も 1 回だけ (同じキーの保存が並行すると共有違反。読めなかったキャッシュをもう一度デコードすると、作り直しの保存中に同じキーを消す) — `SegmentProducerTests`
 - エンジンに届かない失敗 (`VoiceVoxApiClient.IsEngineUnavailable` = `EngineNotAvailable` / `ApiTimeout`。500 は文によるので除く) の後は、残りの未キャッシュ分を API を呼ばずに失敗として数え、channel に流さない (キャッシュ済みは流す)。1 件ごとにタイムアウトを待つとロックを握ったまま後続を待たせる。`--init` のフィラー生成も同じ — `SegmentProducerTests` / `FillerManagerTests`
 - 片側の例外は `WhenAllOrCancelOnFaultAsync` が linked CTS をキャンセルしてもう一方も止める (`Task.WhenAll` だけだと再生が落ちても残りを合成し続ける) — `WhenAllOrCancelOnFaultTests`
 - キャッシュ保存は channel に書いた後に fire-and-forget し、producer の `finally` で `Task.WhenAll` で待つ。`writer.TryComplete()` は `WhenAll` より**前** (逆だと最後の再生の後に `FillerStartDelayMs` を超えてフィラーが誤発火する) — `ChannelProducerOrderingTests`
