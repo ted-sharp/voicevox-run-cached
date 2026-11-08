@@ -157,7 +157,17 @@ public static class ArgumentParser
         }
         if (IsConfigurationOverride(arg))
         {
-            i += ConfigurationOverrideLength(arg);
+            if (arg.Contains('='))
+            {
+                i++;
+            }
+            else
+            {
+                // AddCommandLine は = が無ければ次の引数を値として読む。値が無いと黙って反映されない
+                // (次が --xxx なら、それを値として読んでしまう) ので、--log-level と同じく値の指定漏れはエラーにする
+                ReadValue(args, i);
+                i += 2;
+            }
             return true;
         }
         return false;
@@ -200,11 +210,6 @@ public static class ArgumentParser
         var colon = key.IndexOf(':');
         return colon > 0 && ConfigurationSections.Contains(key[..colon]);
     }
-
-    /// <summary>
-    /// 設定の上書きが占める引数の数。AddCommandLine は <c>=</c> が無ければ次の引数を値として読むので、値ごと 2 つ。
-    /// </summary>
-    private static int ConfigurationOverrideLength(string arg) => arg.Contains('=') ? 1 : 2;
 
     /// <summary>
     /// 解釈できない引数。打ち間違い (<c>--speeed</c>) を黙って読み飛ばすと、意図と違うパラメータで合成・キャッシュして

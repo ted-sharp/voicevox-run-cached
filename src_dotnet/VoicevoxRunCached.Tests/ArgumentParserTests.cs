@@ -366,10 +366,24 @@ public class ArgumentParserTests
     [Test]
     [Arguments("--log-level")]
     [Arguments("--log-format")]
-    public async Task Parse_LogOptionWithoutValue_ThrowsInvalidArguments(string option)
+    [Arguments("--Cache:Directory")]
+    [Arguments("--Filler:Enabled --no-play")]
+    public async Task Parse_ConfigurationArgWithoutValue_ThrowsInvalidArguments(string configArgs)
+    {
+        // 回帰: --Section:Key の値を忘れると、設定に反映されないまま (次が --xxx ならそれを値として) 黙って続行していた
+        string[] args = ["text", .. configArgs.Split(' ')];
+
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(args, DefaultSettings())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
+
+    [Test]
+    public async Task ParseInitSpeaker_ConfigurationOverrideWithoutValue_ThrowsInvalidArguments()
     {
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
-            Task.FromResult(ArgumentParser.Parse(["text", option], DefaultSettings())));
+            Task.FromResult(ArgumentParser.ParseInitSpeaker(["--Filler:Enabled"], DefaultSettings())));
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
     }
