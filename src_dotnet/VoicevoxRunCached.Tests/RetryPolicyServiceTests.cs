@@ -65,11 +65,13 @@ public class RetryPolicyServiceTests
     }
 
     [Test]
+    [Arguments(HttpStatusCode.InternalServerError)]
     [Arguments(HttpStatusCode.BadGateway)]
     [Arguments(HttpStatusCode.ServiceUnavailable)]
     [Arguments(HttpStatusCode.GatewayTimeout)]
-    public async Task HttpRequestException_Transient5xx_RetriesUpToMaxAttempts(HttpStatusCode statusCode)
+    public async Task HttpRequestException_5xx_RetriesUpToMaxAttempts(HttpStatusCode statusCode)
     {
+        // 500 もリトライする (文に依存する失敗とは限らず、エンジン側の一時的な失敗でも返る)
         var policy = Create(maxAttempts: 3);
         var calls = 0;
 
@@ -86,9 +88,9 @@ public class RetryPolicyServiceTests
     }
 
     [Test]
-    public async Task HttpRequestException_500_IsNotRetried()
+    public async Task HttpRequestException_WithoutStatus_IsNotRetried()
     {
-        // VOICEVOX の 500 は特定の文が合成できないときに返る。送り直しても同じなので、バックオフの分だけロックを握らない
+        // 接続拒否など。エンジンが止まっているとみなし、呼び出し元が残りの合成を打ち切る
         var policy = Create(maxAttempts: 3);
         var calls = 0;
 
@@ -97,7 +99,7 @@ public class RetryPolicyServiceTests
             await policy.ExecuteWithRetryAsync<int>(() =>
             {
                 calls++;
-                throw new HttpRequestException("server error", null, HttpStatusCode.InternalServerError);
+                throw new HttpRequestException("connection refused");
             }, "op");
         });
 

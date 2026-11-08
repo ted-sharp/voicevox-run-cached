@@ -5,7 +5,7 @@ using VoicevoxRunCached.Services.Synthesis;
 namespace VoicevoxRunCached.Tests;
 
 /// <summary>
-/// 合成前の speaker 存在確認 (存在しない ID で /initialize_speaker の 500 = 原因の分からないエンジンエラーにしない)。
+/// 合成前の speaker 存在確認 (存在しない ID で /initialize_speaker の 500 = リトライ待ちと原因の分からないエンジンエラーにしない)。
 /// </summary>
 public class SpeakerValidationTests
 {
