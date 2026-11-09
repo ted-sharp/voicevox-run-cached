@@ -300,6 +300,8 @@ Total execution time: 2445.4ms
 
 `UserPromptSubmit` / `PostToolUse` / `Notification` など他のフックでも同様に呼び出せる。
 
+Claude Code に応答ごとの一言を書かせてキャラクターの声で読み上げる組み込み例 (Stop / Notification / SessionStart のスクリプト・キャラクター別の口調と定型文・ユーザー辞書) は [voicevox-run-cached-claude-hooks](https://github.com/ted-sharp/voicevox-run-cached-claude-hooks) にある。
+
 **注意**:
 - Hooks 環境では `PATH` が不十分な場合があるため、`.exe` のフルパスを直接指定すること。`.bat` 経由は `cmd /c "<バッチのフルパス>"` でラップする
 - パスにスペースが含まれる場合はダブルクォートで囲み、Windows パスの `\` は JSON では `\\` にエスケープする
@@ -343,3 +345,4 @@ MIT License (本ツールのコード)。
 
 - [VOICEVOX 公式](https://voicevox.hiroshiba.jp/)
 - [Claude Code](https://claude.ai/code)
+- [voicevox-run-cached-claude-hooks](https://github.com/ted-sharp/voicevox-run-cached-claude-hooks) (Claude Code Hooks への組み込み例)
