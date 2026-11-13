@@ -30,7 +30,7 @@ task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube 
 task hooks:install            # コミット時のチェック (.githooks) を有効にする (clone 後に 1 回)
 ```
 
-テストは .NET 10 + Microsoft.Testing.Platform のため `dotnet test` では動かない (`task test` を使う)。
+テストは .NET 11 + Microsoft.Testing.Platform のため `dotnet test` では動かない (`task test` を使う)。
 
 リリース手順 (確認 → リリースノート確定 → 注釈付きタグ → `task publish:zip` → GitHub Release) は `doc/RELEASE.md`。
 
@@ -211,6 +211,6 @@ Options:
 
 ## Code Standards
 
-- .NET 10 / C# 14 (primary constructors, collection expressions 等)。Nullable 有効
+- .NET 11 / C# 15 (primary constructors, collection expressions 等)。Nullable 有効
 - バージョンは `src_dotnet/Directory.Build.props` の `<Version>` 1 か所 (AssemblyVersion / FileVersion は書かない。`task publish:zip` と `_publish_zip.cmd` もここから読む)
 - ドメインエラーは `VoicevoxRunCachedException` に `ErrorCode` を付けて投げる。framework 例外は無理に隠さない
