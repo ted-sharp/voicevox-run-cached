@@ -52,7 +52,7 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
 
 必要なもの:
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
+- [.NET 11 SDK](https://dotnet.microsoft.com/download/dotnet/11.0)
 - [Task](https://taskfile.dev) (タスクランナー。ビルド・テストなどの操作を `Taskfile.yml` にまとめている)
 
 ```bash
@@ -69,7 +69,7 @@ task publish:zip    # 配布用 (バージョン付き ZIP)
 
 `task install` は場所を `INSTALL_DIR` で変えられる (`task install INSTALL_DIR='C:\Tools\VoicevoxRunCached'`。`task uninstall` にも同じものを渡す)。もう一度実行すると exe だけを入れ替え、編集済みの `appsettings.json` と `cache\` / `logs\` は残す (新しい版で設定項目が変わったときは、`src_dotnet/publish/VoicevoxRunCached/appsettings.json` と見比べる)。PATH は変更しないので、入っていなければ追加するコマンドが表示される。`task uninstall` は exe と `appsettings.json` を消し、`cache\` / `logs\` は残す。
 
-出力は .NET ランタイムを含む単一の `VoicevoxRunCached.exe` (約 74MB) と `appsettings.json` で、実行する PC に .NET を入れる必要はない (リリース版の ZIP も同じ)。一緒に出る `VoicevoxRunCached.pdb` はデバッグ用で、実行には要らない。
+出力は .NET ランタイムを含む単一の `VoicevoxRunCached.exe` (約 79MB) と `appsettings.json` で、実行する PC に .NET を入れる必要はない (リリース版の ZIP も同じ)。一緒に出る `VoicevoxRunCached.pdb` はデバッグ用で、実行には要らない。
 
 [Task](https://taskfile.dev) が無い場合は `src_dotnet/_publish.cmd` / `_publish_zip.cmd` でも同じ出力になる。
 
@@ -313,7 +313,7 @@ Claude Code に応答ごとの一言を書かせてキャラクターの声で�
 
 ## 開発
 
-- **.NET 10 / C# 14** (primary constructors, collection expressions 等を活用)
+- **.NET 11 / C# 15** (primary constructors, collection expressions 等を活用)
 - **NAudio**: 再生・WAV 処理・リサンプル
 - **Concentus + Concentus.OggFile**: Ogg Opus のエンコード/デコード (純 C#、ネイティブ依存なし)
 - **Serilog**: 構造化ログ (Console + File sink)
