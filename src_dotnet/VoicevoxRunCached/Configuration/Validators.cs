@@ -254,5 +254,8 @@ public class CevioSettingsValidator : AbstractValidator<CevioSettings>
         RuleFor(x => x.HostPath)
             .Must(path => String.IsNullOrEmpty(path) || File.Exists(path))
             .WithMessage("HostPathが指定されている場合、ファイルが存在する必要があります");
+
+        RuleFor(x => x.SynthesisTimeoutSeconds)
+            .InclusiveBetween(1, 300).WithMessage("SynthesisTimeoutSecondsは1-300秒の範囲である必要があります");
     }
 }

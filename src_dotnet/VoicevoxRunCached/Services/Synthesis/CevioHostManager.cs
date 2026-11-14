@@ -1,4 +1,5 @@
-﻿using System.Diagnostics;
+﻿using System.ComponentModel;
+using System.Diagnostics;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
@@ -61,13 +62,7 @@ public class CevioHostManager
         // CeVIO AI が引き継ぎ、常駐させると Hooks がタイムアウトまで待たされる (VoiceVoxEngineManager と同じ理由)。
         // CeVIO AI (9.1) は WindowStyle (Hidden / Minimized) を無視して常にウィンドウを出す。
         // Minimized にしておくのは、効く版になっても邪魔にならず、ウィンドウを戻して閉じられるようにするため (Hidden だと閉じられない)
-        using var process = Process.Start(new ProcessStartInfo
-        {
-            FileName = hostPath,
-            UseShellExecute = true,
-            WindowStyle = ProcessWindowStyle.Minimized,
-            WorkingDirectory = Path.GetDirectoryName(hostPath) ?? Environment.CurrentDirectory,
-        });
+        using var process = StartProcess(hostPath);
         _startedByUs = true;
 
         var timeout = TimeSpan.FromSeconds(_settings.StartupTimeoutSeconds);
@@ -114,6 +109,31 @@ public class CevioHostManager
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "CeVIO AI を閉じられませんでした");
+        }
+    }
+
+    /// <returns>起動したプロセス。ShellExecute が既存のプロセスに渡したときは null</returns>
+    private static Process? StartProcess(string hostPath)
+    {
+        try
+        {
+            return Process.Start(new ProcessStartInfo
+            {
+                FileName = hostPath,
+                UseShellExecute = true,
+                WindowStyle = ProcessWindowStyle.Minimized,
+                WorkingDirectory = Path.GetDirectoryName(hostPath) ?? Environment.CurrentDirectory,
+            });
+        }
+        catch (Win32Exception ex)
+        {
+            // 実行できないファイル・権限が無い等
+            throw new VoicevoxRunCachedException(
+                errorCode: ErrorCodes.Engine.EngineNotAvailable,
+                message: $"Failed to start CeVIO AI: {hostPath}",
+                userMessage: $"CeVIO AI を起動できませんでした: {hostPath} ({ex.Message})",
+                innerException: ex,
+                suggestedSolution: "CeVIO AI を手動で起動できるか、appsettings.json の Cevio.HostPath が正しいか確認してください。");
         }
     }
 

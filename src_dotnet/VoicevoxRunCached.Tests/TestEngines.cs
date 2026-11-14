@@ -32,5 +32,8 @@ internal static class TestEngines
     /// <paramref name="remote"/> (COM の代わり) で合成する CeVIO。ホストは既定の設定 (自動起動・常駐) で管理する。
     /// </summary>
     public static CevioEngine Cevio(FakeCevioRemoteService remote, CevioSettings? settings = null)
-        => new(new CevioHostManager(settings ?? new CevioSettings(), remote, NullLogger.Instance, SystemClock.Instance), remote);
+    {
+        settings ??= new CevioSettings();
+        return new(new CevioHostManager(settings, remote, NullLogger.Instance, SystemClock.Instance), remote, settings);
+    }
 }

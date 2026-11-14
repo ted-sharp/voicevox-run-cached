@@ -30,13 +30,16 @@ public class CevioEngine : ISpeechEngine
 
     private readonly CevioHostManager _hostManager;
     private readonly ICevioRemoteService _remote;
+    private readonly TimeSpan _timeout;
     // 準備したキャストの感情の既定値。感情を指定しない話者の合成で、前の合成の感情が残らないよう毎回設定する
     private readonly Dictionary<string, IReadOnlyList<CevioComponent>> _castComponents = new(StringComparer.Ordinal);
 
-    public CevioEngine(CevioHostManager hostManager, ICevioRemoteService remote)
+    public CevioEngine(CevioHostManager hostManager, ICevioRemoteService remote, CevioSettings settings)
     {
         _hostManager = hostManager ?? throw new ArgumentNullException(nameof(hostManager));
         _remote = remote ?? throw new ArgumentNullException(nameof(remote));
+        ArgumentNullException.ThrowIfNull(settings);
+        _timeout = TimeSpan.FromSeconds(settings.SynthesisTimeoutSeconds);
     }
 
     public SpeechEngineKind Kind => SpeechEngineKind.Cevio;
@@ -46,14 +49,14 @@ public class CevioEngine : ISpeechEngine
         var parsed = ParseSpeaker(speaker);
         await _hostManager.EnsureRunningOrThrowAsync(cancellationToken);
 
-        // COM の呼び出しは同期なので、呼び出し元 (読み上げのパイプライン) を止めないようスレッドプールで行う
-        await Task.Run(() =>
+        await RunComAsync(() =>
         {
             // 存在しないキャストを Cast に代入すると CeVIO AI がダイアログを出すので、代入する前に一覧で確かめる
             EnsureCastExists(_remote.GetCasts(), parsed.Cast);
             var components = _remote.GetComponents(parsed.Cast);
             EnsureEmotionsExist(components, parsed);
             _castComponents[parsed.Cast] = components;
+            return true;
         }, cancellationToken);
     }
 
@@ -67,22 +70,22 @@ public class CevioEngine : ISpeechEngine
         var talk = new CevioTalk(speaker.Cast, ToCevioSpeed(request.Speed), ToCevioTone(request.Pitch), ResolveComponents(defaults, speaker));
         var gain = (float)Cache.CacheKeyGenerator.NormalizeParameter(request.Volume);
 
-        return await Task.Run(() => ApplyGain(OutputWave(talk, request.Text), gain), cancellationToken);
+        return await RunComAsync(() => ApplyGain(OutputWave(talk, request.Text), gain), cancellationToken);
     }
 
     public async Task<IReadOnlyList<SpeakerInfo>> GetSpeakersAsync(CancellationToken cancellationToken)
     {
         await _hostManager.EnsureRunningOrThrowAsync(cancellationToken);
-        return await Task.Run(() => _remote.GetCasts()
+        return await RunComAsync(() => _remote.GetCasts()
             .Select(cast => ToSpeakerInfo(cast, _remote.GetComponents(cast)))
             .ToList(), cancellationToken);
     }
 
     /// <remarks>
-    /// COM の例外は CeVIO AI との通信の失敗 (途中で閉じられた等) で、文によらないので含める。
+    /// COM の例外・タイムアウトは CeVIO AI との通信の失敗 (途中で閉じられた等) で、文によらないので含める。
     /// </remarks>
     public bool IsEngineUnavailable(Exception ex)
-        => ex is VoicevoxRunCachedException { ErrorCode: ErrorCodes.Engine.EngineNotAvailable } or COMException;
+        => ex is VoicevoxRunCachedException { ErrorCode: ErrorCodes.Engine.EngineNotAvailable or ErrorCodes.Api.ApiTimeout } or COMException;
 
     public void StopIfNotKept() => _hostManager.StopHostIfNotKept();
 
@@ -151,10 +154,11 @@ public class CevioEngine : ISpeechEngine
             return;
         }
 
+        var available = casts.Count == 0 ? "ライセンスのあるキャストがありません" : $"使えるキャスト: {String.Join(" / ", casts)}";
         throw new VoicevoxRunCachedException(
             errorCode: ErrorCodes.General.InvalidArguments,
             message: $"CeVIO cast does not exist: {cast}",
-            userMessage: $"キャスト '{cast}' は CeVIO AI にありません (使えるキャスト: {String.Join(" / ", casts)})。",
+            userMessage: $"キャスト '{cast}' は CeVIO AI にありません ({available})。",
             suggestedSolution: "`VoicevoxRunCached speakers --engine cevio` で使えるキャストを確認してください。");
     }
 
@@ -247,28 +251,55 @@ public class CevioEngine : ISpeechEngine
     }
 
     /// <summary>
+    /// COM の呼び出しをスレッドプールで行い、<see cref="CevioSettings.SynthesisTimeoutSeconds"/> で打ち切る。
+    /// </summary>
+    /// <remarks>
+    /// <para>COM の呼び出しは同期なので、呼び出し元 (読み上げのパイプライン) を止めないようスレッドプールで行う。</para>
+    /// <para>CeVIO AI が閉じられた後の Talker の呼び出しは戻らなくなる (実機で確認)。合成の前に <see cref="ICevioRemoteService.IsHostStarted"/> を
+    /// 確かめているが、合成の途中で閉じられることもあるので時間で打ち切る。打ち切らないとプロセス間ロックを持ったまま止まり、以後の読み上げがすべて待たされる。
+    /// 打ち切った呼び出しのスレッドは戻らないまま残る (バックグラウンドスレッドなのでプロセスの終了は妨げない)。
+    /// Ctrl+C も同じ理由で、呼び出しの完了を待たずにキャンセルとして返す。</para>
+    /// </remarks>
+    private async Task<T> RunComAsync<T>(Func<T> call, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await Task.Run(call, cancellationToken).WaitAsync(_timeout, cancellationToken);
+        }
+        catch (TimeoutException ex)
+        {
+            throw new VoicevoxRunCachedException(
+                errorCode: ErrorCodes.Api.ApiTimeout,
+                message: $"CeVIO AI did not respond within {_timeout.TotalSeconds} seconds",
+                userMessage: $"CeVIO AI が {_timeout.TotalSeconds} 秒以内に応答しませんでした。",
+                innerException: ex,
+                suggestedSolution: "CeVIO AI が閉じられていないか確認してください。長い文で時間がかかるなら appsettings.json の Cevio.SynthesisTimeoutSeconds を延ばしてください。");
+        }
+    }
+
+    /// <summary>
     /// 1 文を一時ファイルに合成して読み込む。
     /// </summary>
     private byte[] OutputWave(CevioTalk talk, string text)
     {
+        // 閉じられた後に Talker を呼ぶと戻らなくなるので、先に確かめる (IsHostStarted は閉じられた後もすぐ false を返す)
+        if (!_remote.IsHostStarted)
+        {
+            throw HostClosed();
+        }
+
         var path = Path.Combine(Path.GetTempPath(), $"VoicevoxRunCached.cevio.{Guid.NewGuid():N}.wav");
         try
         {
             if (!_remote.OutputWaveToFile(talk, text, path))
             {
                 // CeVIO AI は失敗の理由を返さない。閉じられていればエンジンの問題として残りの文を止める
-                if (!_remote.IsHostStarted)
-                {
-                    throw new VoicevoxRunCachedException(
-                        errorCode: ErrorCodes.Engine.EngineNotAvailable,
-                        message: "CeVIO AI host was closed",
-                        userMessage: "CeVIO AI が閉じられました。",
-                        suggestedSolution: "CeVIO AI を起動し直してから、もう一度実行してください。");
-                }
-                throw new VoicevoxRunCachedException(
-                    errorCode: ErrorCodes.Audio.AudioGenerationFailed,
-                    message: $"CeVIO AI failed to synthesize: {text}",
-                    userMessage: "CeVIO AI で音声を合成できませんでした。");
+                throw _remote.IsHostStarted
+                    ? new VoicevoxRunCachedException(
+                        errorCode: ErrorCodes.Audio.AudioGenerationFailed,
+                        message: $"CeVIO AI failed to synthesize: {text}",
+                        userMessage: "CeVIO AI で音声を合成できませんでした。")
+                    : HostClosed();
             }
             return File.ReadAllBytes(path);
         }
@@ -277,6 +308,12 @@ public class CevioEngine : ISpeechEngine
             File.Delete(path);
         }
     }
+
+    private static VoicevoxRunCachedException HostClosed() => new(
+        errorCode: ErrorCodes.Engine.EngineNotAvailable,
+        message: "CeVIO AI host was closed",
+        userMessage: "CeVIO AI が閉じられました。",
+        suggestedSolution: "CeVIO AI を起動し直してから、もう一度実行してください。");
 }
 
 /// <summary>

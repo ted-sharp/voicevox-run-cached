@@ -81,6 +81,9 @@ public sealed class CevioRemoteService : ICevioRemoteService
 
     public bool IsHostStarted => (bool)ServiceControl.IsHostStarted;
 
+    /// <remarks>
+    /// モード 0 (Default) は、CeVIO AI で編集中の内容があれば保存の確認を出す (利用者の編集を黙って捨てない)。
+    /// </remarks>
     public void CloseHost() => ServiceControl.CloseHost(0);
 
     public IReadOnlyList<string> GetCasts()

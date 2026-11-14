@@ -332,7 +332,7 @@ VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラ�
 - **パラメータ**: `--speed` は VOICEVOX と同じ倍率 (2.0 で約 2 倍速。CeVIO の話速の範囲 (約 0.2〜3 倍) を超える値は端に丸める)。`--pitch` は ±0.15 が CeVIO の音の高さの端 (約 ±5 半音)。`--volume` は VOICEVOX と同じく波形に掛ける倍率 (0.5 で −6dB、0 で無音)。CeVIO の声質・抑揚は既定値のまま
 - **起動**: CeVIO AI が起動していなければ自動で起動する (`Cevio.AutoStartHost`。起動に 5 秒ほどかかる)。自分で起動した CeVIO AI は既定で読み上げの後も残す (`Cevio.KeepHostRunning: false` なら終わるときに閉じる。外部で起動済みだった CeVIO AI は閉じない)。CeVIO AI は常にウィンドウを表示する
 - **キャッシュ**: VOICEVOX と同じく文ごとに保存する。キーにはエンジン・キャスト・感情が入るので、VOICEVOX のキャッシュとは混ざらない。CeVIO の辞書で読みを直したときやキャストを更新したときは `--refresh` で作り直す
-- CeVIO AI が無い・起動に失敗した・閉じられたときは終了コード 3
+- CeVIO AI が無い・起動に失敗した・閉じられたときは終了コード 3。読み上げの途中で CeVIO AI を閉じると残りの文の合成を中止する (CeVIO AI が `SynthesisTimeoutSeconds` 以内に応答しないときも同じ)
 
 ```jsonc
 "Cevio": {
@@ -340,7 +340,8 @@ VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラ�
   "AutoStartHost": true,         // 起動していなければ起動する
   "HostPath": "",                // CeVIO AI.exe。空なら %ProgramFiles%\CeVIO\CeVIO AI\CeVIO AI.exe
   "StartupTimeoutSeconds": 60,
-  "KeepHostRunning": true        // 自分で起動した CeVIO AI を残す
+  "KeepHostRunning": true,       // 自分で起動した CeVIO AI を残す
+  "SynthesisTimeoutSeconds": 30  // 1 文の合成などを待つ上限
 }
 ```
 

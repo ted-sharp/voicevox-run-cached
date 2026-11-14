@@ -219,6 +219,78 @@ public class CevioEngineTests
     }
 
     [Test]
+    public async Task Synthesize_HostClosedBeforeSynthesis_DoesNotCallCevio()
+    {
+        // 閉じられた CeVIO AI の Talker を呼ぶと戻らなくなるので、合成の前に確かめて呼ばない
+        var remote = new FakeCevioRemoteService();
+        var engine = TestEngines.Cevio(remote);
+        await engine.PrepareAsync(Cast, CancellationToken.None);
+        remote.HostStarted = () => false;
+
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => engine.SynthesizeAsync(Request(Cast), CancellationToken.None));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Engine.EngineNotAvailable);
+        await Assert.That(remote.Talks).IsEmpty();
+    }
+
+    [Test]
+    public async Task Synthesize_NoResponse_TimesOutAsEngineUnavailable()
+    {
+        // 合成の途中で CeVIO AI が閉じられると呼び出しが戻らない。ロックを持ったまま止まらないよう時間で打ち切り、残りの文も止める
+        using var block = new ManualResetEventSlim();
+        var remote = new FakeCevioRemoteService();
+        var engine = TestEngines.Cevio(remote, new CevioSettings { SynthesisTimeoutSeconds = 1 });
+        await engine.PrepareAsync(Cast, CancellationToken.None);
+        remote.BlockOutput = block;
+        try
+        {
+            var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => engine.SynthesizeAsync(Request(Cast), CancellationToken.None));
+
+            await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Api.ApiTimeout);
+            await Assert.That(engine.IsEngineUnavailable(ex)).IsTrue();
+        }
+        finally
+        {
+            block.Set();
+        }
+    }
+
+    [Test]
+    public async Task Synthesize_NoResponse_CancelsWithoutWaitingForCevio()
+    {
+        // Ctrl+C は戻らない呼び出しを待たずにキャンセルとして返す
+        using var block = new ManualResetEventSlim();
+        using var cts = new CancellationTokenSource();
+        var remote = new FakeCevioRemoteService();
+        var engine = TestEngines.Cevio(remote);
+        await engine.PrepareAsync(Cast, CancellationToken.None);
+        remote.BlockOutput = block;
+        try
+        {
+            var synthesis = engine.SynthesizeAsync(Request(Cast), cts.Token);
+            await cts.CancelAsync();
+
+            await Assert.ThrowsAsync<OperationCanceledException>(() => synthesis);
+        }
+        finally
+        {
+            block.Set();
+        }
+    }
+
+    [Test]
+    public async Task Prepare_NoLicensedCast_SaysSo()
+    {
+        var remote = new FakeCevioRemoteService();
+        remote.Casts.Clear();
+        var engine = TestEngines.Cevio(remote);
+
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => engine.PrepareAsync(Cast, CancellationToken.None));
+
+        await Assert.That(ex!.UserMessage).Contains("ライセンスのあるキャストがありません");
+    }
+
+    [Test]
     public async Task GetSpeakers_ListsCastAndEmotionsAsSpeakerValues()
     {
         var engine = TestEngines.Cevio(new FakeCevioRemoteService());

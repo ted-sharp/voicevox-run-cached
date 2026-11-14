@@ -158,4 +158,9 @@ public class CevioSettings
     /// 自分で起動した CeVIO AI を、読み上げの後も残す。false なら終わるときに閉じる (外部で起動済みだったものは閉じない)。
     /// </summary>
     public bool KeepHostRunning { get; set; } = true;
+
+    /// <summary>
+    /// CeVIO AI の呼び出し (1 文の合成・キャスト一覧) を待つ上限 (秒)。CeVIO AI が途中で閉じられると呼び出しが戻らなくなるため。
+    /// </summary>
+    public int SynthesisTimeoutSeconds { get; set; } = 30;
 }

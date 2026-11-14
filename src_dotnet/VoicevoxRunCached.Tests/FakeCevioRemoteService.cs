@@ -30,6 +30,11 @@ internal sealed class FakeCevioRemoteService : ICevioRemoteService
     /// </summary>
     public short SampleValue { get; set; } = 10000;
 
+    /// <summary>
+    /// 設定すると、<see cref="OutputWaveToFile"/> はこれがセットされるまで戻らない (閉じられた CeVIO AI の呼び出しが戻らないのを再現する)。
+    /// </summary>
+    public ManualResetEventSlim? BlockOutput { get; set; }
+
     public List<string> ComponentRequests { get; } = [];
     public List<CevioTalk> Talks { get; } = [];
     public int CloseHostCount { get; private set; }
@@ -49,6 +54,7 @@ internal sealed class FakeCevioRemoteService : ICevioRemoteService
     public bool OutputWaveToFile(CevioTalk talk, string text, string path)
     {
         Talks.Add(talk);
+        BlockOutput?.Wait();
         if (!OutputResult)
         {
             return false;
