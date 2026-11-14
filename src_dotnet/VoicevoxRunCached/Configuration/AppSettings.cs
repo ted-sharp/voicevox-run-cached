@@ -12,6 +12,27 @@ public class AppSettings
     public LockSettings Lock { get; set; } = new();
     public LoggingSettings Logging { get; set; } = new();
     public TestSettings Test { get; set; } = new();
+    public VoicepeakSettings Voicepeak { get; set; } = new();
+}
+
+// VOICEPEAK (コマンドライン版 voicepeak.exe) の設定
+public class VoicepeakSettings
+{
+    /// <summary>
+    /// voicepeak.exe のパス。空なら <c>%ProgramFiles%\VOICEPEAK\voicepeak.exe</c>。
+    /// </summary>
+    public string ExePath { get; set; } = "";
+
+    /// <summary>
+    /// <c>--speaker</c> を省略したときの話者 (ナレーター名。<c>"Otomachi Una:joy=50"</c> のように感情も付けられる)。
+    /// 空なら <c>--engine voicepeak</c> では <c>--speaker</c> が必須。
+    /// </summary>
+    public string DefaultSpeaker { get; set; } = "";
+
+    /// <summary>
+    /// voicepeak.exe 1 回 (1 文の合成・話者一覧) を待つ上限 (秒)。超えたらプロセスを止めて失敗にする。
+    /// </summary>
+    public int TimeoutSeconds { get; set; } = 60;
 }
 
 // プロセス間ロック (読み上げ・--init・speakers・--clear の直列化) の設定
@@ -45,7 +66,8 @@ public class SynthesisSettings
 /// </remarks>
 public enum SpeechEngineKind
 {
-    Voicevox
+    Voicevox,
+    Voicepeak
 }
 
 // VoiceVox engine settings

@@ -113,7 +113,7 @@ public class FillerManager
         // 残りが生成済みだけなら打ち切ったものは無いので、実際に API を呼ばなかった件数で出す
         if (aborted > 0)
         {
-            _logger.LogWarning("エンジンに接続できない・応答しないため、{Count} 件のフィラーの生成を中止しました", aborted);
+            _logger.LogWarning("合成エンジンを使えない (接続できない・応答しない等) ため、{Count} 件のフィラーの生成を中止しました", aborted);
         }
 
         _logger.LogInformation("フィラーキャッシュの初期化が完了しました - 生成: {Success}, 失敗: {Failure}, 生成済み: {Skipped}",
@@ -186,35 +186,7 @@ public class FillerManager
             Path.GetFileName(fillerCachePath), data.Length);
 
         var gain = CacheKeyGenerator.NormalizeParameter(volume);
-        return gain == 1.0 ? data : ApplyVolume(data, (float)gain);
-    }
-
-    /// <summary>
-    /// Ogg Opus をデコードし、各サンプルに <paramref name="gain"/> を掛けた 16bit の WAV を返す。
-    /// </summary>
-    /// <remarks>
-    /// 1.0 を超える音量で割れても値が反対側に回り込まないよう、[-1, 1] に収めてから 16bit にする (<see cref="OpusCodec"/> と同じ)。
-    /// </remarks>
-    private static byte[] ApplyVolume(byte[] opusData, float gain)
-    {
-        using var reader = new WaveFileReader(new MemoryStream(OpusCodec.DecodeToWav(opusData)));
-        var source = reader.ToSampleProvider();
-
-        using var output = new MemoryStream();
-        using (var writer = new WaveFileWriter(output, reader.WaveFormat))
-        {
-            var buffer = new float[reader.WaveFormat.SampleRate];
-            int read;
-            while ((read = source.Read(buffer)) > 0)
-            {
-                for (var i = 0; i < read; i++)
-                {
-                    buffer[i] = Math.Clamp(buffer[i] * gain, -1f, 1f);
-                }
-                writer.WriteSamples(buffer, 0, read);
-            }
-        }
-        return output.ToArray();
+        return gain == 1.0 ? data : AudioConversionUtility.ApplyGain(OpusCodec.DecodeToWav(data), (float)gain);
     }
 
     private string SelectFillerText()

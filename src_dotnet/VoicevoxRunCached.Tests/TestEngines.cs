@@ -14,7 +14,7 @@ internal static class TestEngines
     /// <paramref name="apiClient"/> で合成し、エンジンの起動・停止を <paramref name="engineManager"/> で行う VOICEVOX。
     /// </summary>
     public static SpeechEngineProvider Create(VoiceVoxEngineManager engineManager, VoiceVoxApiClient apiClient)
-        => new(new VoicevoxEngine(engineManager, apiClient));
+        => new(new VoicevoxEngine(engineManager, apiClient), new VoicepeakEngine(new VoicepeakSettings(), NullLogger.Instance));
 
     /// <summary>
     /// エンジンの停止だけを見るとき (<see cref="SpeechLock"/>)。合成には使わない。

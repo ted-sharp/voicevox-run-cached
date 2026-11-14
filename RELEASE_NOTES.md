@@ -2,6 +2,8 @@
 
 ## Unreleased (3.1.0)
 
+- CLI/コマンド:
+  - VOICEPEAK に対応 (`--engine voicepeak -s "ナレーター名[:感情=値]"`)。`speakers` / `--init` も `--engine` で切り替える
 - 開発環境:
   - .NET 11 に移行 (ソースからビルドするには .NET 11 SDK が必要)
 

@@ -54,9 +54,19 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 ### 合成エンジンの切り替え (`ISpeechEngine` / `SpeechEngineProvider`)
 - 合成エンジンは `ISpeechEngine` (準備 `PrepareAsync`・1 文の合成 `SynthesizeAsync` (WAV)・`GetSpeakersAsync`・`IsEngineUnavailable`・`StopIfNotKept`) の裏に置き、読み上げ・`--init`・`speakers`・`SpeechLock` はこれだけを使う。`SpeechEngineProvider.Get(SpeechEngineKind)` で取り出す
 - 使うエンジンは `Synthesis.Engine` (既定 `Voicevox`) か `--engine <名前>` (大文字小文字を区別しない。数字は不可)。読み上げ・`--test`・`--init`・`speakers` が取る
-- 話者 (`VoiceRequest.Speaker`) は文字列。`--speaker` は `SpeechEngineProvider.NormalizeSpeaker` でエンジンごとに検証・正規化する (キャッシュキーに入るので `01` → `1` のように同じ話者を同じ文字列に)。省略時は `SpeechEngineProvider.DefaultSpeaker` (各エンジンのセクションの `DefaultSpeaker`)。`--engine` と `--speaker` の順は問わない (エンジンが決まってから検証する) — `ArgumentParserTests`
+- 話者 (`VoiceRequest.Speaker`) は文字列。`--speaker` は `SpeechEngineProvider.NormalizeSpeaker` でエンジンごとに検証・正規化する (キャッシュキーに入るので `01` → `1` のように同じ話者を同じ文字列に)。省略時は `SpeechEngineProvider.DefaultSpeaker` (各エンジンのセクションの `DefaultSpeaker`。これも正規化する。空なら `--speaker` 必須の `InvalidArguments`)。`--engine` と `--speaker` の順は問わない (エンジンが決まってから検証する) — `ArgumentParserTests`
+- 話速・音高の範囲がエンジンで違うときは `SpeechEngineProvider.ValidateParameters` で、ロックを待つ前に `InvalidArguments` にする (VOICEVOX は共通の検証だけ)
 - `SpeechLock` はロックの解放前に**全エンジン**の `StopIfNotKept` を呼ぶ
-- エンジンを足すときは `SpeechEngineKind` に値を、`SpeechEngineProvider` (コンストラクタ・`All`・`Get`・`DefaultSpeaker`・`NormalizeSpeaker`) と `AppServiceProvider` に実装を足す。キャッシュキーは `CacheKeyGenerator.SpeakerKey` が `{エンジン名の小文字}:{話者}` にするので変更不要
+- エンジンを足すときは `SpeechEngineKind` に値を、`SpeechEngineProvider` (コンストラクタ・`All`・`Get`・`DefaultSpeaker`・`NormalizeSpeaker`・`ValidateParameters`) と `AppServiceProvider` に実装を足す。キャッシュキーは `CacheKeyGenerator.SpeakerKey` が `{エンジン名の小文字}:{話者}` にするので変更不要
+
+### VOICEPEAK (`VoicepeakEngine`)
+- `voicepeak.exe` (製品版のコマンドライン) を 1 文ごとに起動し、一時 WAV (`%TEMP%\vrc_voicepeak_*.wav`。読んだら消す) に出させる。1 回 10 秒ほどかかる (`--list-narrator` / `--list-emotion` も同じ)。1 回に渡せる本文は 140 文字まで (分割の上限 100 より大きい)
+- 話者は `ナレーター名[:感情=値,...]`。`NormalizeSpeaker` が感情を名前順にし、値 0 を除く (値は 0〜100。voicepeak.exe は 101 も黙って受け付けるのでこちらで検証する) — `VoicepeakEngineTests.NormalizeSpeaker_*`
+- 存在しない話者・感情は約 10 秒後に `bad exception` (終了コード 1・WAV なし) で、区別できない。`PrepareAsync` は exe の有無だけを見て (話者の確認に 10 秒かけない)、合成の失敗はすべて `IsEngineUnavailable` を true にして残りを合成しない (話者違いで全部の文が 10 秒ずつ失敗し、ロックを握り続けないように) — `VoicepeakEngineTests.NoOutputFile_FailsAndStopsRemainingSynthesis`
+- 引数は `ArgumentList` に `--say=本文` のように `=` 付きで渡す (`-` で始まる本文や負の音高をオプションと取り違えさせない)
+- `--speed` ×100 (0.5〜2.0 → 50〜200)、`--pitch` ×2000 (-0.15〜0.15 → -300〜300)。音量は CLI に無いので `AudioConversionUtility.ApplyGain` で WAV に掛ける (フィラーと共通)。出力は 48kHz mono 16bit で、fmt の前に JUNK チャンクがある (NAudio で読める) — `VoicepeakEngineTests.ApplyGain_ReadsWavWithJunkChunk`
+- タイムアウト (`Voicepeak.TimeoutSeconds`) でプロセスツリーを止めて `ApiTimeout`。exe が無い・起動できないは `EngineNotAvailable` (終了コード 3)
+- 常駐しないので `StopIfNotKept` は何もしない。標準入出力はリダイレクトし (標準入力は閉じる)、終了を待つので Hooks のパイプを引き継いでも残らない
 
 ### エンジン (`VoiceVoxEngineManager`)
 - 起動済みのプロセスを確認してから起動する。VOICEVOX / AIVIS Speech 両対応。`EnginePath` が空なら一般的なインストール場所から探す。VOICEVOX 0.26 以降のインストーラー版はエンジンが `%APPDATA%\voicevox\vvpp-engines\{名前}+{既定エンジンの UUID}\run.exe` (VVPP) にあり `vv-engine` が無いので、これを最初に探す (`FindVoicevoxVvppEngine`。フォルダ名の前半は変わりうるので UUID で探す) — `VoiceVoxEngineManagerTests.VvppEngine_*`。エンジン (`vv-engine\run.exe` / `AivisSpeech-Engine\run.exe`) を先に、エディタ (`{製品名}.exe`) は最後の候補にする (エディタを起動しても自前のエンジンでヘルスチェックが通り、気づけない) — `VoiceVoxEngineManagerTests.EngineRelativePaths_FindEngineBeforeEditor`
@@ -133,7 +143,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - **`DEBUG` / `if DEBUG` のような prefix・条件付きログは付けない**
 
 ### 設定 (`appsettings.json` → `AppSettings`)
-- セクション: `Synthesis` / `VoiceVox` / `Cache` / `Audio` / `Filler` / `Lock` / `Logging` / `Test`。セクションを足したら、`ApplicationBootstrap.BuildAppSettings` (**セクションごとに Bind する**) と `ArgumentParser.ConfigurationSections` (`--Section:Key=値` を読み飛ばす対象) にも追加する — `ApplicationBootstrapTests.LockMaxWaitSeconds_IsLoaded` / `ArgumentParserTests.ConfigurationOverride_AcceptsEverySection`
+- セクション: `Synthesis` / `VoiceVox` / `Cache` / `Audio` / `Filler` / `Lock` / `Logging` / `Test` / `Voicepeak`。セクションを足したら、`ApplicationBootstrap.BuildAppSettings` (**セクションごとに Bind する**) と `ArgumentParser.ConfigurationSections` (`--Section:Key=値` を読み飛ばす対象) にも追加する — `ApplicationBootstrapTests.LockMaxWaitSeconds_IsLoaded` / `ArgumentParserTests.ConfigurationOverride_AcceptsEverySection`
 - `Validators.cs` (FluentValidation) で検証。読み込み・バインドの失敗 (構文エラー・型の不一致・ファイル無し) も `ConfigurationException` (終了コード 7)。`Test` は `--test` のときだけ検証
 - `Cache.Directory` と `Filler.Directory` が同じならエラー (容量超過の eviction がフィラーも消す。`--init` は `Enabled` に関係なく生成するので常に検証)
 - 検証の前に、キャッシュ・フィラーの相対パスを (`UseExecutableBaseDirectory: true` なら実行ファイル基準の) 絶対パスにし、`VoiceVox.BaseUrl` の末尾 `/` を取る (`//version` になるため)
@@ -161,7 +171,7 @@ src_dotnet/
 │       ├── Audio/          # AudioPlayer, AudioDeviceManager, AudioFormatDetector, OpusCodec, WavePlayerManager, AudioConversionUtility
 │       ├── Cache/          # AudioCacheManager, CacheKeyGenerator (変更禁止), DiskCacheStore, CacheEvictionPolicy, CacheErrorMapper
 │       ├── Synthesis/      # TextToSpeechProcessor, SegmentProducer, SpeechLock, ISpeechEngine, SpeechEngineProvider,
-│       │                   # VoicevoxEngine, VoiceVoxApiClient, VoiceVoxEngineManager, TextSegmentProcessor, FillerManager, AudioExportService
+│       │                   # VoicevoxEngine, VoicepeakEngine, VoiceVoxApiClient, VoiceVoxEngineManager, TextSegmentProcessor, FillerManager, AudioExportService
 │       ├── Commands/       # SpeakerCommandHandler, DeviceCommandHandler, InitCommandHandler, CacheCommandHandler
 │       └── Infrastructure/ # ApplicationBootstrap, ConfigurationManager, LoggingManager, RetryPolicyService, CancellationManager,
 │                           # InterProcessLock, ConsoleHelper, ErrorHandlingUtility, ProgressSpinner, IClock, AssemblyVersion
@@ -201,7 +211,7 @@ VoicevoxRunCached --clear
 VoicevoxRunCached --test [options]
 
 Options:
---engine <name>       合成エンジン: voicevox (default: Synthesis.Engine)
+--engine <name>       合成エンジン: voicevox | voicepeak (default: Synthesis.Engine)
 --speaker, -s <id>    Speaker (default: エンジンのセクションの DefaultSpeaker。VOICEVOX は VoiceVox.DefaultSpeaker)
 --speed <value>       Speech speed (default: 1.0)
 --pitch <value>       Speech pitch (default: 0.0)

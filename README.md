@@ -6,6 +6,7 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
 - **セグメント単位キャッシュ**: 文の一部だけ変えても変更されていない部分はキャッシュから即再生
 - **ストリーミング再生**: キャッシュ済み部分を再生しつつ未キャッシュ部分をバックグラウンド生成、待機中はフィラー音声で繋ぐ
 - **エンジン自動管理**: VOICEVOX / AIVIS Speech のプロセス起動・常駐・停止を自動化
+- **VOICEPEAK にも対応**: `--engine voicepeak` で VOICEPEAK のコマンドライン版を使う ([VOICEPEAK を使う](#voicepeak-を使う))
 
 ## 目次
 
@@ -19,6 +20,7 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
   - [終了コード](#終了コード)
   - [出力先と文字コード](#出力先と文字コード)
 - [設定 (`appsettings.json`)](#設定-appsettingsjson)
+  - [VOICEPEAK を使う](#voicepeak-を使う)
 - [仕組み](#仕組み)
   - [セグメント単位キャッシュ](#セグメント単位キャッシュ)
   - [フィラー音声](#フィラー音声)
@@ -36,6 +38,7 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
 - **OS**: Windows x64
 - **VOICEVOX エンジン** (デフォルト `http://127.0.0.1:50021`) — [VOICEVOX 公式](https://voicevox.hiroshiba.jp/) からダウンロード。AIVIS Speech にも対応 (設定で切替)
 - 既定で `AutoStartEngine: true` のためエンジンは自動起動される。外部で起動済みのエンジンにも接続可能
+- **VOICEPEAK** (任意) — `--engine voicepeak` で使う場合のみ。コマンドラインに対応した製品版が必要
 
 ## インストール
 
@@ -109,8 +112,8 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 
 | Option | 説明 | デフォルト |
 |---|---|---|
-| `--engine <name>` | 合成エンジン (`voicevox`。大文字小文字は区別しない) | `Synthesis.Engine` (`Voicevox`) |
-| `--speaker, -s <id>` | スピーカー。VOICEVOX は ID (0 以上) | エンジンの `DefaultSpeaker` (VOICEVOX は `VoiceVox.DefaultSpeaker` = 1) |
+| `--engine <name>` | 合成エンジン (`voicevox` / `voicepeak`。大文字小文字は区別しない) | `Synthesis.Engine` (`Voicevox`) |
+| `--speaker, -s <id>` | スピーカー。VOICEVOX は ID (0 以上)、VOICEPEAK はナレーター名 (感情付きも可。[VOICEPEAK を使う](#voicepeak-を使う)) | エンジンの `DefaultSpeaker` (VOICEVOX は `VoiceVox.DefaultSpeaker` = 1) |
 | `--speed <value>` | 速度。0 より大きい値 (目安 0.5–2.0) | 1.0 |
 | `--pitch <value>` | ピッチ (目安 -0.15–0.15) | 0.0 |
 | `--volume <value>` | 合成する音声の音量。0 以上 (目安 0.0–2.0)。キャッシュと `--out` にも反映される (再生時の音量は `Audio.Volume`) | 1.0 |
@@ -205,11 +208,32 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "MaxFileSizeMb": 10,          // ログファイル単体の最大サイズ (MB)
     "MaxFileCount": 5             // ローテーションで保持するファイル数
   },
-  "Test": { "Message": "..." }    // --test で読み上げる文
+  "Test": { "Message": "..." },   // --test で読み上げる文
+  "Voicepeak": {
+    "ExePath": "",                // 空なら %ProgramFiles%\VOICEPEAK\voicepeak.exe
+    "DefaultSpeaker": "",         // 例: "Otomachi Una" / "Otomachi Una:joy=50"。空なら --engine voicepeak では -s が必須
+    "TimeoutSeconds": 60          // voicepeak.exe 1 回 (1 文) を待つ上限 (秒、10-600)
+  }
 }
 ```
 
 **AIVIS Speech に切替えるには**: `EngineType: "AivisSpeech"`, `BaseUrl: "http://127.0.0.1:10101"`, `EngineArguments` のポート、`DefaultSpeaker: 888753760` を変更。
+
+### VOICEPEAK を使う
+
+VOICEPEAK (製品版) のコマンドライン (`voicepeak.exe`) で合成する。`--engine voicepeak` を付けるか、`Synthesis.Engine` を `"Voicepeak"` にする。
+
+```
+VoicevoxRunCached speakers --engine voicepeak                       # ナレーターと感情の一覧
+VoicevoxRunCached "作業が完了しました。" --engine voicepeak -s "Otomachi Una"
+VoicevoxRunCached "作業が完了しました。" --engine voicepeak -s "Otomachi Una:joy=50,sad=20"
+VoicevoxRunCached --init --engine voicepeak -s "Otomachi Una"       # フィラーも VOICEPEAK の声で生成
+```
+
+- 話者は `ナレーター名` か `ナレーター名:感情=値,...` (値は 0〜100)。感情が違えば別のキャッシュになる
+- `--speed` は 0.5〜2.0、`--pitch` は -0.15〜0.15 (VOICEPEAK の -300〜300 に換算)。範囲外はエラー (終了コード 1)。`--volume` は合成した音声に掛ける
+- **1 文の合成に 10 秒ほどかかる** (`voicepeak.exe` を文ごとに起動するため。`speakers` も同じくらいかかる)。キャッシュ済みの文はすぐ鳴るので、Hooks のような決まった文の通知に向く。初めての文の待ち時間はフィラーで埋められる
+- 存在しない話者・感情の名前は、最初の文の合成が失敗した時点で残りの文の合成をやめる (VOICEPEAK が理由を返さないので、`speakers --engine voicepeak` で名前を確認する)
 
 ## 仕組み
 

@@ -156,7 +156,7 @@ public class SegmentProducer
                     var remaining = segments.Skip(i + 1).Count(s => !IsReady(s) && !synthesizedByText.ContainsKey(s.Text));
                     if (remaining > 0)
                     {
-                        _logger.LogWarning("エンジンに接続できない・応答しないため、残り {Count} セグメントの合成を中止します", remaining);
+                        _logger.LogWarning("合成エンジンを使えない (接続できない・応答しない等) ため、残り {Count} セグメントの合成を中止します", remaining);
                     }
                 }
             }
