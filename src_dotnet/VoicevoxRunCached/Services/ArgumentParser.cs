@@ -294,7 +294,8 @@ public static class ArgumentParser
         nameof(AppSettings.Filler),
         nameof(AppSettings.Lock),
         nameof(AppSettings.Logging),
-        nameof(AppSettings.Test)
+        nameof(AppSettings.Test),
+        nameof(AppSettings.Cevio),
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -580,7 +581,7 @@ Arguments:
   <text>                    The text to convert to speech (quote it if it contains spaces)
 
 Options:
-  --engine <name>          Speech engine: voicevox (default: appsettings Synthesis.Engine)
+  --engine <name>          Speech engine: voicevox | cevio (default: appsettings Synthesis.Engine)
   --speaker, -s <id>       Speaker (default: DefaultSpeaker of the engine's section, e.g. VoiceVox.DefaultSpeaker)
   --speed <value>          Speech speed (default: 1.0)
   --pitch <value>          Speech pitch (default: 0.0)

@@ -73,6 +73,15 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - エラー変換は `ExecuteApiAsync` の 1 つの catch (`MapToApiException`) に集約。`MapToErrorCode`: HTTP ステータスがあればステータス別、無ければ (接続拒否・途中切断) `EngineNotAvailable`
 - リトライ (`RetryPolicyService`、自前の指数バックオフ。Polly は使わない): 500/502/503/504/429 と I/O・ソケットエラー。タイムアウトとステータスの無い `HttpRequestException` はリトライしない (1 件で約 93 秒ロックを握るため) — `RetryPolicyServiceTests`
 
+### CeVIO AI (`CevioEngine` / `CevioHostManager` / `CevioRemoteService`)
+- COM (`CeVIO.Talk.RemoteService2` の `ServiceControl2V40` / `Talker2V40`) に触れるのは `CevioRemoteService` だけ。遅延バインディング (`Type.GetTypeFromProgID` + `dynamic`) で、CeVIO AI が無くてもビルド・起動できる。COM サーバーは .NET Framework の in-proc (mscoree) だが .NET 11 の 64bit プロセスに読み込める。ThreadingModel が Both なので STA は不要。呼び出しは同期なので `Task.Run` で包む。テストは `ICevioRemoteService` を `FakeCevioRemoteService` で置き換える
+- ホストの起動に `ServiceControl2V40.StartHost` を使わない (起動した CeVIO AI が Hooks のパイプを引き継ぎ、常駐中ずっと閉じない。実機で確認済み)。`CevioHostManager` が `CeVIO AI.exe` を `UseShellExecute = true` で起動し、`IsHostStarted` を待つ — `CevioHostManagerTests.StartHost_DoesNotInheritHandles`。自分で起動したホストだけを `KeepHostRunning: false` のとき `CloseHost` で閉じる。CeVIO AI は `WindowStyle` を無視して常にウィンドウを出す
+- 存在しないキャストを `Talker.Cast` に代入すると CeVIO AI が「ライセンスされていないキャスト」のダイアログを出す (COM は例外にならない)。`PrepareAsync` で `AvailableCasts` と照合してから代入し、無ければ `InvalidArguments` — `CevioEngineTests.Prepare_UnknownCast_ThrowsInvalidArgumentsWithoutSelectingIt`
+- 話者は `キャスト名` か `キャスト名:感情=値,...` (0〜100)。`CevioEngine.NormalizeSpeaker` が感情を名前順に並べてキャッシュキーをそろえる。感情を書けば書いていない感情は 0、書かなければ `PrepareAsync` で読んだキャストの既定値。Talker は使い回すので、合成のたびにキャスト・話速・音高・全感情を設定し直す — `CevioEngineTests`
+- 換算 (`ToCevioSpeed` / `ToCevioTone`。実測にもとづく): Speed = 50 + 25·log2(speed) (25 で約 2 倍速)、Tone = 50 + pitch / 0.15 × 50 (0〜100 で約 ±5 半音)。範囲外は 0 / 100。音量は CeVIO の Volume を 50 に固定し、合成した WAV に `--volume` を掛ける (`ApplyGain`。VOICEVOX の volumeScale と同じ振幅の倍率。CeVIO の Volume は ±7dB しかなく 0 でも無音にならない)
+- `OutputWaveToFile` は失敗を false で返す (理由は無い)。ホストが閉じていれば `EngineNotAvailable` (残りの合成を止める)、動いていれば文ごとの `AudioGenerationFailed`。COM の例外も `IsEngineUnavailable`。出力は WAV 48kHz mono 16bit
+- 設定セクション `Cevio` (`DefaultSpeaker`・`AutoStartHost`・`HostPath`・`StartupTimeoutSeconds`・`KeepHostRunning`)。`DefaultSpeaker` は空を許し、`--engine cevio` で `-s` が無ければ `InvalidArguments`、`Synthesis.Engine: Cevio` なら設定エラー
+
 ### 合成・再生パイプライン (`SegmentProducer` / `AudioPlayer`)
 - キャッシュ由来の音声は producer が `AudioCacheManager.DecodeOrDelete` で WAV にデコードしてから流す。デコードは 1 文 100ms 程度かかるので `Task.Run` で再生と並行させる (読み込み時にまとめると、全文キャッシュ済みでも鳴り始めが遅れる)。読めなければ削除済みなので未キャッシュとして合成し直す。`--cache-only` (`prepareSynthesis = null`) なら失敗として数える — `SegmentProducerTests` / `AudioCacheManagerIntegrationTests` / `TextToSpeechProcessorTests.CorruptedCache_IsResynthesizedAndRewritten`
 - 1 回の入力に同じ文が複数あれば、2 回目以降は合成もデコードもせず 1 回目の結果 (失敗なら失敗) を使い、保存も 1 回だけ (同じキーの保存が並行すると共有違反。読めなかったキャッシュをもう一度デコードすると、作り直しの保存中に同じキーを消す) — `SegmentProducerTests`
@@ -162,6 +171,7 @@ src_dotnet/
 │       ├── Cache/          # AudioCacheManager, CacheKeyGenerator (変更禁止), DiskCacheStore, CacheEvictionPolicy, CacheErrorMapper
 │       ├── Synthesis/      # TextToSpeechProcessor, SegmentProducer, SpeechLock, ISpeechEngine, SpeechEngineProvider,
 │       │                   # VoicevoxEngine, VoiceVoxApiClient, VoiceVoxEngineManager, TextSegmentProcessor, FillerManager, AudioExportService
+│       │                   # CevioEngine, CevioHostManager, CevioRemoteService (COM)
 │       ├── Commands/       # SpeakerCommandHandler, DeviceCommandHandler, InitCommandHandler, CacheCommandHandler
 │       └── Infrastructure/ # ApplicationBootstrap, ConfigurationManager, LoggingManager, RetryPolicyService, CancellationManager,
 │                           # InterProcessLock, ConsoleHelper, ErrorHandlingUtility, ProgressSpinner, IClock, AssemblyVersion

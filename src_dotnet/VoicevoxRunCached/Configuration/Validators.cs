@@ -211,6 +211,13 @@ public class AppSettingsValidator : AbstractValidator<AppSettings>
             .Must(x => !IsSameDirectory(x.Cache.Directory, x.Filler.Directory))
             .WithName("Filler.Directory")
             .WithMessage("Cache Directory と Filler Directory には別のディレクトリを指定する必要があります");
+
+        RuleFor(x => x.Cevio).SetValidator(new CevioSettingsValidator());
+        // 既定のエンジンにするなら、-s を省略したときのキャストが要る
+        RuleFor(x => x.Cevio.DefaultSpeaker)
+            .NotEmpty().When(x => x.Synthesis.Engine == SpeechEngineKind.Cevio)
+            .WithName("Cevio.DefaultSpeaker")
+            .WithMessage("Synthesis.Engine が Cevio のときは Cevio.DefaultSpeaker (キャスト名) が必須です");
     }
 
     /// <remarks>
@@ -228,5 +235,24 @@ public class AppSettingsValidator : AbstractValidator<AppSettings>
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(first)),
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(second)),
             StringComparison.OrdinalIgnoreCase);
+    }
+}
+
+// CevioSettings のバリデーター
+public class CevioSettingsValidator : AbstractValidator<CevioSettings>
+{
+    public CevioSettingsValidator()
+    {
+        // 空は許す (CeVIO を使うときに -s を求める)。書いてあれば -s と同じ書式
+        RuleFor(x => x.DefaultSpeaker)
+            .Must(speaker => String.IsNullOrEmpty(speaker) || Services.Synthesis.CevioEngine.NormalizeSpeaker(speaker, out _) is not null)
+            .WithMessage("DefaultSpeakerは キャスト名 か キャスト名:感情=値,... (値は0-100の整数) である必要があります");
+
+        RuleFor(x => x.StartupTimeoutSeconds)
+            .InclusiveBetween(5, 600).WithMessage("StartupTimeoutSecondsは5-600秒の範囲である必要があります");
+
+        RuleFor(x => x.HostPath)
+            .Must(path => String.IsNullOrEmpty(path) || File.Exists(path))
+            .WithMessage("HostPathが指定されている場合、ファイルが存在する必要があります");
     }
 }

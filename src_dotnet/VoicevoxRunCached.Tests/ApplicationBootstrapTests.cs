@@ -110,6 +110,43 @@ public class ApplicationBootstrapTests
         }
     }
 
+    [Test]
+    public async Task Cevio_IsLoaded()
+    {
+        // Cevio セクションは個別に Bind しているので、追加漏れがあると黙って既定値になる
+        var dir = CreateConfigDirectory("""{ "Cevio": { "DefaultSpeaker": "花隈千冬", "KeepHostRunning": false, "StartupTimeoutSeconds": 90 } }""");
+        try
+        {
+            var settings = ApplicationBootstrap.LoadSettings(["text", "--Cevio:AutoStartHost=false"], dir);
+
+            await Assert.That(settings.Cevio.DefaultSpeaker).IsEqualTo("花隈千冬");
+            await Assert.That(settings.Cevio.KeepHostRunning).IsFalse();
+            await Assert.That(settings.Cevio.StartupTimeoutSeconds).IsEqualTo(90);
+            await Assert.That(settings.Cevio.AutoStartHost).IsFalse();
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public async Task CevioSpeakerWithEmotions_IsNotTakenAsConfiguration()
+    {
+        // "花隈千冬:嬉しい=50" は設定の読み込みでは "キー=値" の形に見える。設定のセクションに当たらず、読み込みが失敗しないこと
+        var dir = CreateConfigDirectory("""{ "Cevio": { "DefaultSpeaker": "花隈千冬" } }""");
+        try
+        {
+            var settings = ApplicationBootstrap.LoadSettings(["text", "--engine", "cevio", "-s", "花隈千冬:嬉しい=50,普通=50"], dir);
+
+            await Assert.That(settings.Cevio.DefaultSpeaker).IsEqualTo("花隈千冬");
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
     private static async Task<ConfigurationException> AssertConfigurationErrorAsync(string dir)
     {
         var ex = await Assert.ThrowsAsync<ConfigurationException>(() =>

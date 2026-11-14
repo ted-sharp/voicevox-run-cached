@@ -458,4 +458,57 @@ public class ValidatorsTests
         var result = validator.Validate(new LoggingSettings());
         await Assert.That(result.IsValid).IsTrue();
     }
+
+    // CevioSettings ----------------------------------------------------------
+
+    [Test]
+    [Arguments("")]
+    [Arguments("花隈千冬")]
+    [Arguments("花隈千冬:嬉しい=50,普通=50")]
+    public async Task CevioSettings_ValidDefaultSpeaker_Passes(string defaultSpeaker)
+    {
+        var result = new CevioSettingsValidator().Validate(new CevioSettings { DefaultSpeaker = defaultSpeaker });
+        await Assert.That(result.IsValid).IsTrue();
+    }
+
+    [Test]
+    [Arguments(" ")]
+    [Arguments("花隈千冬:嬉しい")]
+    [Arguments("花隈千冬:嬉しい=101")]
+    public async Task CevioSettings_InvalidDefaultSpeaker_Fails(string defaultSpeaker)
+    {
+        var result = new CevioSettingsValidator().Validate(new CevioSettings { DefaultSpeaker = defaultSpeaker });
+        await Assert.That(result.IsValid).IsFalse();
+    }
+
+    [Test]
+    public async Task CevioSettings_MissingHostPath_Fails()
+    {
+        var result = new CevioSettingsValidator().Validate(new CevioSettings { HostPath = Path.Combine(Path.GetTempPath(), $"vrc_missing_{Guid.NewGuid():N}.exe") });
+        await Assert.That(result.IsValid).IsFalse();
+    }
+
+    [Test]
+    [Arguments("", false)]
+    [Arguments("花隈千冬", true)]
+    public async Task AppSettings_CevioAsDefaultEngine_RequiresDefaultSpeaker(string defaultSpeaker, bool expected)
+    {
+        // -s を省略したときのキャストが無いと、読み上げのたびに引数エラーになる
+        var dir = CreateTempCacheDir();
+        try
+        {
+            var settings = new AppSettings
+            {
+                Synthesis = new SynthesisSettings { Engine = SpeechEngineKind.Cevio },
+                Cevio = new CevioSettings { DefaultSpeaker = defaultSpeaker },
+                Cache = new CacheSettings { Directory = dir },
+            };
+            var result = new AppSettingsValidator().Validate(settings);
+            await Assert.That(result.IsValid).IsEqualTo(expected);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
 }

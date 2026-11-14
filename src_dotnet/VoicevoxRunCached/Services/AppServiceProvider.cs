@@ -47,6 +47,11 @@ namespace VoicevoxRunCached.Services;
 [Singleton(typeof(CacheCommandHandler))]
 // ルーター
 [Singleton(typeof(CommandRouter))]
+// CeVIO AI (--engine cevio)
+[Singleton(typeof(CevioSettings), Instance = nameof(Cevio))]
+[Singleton(typeof(ICevioRemoteService), typeof(CevioRemoteService))]
+[Singleton(typeof(CevioHostManager))]
+[Singleton(typeof(CevioEngine))]
 public partial class AppServiceProvider
 {
     public required AppSettings Settings { get; init; }
@@ -58,4 +63,5 @@ public partial class AppServiceProvider
     public AudioSettings Audio => Settings.Audio;
     public FillerSettings Filler => Settings.Filler;
     public LockSettings Lock => Settings.Lock;
+    public CevioSettings Cevio => Settings.Cevio;
 }

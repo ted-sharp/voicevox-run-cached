@@ -699,4 +699,50 @@ public class ArgumentParserTests
 
         await Assert.That(speakerId).IsEqualTo(expected);
     }
+
+    // CeVIO ------------------------------------------------------------------
+
+    [Test]
+    [Arguments("-s", "花隈千冬", "花隈千冬")]
+    [Arguments("-s", "花隈千冬:普通=50,嬉しい=50", "花隈千冬:嬉しい=50,普通=50")]
+    [Arguments("--speaker", " 花隈千冬 ", "花隈千冬")]
+    public async Task Parse_CevioSpeaker_IsNormalized(string option, string value, string expected)
+    {
+        var (request, _) = ArgumentParser.Parse(["text", option, value, "--engine", "cevio"], DefaultSettings());
+
+        await Assert.That(request!.Engine).IsEqualTo(SpeechEngineKind.Cevio);
+        await Assert.That(request.Speaker).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task Parse_CevioWithoutSpeaker_UsesDefaultSpeaker()
+    {
+        var settings = DefaultSettings();
+        settings.Cevio.DefaultSpeaker = "花隈千冬:普通=50,嬉しい=50";
+
+        var (request, _) = ArgumentParser.Parse(["text", "--engine", "cevio"], settings);
+
+        await Assert.That(request!.Speaker).IsEqualTo("花隈千冬:嬉しい=50,普通=50");
+    }
+
+    [Test]
+    [Arguments("text --engine cevio")]
+    [Arguments("text --engine cevio -s 花隈千冬:嬉しい=101")]
+    public async Task Parse_CevioWithoutValidSpeaker_ThrowsInvalidArguments(string args)
+    {
+        // Cevio.DefaultSpeaker が空なら -s が必須 (VOICEVOX の ID のように決まった既定が無い)
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(args.Split(' '), DefaultSettings())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
+
+    [Test]
+    public async Task ParseInitOptions_Cevio_ReadsEngineAndSpeaker()
+    {
+        var (engine, speaker) = ArgumentParser.ParseInitOptions(["--engine", "cevio", "-s", "花隈千冬"], DefaultSettings());
+
+        await Assert.That(engine).IsEqualTo(SpeechEngineKind.Cevio);
+        await Assert.That(speaker).IsEqualTo("花隈千冬");
+    }
 }

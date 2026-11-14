@@ -12,6 +12,7 @@ public class AppSettings
     public LockSettings Lock { get; set; } = new();
     public LoggingSettings Logging { get; set; } = new();
     public TestSettings Test { get; set; } = new();
+    public CevioSettings Cevio { get; set; } = new();
 }
 
 // プロセス間ロック (読み上げ・--init・speakers・--clear の直列化) の設定
@@ -45,7 +46,8 @@ public class SynthesisSettings
 /// </remarks>
 public enum SpeechEngineKind
 {
-    Voicevox
+    Voicevox,
+    Cevio,
 }
 
 // VoiceVox engine settings
@@ -127,4 +129,33 @@ public class LoggingSettings
 public class TestSettings
 {
     public string Message { get; set; } = "テストメッセージです。";
+}
+
+// CeVIO AI (--engine cevio) の設定
+public class CevioSettings
+{
+    /// <summary>
+    /// <c>--speaker</c> を省略したときの話者 (キャスト名。感情は <c>キャスト名:感情=値,...</c>)。空ならエンジンに CeVIO を使うとき <c>-s</c> が必須。
+    /// </summary>
+    public string DefaultSpeaker { get; set; } = "";
+
+    /// <summary>
+    /// CeVIO AI が起動していなければ起動する。
+    /// </summary>
+    public bool AutoStartHost { get; set; } = true;
+
+    /// <summary>
+    /// 起動する <c>CeVIO AI.exe</c>。空なら <c>%ProgramFiles%\CeVIO\CeVIO AI\CeVIO AI.exe</c>。
+    /// </summary>
+    public string HostPath { get; set; } = "";
+
+    /// <summary>
+    /// 起動してから使えるようになるまで待つ上限 (秒)。
+    /// </summary>
+    public int StartupTimeoutSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// 自分で起動した CeVIO AI を、読み上げの後も残す。false なら終わるときに閉じる (外部で起動済みだったものは閉じない)。
+    /// </summary>
+    public bool KeepHostRunning { get; set; } = true;
 }

@@ -27,6 +27,7 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
 - [パフォーマンス計測](#パフォーマンス計測)
 - [トラブルシューティング](#トラブルシューティング)
 - [Claude Code Hooks との連携](#claude-code-hooks-との連携)
+- [CeVIO AI を使う](#cevio-ai-を使う)
 - [開発](#開発)
 - [ライセンス](#ライセンス)
 - [関連リンク](#関連リンク)
@@ -314,6 +315,34 @@ Claude Code に応答ごとの一言を書かせてキャラクターの声で�
 - エンジンに接続するのは合成が必要なときだけ。決まった文言の通知は 2 回目以降キャッシュから再生されるので、エンジンが止まっていても起動を待たずにすぐ鳴る
 - キャッシュに無い文を合成するとき、既定 (`AutoStartEngine: true`) ではエンジンが停止していても自動起動されるが、起動を待つ分だけ通知が遅れる。遅延を避けたい場合はエンジンを事前に起動しておく (`KeepEngineRunning: true` (既定) なら一度起動したエンジンは常駐する)
 - `KeepEngineRunning: false` でも、自分が起動したエンジンを止めるのはプロセスが終了処理まで進んだとき (エラー終了・1 回目の Ctrl+C を含む) だけ。Hooks の `timeout` で強制終了されたときや Ctrl+C を 2 回押したときはエンジンが動いたまま残り、以後の実行はそれを外部で起動済みのエンジンとみなして止めない。残ったエンジンは手動で終了する
+
+## CeVIO AI を使う
+
+[CeVIO AI](https://cevio.jp/) がインストールされていれば、`--engine cevio` で CeVIO AI のキャストで読み上げられる (外部連携インターフェイス (COM) を使う。ライセンスのあるキャストだけ)。
+
+```bash
+VoicevoxRunCached speakers --engine cevio                       # 使えるキャストと感情
+VoicevoxRunCached "こんにちは" --engine cevio -s "花隈千冬"
+VoicevoxRunCached "こんにちは" --engine cevio -s "花隈千冬:嬉しい=70,普通=30"
+VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラー (話者・感情ごと)
+```
+
+- **話者** (`-s`): キャスト名。感情は `キャスト名:感情=値,感情=値` (値は 0〜100 の整数) で指定し、書いていない感情は 0 になる。感情を書かなければキャストの既定値 (多くは `普通=100`)。存在しないキャスト・感情は終了コード 1
+- **既定のエンジンにする**: `Synthesis.Engine` を `Cevio` にし、`Cevio.DefaultSpeaker` にキャスト名を書く (`-s` を省略したときの話者。空のときは `--engine cevio` に `-s` が必要)
+- **パラメータ**: `--speed` は VOICEVOX と同じ倍率 (2.0 で約 2 倍速。CeVIO の話速の範囲 (約 0.2〜3 倍) を超える値は端に丸める)。`--pitch` は ±0.15 が CeVIO の音の高さの端 (約 ±5 半音)。`--volume` は VOICEVOX と同じく波形に掛ける倍率 (0.5 で −6dB、0 で無音)。CeVIO の声質・抑揚は既定値のまま
+- **起動**: CeVIO AI が起動していなければ自動で起動する (`Cevio.AutoStartHost`。起動に 5 秒ほどかかる)。自分で起動した CeVIO AI は既定で読み上げの後も残す (`Cevio.KeepHostRunning: false` なら終わるときに閉じる。外部で起動済みだった CeVIO AI は閉じない)。CeVIO AI は常にウィンドウを表示する
+- **キャッシュ**: VOICEVOX と同じく文ごとに保存する。キーにはエンジン・キャスト・感情が入るので、VOICEVOX のキャッシュとは混ざらない。CeVIO の辞書で読みを直したときやキャストを更新したときは `--refresh` で作り直す
+- CeVIO AI が無い・起動に失敗した・閉じられたときは終了コード 3
+
+```jsonc
+"Cevio": {
+  "DefaultSpeaker": "",          // -s を省略したときのキャスト (感情も書ける)
+  "AutoStartHost": true,         // 起動していなければ起動する
+  "HostPath": "",                // CeVIO AI.exe。空なら %ProgramFiles%\CeVIO\CeVIO AI\CeVIO AI.exe
+  "StartupTimeoutSeconds": 60,
+  "KeepHostRunning": true        // 自分で起動した CeVIO AI を残す
+}
+```
 
 ## 開発
 
