@@ -4,6 +4,17 @@ using VoicevoxRunCached.Constants;
 namespace VoicevoxRunCached.Configuration;
 
 // VoiceVoxSettings のバリデーター
+// SynthesisSettings のバリデーター
+public class SynthesisSettingsValidator : AbstractValidator<SynthesisSettings>
+{
+    public SynthesisSettingsValidator()
+    {
+        // 名前でない値はバインドで失敗する。数字 ("Engine": 5) は未定義の値として入るのでここで弾く
+        RuleFor(x => x.Engine)
+            .IsInEnum().WithMessage($"Engineは {String.Join(" / ", Enum.GetNames<SpeechEngineKind>())} のどれかである必要があります");
+    }
+}
+
 public class VoiceVoxSettingsValidator : AbstractValidator<VoiceVoxSettings>
 {
     public VoiceVoxSettingsValidator()
@@ -186,6 +197,7 @@ public class AppSettingsValidator : AbstractValidator<AppSettings>
 {
     public AppSettingsValidator()
     {
+        RuleFor(x => x.Synthesis).SetValidator(new SynthesisSettingsValidator());
         RuleFor(x => x.VoiceVox).SetValidator(new VoiceVoxSettingsValidator());
         RuleFor(x => x.Cache).SetValidator(new CacheSettingsValidator());
         RuleFor(x => x.Audio).SetValidator(new AudioSettingsValidator());

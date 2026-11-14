@@ -32,7 +32,7 @@ public class AudioCacheManagerIntegrationTests
         var (mgr, dir) = CreateManager(clock: clock);
         try
         {
-            var request = new VoiceRequest("期限", 1);
+            var request = new VoiceRequest("期限", "1");
             await mgr.SaveAudioCacheAsync(request, AudioConversionUtility.CreateMinimalWavData(300, 24000));
 
             clock.UtcNow = clock.UtcNow.AddDays(31); // ExpirationDays = 30
@@ -53,8 +53,8 @@ public class AudioCacheManagerIntegrationTests
         try
         {
             var wav = AudioConversionUtility.CreateMinimalWavData(300);
-            await mgr.SaveAudioCacheAsync(new VoiceRequest("一つ目", 1), wav);
-            await mgr.SaveAudioCacheAsync(new VoiceRequest("二つ目", 1), wav);
+            await mgr.SaveAudioCacheAsync(new VoiceRequest("一つ目", "1"), wav);
+            await mgr.SaveAudioCacheAsync(new VoiceRequest("二つ目", "1"), wav);
 
             await Assert.That(Directory.GetFiles(dir, "*.opus").Length).IsEqualTo(2);
 
@@ -73,7 +73,7 @@ public class AudioCacheManagerIntegrationTests
         var (mgr, dir) = CreateManager();
         try
         {
-            var request = new VoiceRequest("残す", 1);
+            var request = new VoiceRequest("残す", "1");
             await mgr.SaveAudioCacheAsync(request, AudioConversionUtility.CreateMinimalWavData(300));
             await File.WriteAllBytesAsync(Path.Combine(dir, "interrupted.opus.tmp"), [0x01]);
 
@@ -91,7 +91,7 @@ public class AudioCacheManagerIntegrationTests
         var (mgr, dir) = CreateManager();
         try
         {
-            var request = new VoiceRequest("往復", 1, 1.2, 0.0, 1.0);
+            var request = new VoiceRequest("往復", "1", 1.2, 0.0, 1.0);
             await mgr.SaveAudioCacheAsync(request, AudioConversionUtility.CreateMinimalWavData(300, 24000));
 
             var cached = await mgr.GetCachedAudioAsync(request);
@@ -110,7 +110,7 @@ public class AudioCacheManagerIntegrationTests
         var (mgr, dir) = CreateManager();
         try
         {
-            var request = new VoiceRequest("デコード", 1);
+            var request = new VoiceRequest("デコード", "1");
             await mgr.SaveAudioCacheAsync(request, AudioConversionUtility.CreateMinimalWavData(300, 24000));
 
             var wav = mgr.DecodeOrDelete(request, (await mgr.GetCachedAudioAsync(request))!);
@@ -136,7 +136,7 @@ public class AudioCacheManagerIntegrationTests
         var (mgr, dir) = CreateManager();
         try
         {
-            var request = new VoiceRequest("壊れた", 1);
+            var request = new VoiceRequest("壊れた", "1");
             await mgr.SaveAudioCacheAsync(request, AudioConversionUtility.CreateMinimalWavData(300, 24000));
             var opusPath = Directory.GetFiles(dir, "*.opus").Single();
             byte[] broken = kind switch
@@ -162,7 +162,7 @@ public class AudioCacheManagerIntegrationTests
         var (mgr, dir) = CreateManager();
         try
         {
-            await mgr.SaveAudioCacheAsync(new VoiceRequest("新", 1), AudioConversionUtility.CreateMinimalWavData(300, 24000));
+            await mgr.SaveAudioCacheAsync(new VoiceRequest("新", "1"), AudioConversionUtility.CreateMinimalWavData(300, 24000));
             await File.WriteAllBytesAsync(Path.Combine(dir, "legacy.mp3"), [0xFF, 0xFB]);
             await File.WriteAllTextAsync(Path.Combine(dir, "legacy.meta.json"), "{}");
             // 書き込みの途中で落ちて残った一時ファイルも消す
@@ -182,7 +182,7 @@ public class AudioCacheManagerIntegrationTests
         var (mgr, dir) = CreateManager();
         try
         {
-            await mgr.SaveAudioCacheAsync(new VoiceRequest("ロック", 1), AudioConversionUtility.CreateMinimalWavData(300, 24000));
+            await mgr.SaveAudioCacheAsync(new VoiceRequest("ロック", "1"), AudioConversionUtility.CreateMinimalWavData(300, 24000));
             var lockedPath = Directory.GetFiles(dir, "*.opus").Single();
 
             // FileShare.None で開いたままにすると Windows では File.Delete が共有違反 (IOException) になる
@@ -200,7 +200,7 @@ public class AudioCacheManagerIntegrationTests
         var (mgr, dir) = CreateManager();
         try
         {
-            var request = new VoiceRequest("見つからない", 1);
+            var request = new VoiceRequest("見つからない", "1");
             var data = await mgr.GetCachedAudioAsync(request);
             await Assert.That(data).IsNull();
         }
@@ -216,7 +216,7 @@ public class AudioCacheManagerIntegrationTests
         var (mgr, dir) = CreateManager();
         try
         {
-            var request = new VoiceRequest("dummy", 1);
+            var request = new VoiceRequest("dummy", "1");
             var segments = new List<TextSegment>
             {
                 new() { Text = "first" },
@@ -243,7 +243,7 @@ public class AudioCacheManagerIntegrationTests
         var (mgr, dir) = CreateManager();
         try
         {
-            var request = new VoiceRequest("キャンセル", 1);
+            var request = new VoiceRequest("キャンセル", "1");
             using var cts = new CancellationTokenSource();
             cts.Cancel();
 
@@ -261,7 +261,7 @@ public class AudioCacheManagerIntegrationTests
         var (mgr, dir) = CreateManager();
         try
         {
-            var request = new VoiceRequest("dummy", 1);
+            var request = new VoiceRequest("dummy", "1");
             var segments = new List<TextSegment>
             {
                 new() { Text = "a" },

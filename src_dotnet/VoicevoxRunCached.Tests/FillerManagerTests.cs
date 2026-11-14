@@ -22,7 +22,7 @@ public class FillerManagerTests
         };
         var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
 
-        var data = await mgr.GetRandomFillerAudioAsync(speakerId: 1, volume: 1.0);
+        var data = await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "1", volume: 1.0);
 
         await Assert.That(data).IsNull();
     }
@@ -38,7 +38,7 @@ public class FillerManagerTests
         };
         var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
 
-        var data = await mgr.GetRandomFillerAudioAsync(speakerId: 1, volume: 1.0);
+        var data = await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "1", volume: 1.0);
 
         await Assert.That(data).IsNull();
     }
@@ -59,7 +59,7 @@ public class FillerManagerTests
             };
             var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
 
-            var data = await mgr.GetRandomFillerAudioAsync(speakerId: 1, volume: 1.0);
+            var data = await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "1", volume: 1.0);
 
             await Assert.That(data).IsNull();
         }
@@ -81,14 +81,14 @@ public class FillerManagerTests
             var logger = new RecordingLogger();
             var mgr = new FillerManager(settings, new CacheSettings(), logger);
             using var apiClient = engine.CreateApiClient();
-            await mgr.InitializeFillerCacheAsync(apiClient, speakerId: 1);
+            await mgr.InitializeFillerCacheAsync(TestEngines.Voicevox(apiClient), "1");
 
-            await Assert.That(await mgr.GetRandomFillerAudioAsync(speakerId: 1, volume: 1.0)).IsNotNull();
-            await Assert.That(await mgr.GetRandomFillerAudioAsync(speakerId: 3, volume: 1.0)).IsNull();
-            await Assert.That(await mgr.GetRandomFillerAudioAsync(speakerId: 3, volume: 1.0)).IsNull();
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "1", volume: 1.0)).IsNotNull();
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "3", volume: 1.0)).IsNull();
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "3", volume: 1.0)).IsNull();
 
             // 未生成の Warning (生成方法の案内付き) は合成待ちのたびではなく 1 回だけ
-            await Assert.That(logger.Messages.Count(m => m.Contains("--init -s 3"))).IsEqualTo(1);
+            await Assert.That(logger.Messages.Count(m => m.Contains("--init --engine voicevox -s 3"))).IsEqualTo(1);
         }
         finally
         {
@@ -110,11 +110,11 @@ public class FillerManagerTests
             var settings = new FillerSettings { Enabled = true, Directory = dir, FillerTexts = ["a"] };
             var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
             using var apiClient = engine.CreateApiClient();
-            await mgr.InitializeFillerCacheAsync(apiClient, speakerId: 1);
+            await mgr.InitializeFillerCacheAsync(TestEngines.Voicevox(apiClient), "1");
             var stored = await File.ReadAllBytesAsync(Directory.GetFiles(dir, "*.opus").Single());
 
-            var unchanged = await mgr.GetRandomFillerAudioAsync(speakerId: 1, volume: 1.0);
-            var half = await mgr.GetRandomFillerAudioAsync(speakerId: 1, volume: 0.5);
+            var unchanged = await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "1", volume: 1.0);
+            var half = await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "1", volume: 0.5);
 
             // 1.0 なら生成した Opus をそのまま返す
             await Assert.That(unchanged!.SequenceEqual(stored)).IsTrue();
@@ -234,7 +234,7 @@ public class FillerManagerTests
             SynthesisResult result;
             using (new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None))
             {
-                result = await mgr.InitializeFillerCacheAsync(apiClient, speakerId: 1);
+                result = await mgr.InitializeFillerCacheAsync(TestEngines.Voicevox(apiClient), "1");
             }
 
             await Assert.That(result.SuccessCount).IsEqualTo(1);
@@ -318,7 +318,7 @@ public class FillerManagerTests
             var mgr = new FillerManager(settings, new CacheSettings(), logger ?? NullLogger.Instance);
             using var apiClient = engine.CreateApiClient();
 
-            var result = await mgr.InitializeFillerCacheAsync(apiClient, FakeEngineServer.SpeakerId);
+            var result = await mgr.InitializeFillerCacheAsync(TestEngines.Voicevox(apiClient), FakeEngineServer.Speaker);
             return (result, Directory.GetFiles(dir));
         }
         finally

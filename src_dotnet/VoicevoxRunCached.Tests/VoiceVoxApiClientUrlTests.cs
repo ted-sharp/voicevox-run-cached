@@ -23,7 +23,7 @@ public class VoiceVoxApiClientUrlTests
     [Test]
     public async Task Url_ContainsOnlyTextAndSpeaker()
     {
-        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("text", 1, 1.5, 0.1, 0.5), BaseUrl);
+        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("text", "1", 1.5, 0.1, 0.5), BaseUrl);
 
         await Assert.That(url).IsEqualTo($"{BaseUrl}/audio_query?text=text&speaker=1");
     }
@@ -31,7 +31,7 @@ public class VoiceVoxApiClientUrlTests
     [Test]
     public async Task JapaneseText_IsPercentEncoded()
     {
-        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("こんにちは", 1), BaseUrl);
+        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("こんにちは", "1"), BaseUrl);
 
         // 「こ」は UTF-8 で 0xE3 0x81 0x93 → %E3%81%93
         await Assert.That(url).Contains("%E3%81%93");
@@ -41,7 +41,7 @@ public class VoiceVoxApiClientUrlTests
     [Test]
     public async Task SpecialCharsInText_AreEscaped()
     {
-        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("a b&c=d", 1), BaseUrl);
+        var url = VoiceVoxApiClient.BuildAudioQueryUrl(new VoiceRequest("a b&c=d", "1"), BaseUrl);
 
         await Assert.That(url).Contains("text=a%20b%26c%3Dd");
     }
@@ -49,7 +49,7 @@ public class VoiceVoxApiClientUrlTests
     [Test]
     public async Task ApplyVoiceParameters_OverwritesScales()
     {
-        var query = Apply(new VoiceRequest("text", 1, 1.5, -0.15, 0.8));
+        var query = Apply(new VoiceRequest("text", "1", 1.5, -0.15, 0.8));
 
         await Assert.That(query["speedScale"]!.GetValue<double>()).IsEqualTo(1.5);
         await Assert.That(query["pitchScale"]!.GetValue<double>()).IsEqualTo(-0.15);
@@ -59,7 +59,7 @@ public class VoiceVoxApiClientUrlTests
     [Test]
     public async Task ApplyVoiceParameters_KeepsOtherFields()
     {
-        var query = Apply(new VoiceRequest("text", 1, 1.5, 0.0, 1.0));
+        var query = Apply(new VoiceRequest("text", "1", 1.5, 0.0, 1.0));
 
         await Assert.That(query["intonationScale"]!.GetValue<double>()).IsEqualTo(1.0);
         await Assert.That(query["outputSamplingRate"]!.GetValue<int>()).IsEqualTo(24000);
@@ -72,8 +72,8 @@ public class VoiceVoxApiClientUrlTests
     {
         // 0.065 は Math.Round(0.065, 2) = 0.06 だが ToString("F2") = "0.07" になる (丸め方式の差)。
         // CacheKeyGenerator は F2 なので 0.065 と 0.07 は同じキー → 合成パラメータも同じでなければならない。
-        var midpoint = new VoiceRequest("text", 1, 1.0, 0.065, 1.0);
-        var rounded = new VoiceRequest("text", 1, 1.0, 0.07, 1.0);
+        var midpoint = new VoiceRequest("text", "1", 1.0, 0.065, 1.0);
+        var rounded = new VoiceRequest("text", "1", 1.0, 0.07, 1.0);
 
         await Assert.That(CacheKeyGenerator.Compute(midpoint)).IsEqualTo(CacheKeyGenerator.Compute(rounded));
         await Assert.That(VoiceVoxApiClient.ApplyVoiceParameters(EngineQuery, midpoint))
@@ -89,7 +89,7 @@ public class VoiceVoxApiClientUrlTests
         {
             Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
 
-            var json = VoiceVoxApiClient.ApplyVoiceParameters(EngineQuery, new VoiceRequest("text", 1, 1.5, 0.0, 1.0));
+            var json = VoiceVoxApiClient.ApplyVoiceParameters(EngineQuery, new VoiceRequest("text", "1", 1.5, 0.0, 1.0));
 
             await Assert.That(json).Contains("\"speedScale\":1.5");
         }

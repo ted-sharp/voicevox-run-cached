@@ -8,7 +8,7 @@ public class AudioCacheManagerTests
     [Test]
     public async Task ComputeCacheKey_ReturnsLowercaseHex64Chars()
     {
-        var request = new VoiceRequest("こんにちは", 1, 1.0, 0.0, 1.0);
+        var request = new VoiceRequest("こんにちは", "1", 1.0, 0.0, 1.0);
 
         var key = CacheKeyGenerator.Compute(request);
 
@@ -17,10 +17,23 @@ public class AudioCacheManagerTests
     }
 
     [Test]
+    [Arguments("こんにちは", "1", 1.0, 0.0, 1.0, "e7457afa59ba8cd8d9933b0b28d3d2dd3f6095b4e31c2e14a3147d515f645d88")]
+    [Arguments("テスト", "0", 1.25, -0.05, 0.8, "24d5cea3b88b7f7821954e0a31459875144a3217fb72df2a57c77e618c921e33")]
+    public async Task ComputeCacheKey_Voicevox_MatchesKeyBeforeEngineSupport(
+        string text, string speaker, double speed, double pitch, double volume, string expected)
+    {
+        // 回帰防止: 期待値はエンジン対応前の式 SHA256("{text}|{speakerId}|{speed:F2}|{pitch:F2}|{volume:F2}") で求めたもの。
+        // 変わると既存のキャッシュ・フィラーが全部ミスする
+        var key = CacheKeyGenerator.Compute(new VoiceRequest(text, speaker, speed, pitch, volume));
+
+        await Assert.That(key).IsEqualTo(expected);
+    }
+
+    [Test]
     public async Task ComputeCacheKey_IsStableForSameInput()
     {
-        var request1 = new VoiceRequest("テスト", 2, 1.5, 0.1, 0.8);
-        var request2 = new VoiceRequest("テスト", 2, 1.5, 0.1, 0.8);
+        var request1 = new VoiceRequest("テスト", "2", 1.5, 0.1, 0.8);
+        var request2 = new VoiceRequest("テスト", "2", 1.5, 0.1, 0.8);
 
         var key1 = CacheKeyGenerator.Compute(request1);
         var key2 = CacheKeyGenerator.Compute(request2);
@@ -31,8 +44,8 @@ public class AudioCacheManagerTests
     [Test]
     public async Task ComputeCacheKey_DiffersWhenTextChanges()
     {
-        var a = CacheKeyGenerator.Compute(new VoiceRequest("foo", 1));
-        var b = CacheKeyGenerator.Compute(new VoiceRequest("bar", 1));
+        var a = CacheKeyGenerator.Compute(new VoiceRequest("foo", "1"));
+        var b = CacheKeyGenerator.Compute(new VoiceRequest("bar", "1"));
 
         await Assert.That(a).IsNotEqualTo(b);
     }
@@ -40,8 +53,8 @@ public class AudioCacheManagerTests
     [Test]
     public async Task ComputeCacheKey_DiffersWhenSpeakerChanges()
     {
-        var a = CacheKeyGenerator.Compute(new VoiceRequest("text", 1));
-        var b = CacheKeyGenerator.Compute(new VoiceRequest("text", 2));
+        var a = CacheKeyGenerator.Compute(new VoiceRequest("text", "1"));
+        var b = CacheKeyGenerator.Compute(new VoiceRequest("text", "2"));
 
         await Assert.That(a).IsNotEqualTo(b);
     }
@@ -49,8 +62,8 @@ public class AudioCacheManagerTests
     [Test]
     public async Task ComputeCacheKey_DiffersWhenSpeedChanges()
     {
-        var a = CacheKeyGenerator.Compute(new VoiceRequest("text", 1, speed: 1.0));
-        var b = CacheKeyGenerator.Compute(new VoiceRequest("text", 1, speed: 1.5));
+        var a = CacheKeyGenerator.Compute(new VoiceRequest("text", "1", speed: 1.0));
+        var b = CacheKeyGenerator.Compute(new VoiceRequest("text", "1", speed: 1.5));
 
         await Assert.That(a).IsNotEqualTo(b);
     }
@@ -62,10 +75,10 @@ public class AudioCacheManagerTests
         try
         {
             System.Threading.Thread.CurrentThread.CurrentCulture = new System.Globalization.CultureInfo("de-DE");
-            var keyDe = CacheKeyGenerator.Compute(new VoiceRequest("text", 1, 1.5, 0.25, 0.8));
+            var keyDe = CacheKeyGenerator.Compute(new VoiceRequest("text", "1", 1.5, 0.25, 0.8));
 
             System.Threading.Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
-            var keyInv = CacheKeyGenerator.Compute(new VoiceRequest("text", 1, 1.5, 0.25, 0.8));
+            var keyInv = CacheKeyGenerator.Compute(new VoiceRequest("text", "1", 1.5, 0.25, 0.8));
 
             await Assert.That(keyDe).IsEqualTo(keyInv);
         }
@@ -78,8 +91,8 @@ public class AudioCacheManagerTests
     [Test]
     public async Task ComputeCacheKey_TreatsCloseFloatsAsSameDueTo2DecimalRounding()
     {
-        var a = CacheKeyGenerator.Compute(new VoiceRequest("text", 1, 1.001, 0.0, 1.0));
-        var b = CacheKeyGenerator.Compute(new VoiceRequest("text", 1, 1.004, 0.0, 1.0));
+        var a = CacheKeyGenerator.Compute(new VoiceRequest("text", "1", 1.001, 0.0, 1.0));
+        var b = CacheKeyGenerator.Compute(new VoiceRequest("text", "1", 1.004, 0.0, 1.0));
 
         await Assert.That(a).IsEqualTo(b);
     }

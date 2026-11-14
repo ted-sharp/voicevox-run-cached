@@ -26,7 +26,7 @@ public class CacheEvictionPolicyTests
 
     private static async Task SeedAsync(DiskCacheStore disk, string key, byte[] data, DateTime createdAt, string text = "seed")
     {
-        var request = new VoiceRequest(text, 1);
+        var request = new VoiceRequest(text, "1");
         await disk.SaveAsync(request, data, key);
 
         // メタの CreatedAt を上書き
@@ -119,9 +119,9 @@ public class CacheEvictionPolicyTests
         try
         {
             var start = clock.UtcNow;
-            await disk.SaveAsync(new VoiceRequest("used", 1), new byte[1000], "used");
+            await disk.SaveAsync(new VoiceRequest("used", "1"), new byte[1000], "used");
             clock.UtcNow = start.AddDays(1);
-            await disk.SaveAsync(new VoiceRequest("unused", 1), new byte[1000], "unused");
+            await disk.SaveAsync(new VoiceRequest("unused", "1"), new byte[1000], "unused");
 
             clock.UtcNow = start.AddDays(2);
             await Assert.That(await disk.LoadAsync("used")).IsNotNull();

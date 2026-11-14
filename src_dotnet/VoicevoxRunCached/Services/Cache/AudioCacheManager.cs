@@ -165,8 +165,6 @@ public class AudioCacheManager
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        segment.SpeakerId = request.SpeakerId;
-
         var segmentRequest = request.WithText(segment.Text);
         var cachedAudio = await GetCachedAudioAsync(segmentRequest, cancellationToken);
         if (cachedAudio != null)

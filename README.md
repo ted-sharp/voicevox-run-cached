@@ -101,15 +101,16 @@ VoicevoxRunCached.exe "メッセージ" --verbose
 VoicevoxRunCached <text> [options]
 VoicevoxRunCached -- <text> [options]   # <text> がコマンド名 (speakers など) と同じでも本文として読み上げる
 VoicevoxRunCached --test [options]      # appsettings.json の Test.Message で実行
-VoicevoxRunCached speakers              # スピーカー一覧
+VoicevoxRunCached speakers [--engine <name>]  # スピーカー一覧
 VoicevoxRunCached devices [--full] [--json]  # オーディオデバイス一覧
-VoicevoxRunCached --init [-s <id>]      # フィラー音声キャッシュを初期化 (話者ごと。省略時は DefaultSpeaker)
+VoicevoxRunCached --init [--engine <name>] [-s <id>]  # フィラー音声キャッシュを初期化 (話者ごと。省略時は DefaultSpeaker)
 VoicevoxRunCached --clear               # キャッシュ全削除
 ```
 
 | Option | 説明 | デフォルト |
 |---|---|---|
-| `--speaker, -s <id>` | スピーカー ID (0 以上) | `VoiceVox.DefaultSpeaker` (1) |
+| `--engine <name>` | 合成エンジン (`voicevox`。大文字小文字は区別しない) | `Synthesis.Engine` (`Voicevox`) |
+| `--speaker, -s <id>` | スピーカー。VOICEVOX は ID (0 以上) | エンジンの `DefaultSpeaker` (VOICEVOX は `VoiceVox.DefaultSpeaker` = 1) |
 | `--speed <value>` | 速度。0 より大きい値 (目安 0.5–2.0) | 1.0 |
 | `--pitch <value>` | ピッチ (目安 -0.15–0.15) | 0.0 |
 | `--volume <value>` | 合成する音声の音量。0 以上 (目安 0.0–2.0)。キャッシュと `--out` にも反映される (再生時の音量は `Audio.Volume`) | 1.0 |
@@ -158,6 +159,9 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 
 ```jsonc
 {
+  "Synthesis": {
+    "Engine": "Voicevox"          // 既定の合成エンジン。--engine で上書き
+  },
   "VoiceVox": {
     "EngineType": "VOICEVOX",     // VOICEVOX | AivisSpeech
     "BaseUrl": "http://127.0.0.1:50021",  // localhost より 127.0.0.1 推奨 (DNS 解決遅延回避)
@@ -236,7 +240,7 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 
 フィラーは `--init` で事前生成したキャッシュからしか再生されない。有効にする前に一度 `--init` を実行しておくこと (`--init` は `Filler.Enabled` に関係なく生成する。未生成だとフィラーは鳴らず、Warning ログが 1 回出るだけ)。`--clear` はフィラーのキャッシュも消すので、その後は `--init` をやり直す。
 
-フィラーは読み上げと同じ話者の声で再生する (途中で声が変わらないように)。`--init` が生成するのは `DefaultSpeaker` の分なので、`--speaker 3` のように別の話者で読み上げるなら `--init -s 3` でその話者の分も生成しておく。生成していない話者ではフィラーは鳴らない。フィラーの音量は読み上げの `--volume` に合わせる (話速・音高は既定のまま)。フィラーの読み込みや再生に失敗しても本編の読み上げは止めず、その回はフィラーを使わない (再生がタイムアウトしたときは、再生デバイスの異常として本編と同じく止める)。
+フィラーは読み上げと同じ話者の声で再生する (途中で声が変わらないように)。`--init` が生成するのは既定のエンジン・`DefaultSpeaker` の分なので、`--speaker 3` のように別の話者 (や `--engine` で別のエンジン) で読み上げるなら `--init -s 3` (`--init --engine <name> -s <話者>`) でその話者の分も生成しておく。生成していない話者ではフィラーは鳴らない。フィラーの音量は読み上げの `--volume` に合わせる (話速・音高は既定のまま)。フィラーの読み込みや再生に失敗しても本編の読み上げは止めず、その回はフィラーを使わない (再生がタイムアウトしたときは、再生デバイスの異常として本編と同じく止める)。
 
 ### 同時実行
 

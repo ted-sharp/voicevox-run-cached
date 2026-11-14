@@ -1,6 +1,7 @@
 ﻿using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Cache;
@@ -9,9 +10,10 @@ namespace VoicevoxRunCached.Services.Cache;
 /// 音声キャッシュキーの生成 (純粋関数)
 /// </summary>
 /// <remarks>
-/// キーは <c>SHA256(text|speakerId|speed|pitch|volume)</c> を 16 進小文字で表現する。
+/// キーは <c>SHA256(text|speaker|speed|pitch|volume)</c> を 16 進小文字で表現する。
 /// 既存キャッシュとの互換性を壊さないため、入力フォーマットを変更してはいけない。
 /// 浮動小数は InvariantCulture + F2 (小数 2 桁) で正規化する (≒ ロケール非依存)。
+/// speaker は <see cref="SpeakerKey"/> (VOICEVOX はスタイル ID の数字のまま。エンジン対応前と同じキーになる)。
 /// </remarks>
 public static class CacheKeyGenerator
 {
@@ -22,12 +24,27 @@ public static class CacheKeyGenerator
         var keyString = String.Format(
             CultureInfo.InvariantCulture,
             "{0}|{1}|{2:F2}|{3:F2}|{4:F2}",
-            request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
+            request.Text, SpeakerKey(request), request.Speed, request.Pitch, request.Volume);
 
         // SHA256.HashData は static + スレッドセーフ。
         // 共有 SHA256 インスタンスを保持するとマルチスレッドで CryptographicException が発生する。
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(keyString));
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
+    }
+
+    /// <summary>
+    /// キーに入れる話者。VOICEVOX は話者 (スタイル ID) そのもの、ほかのエンジンは <c>{エンジン名の小文字}:{話者}</c>。
+    /// </summary>
+    /// <remarks>
+    /// VOICEVOX はエンジン対応前のキー (<c>{speakerId}</c>) と同じにして、既存のキャッシュをそのまま使う。
+    /// ほかのエンジンはエンジン名を付けて、話者の名前が数字でも VOICEVOX のキーとぶつからないようにする。
+    /// </remarks>
+    public static string SpeakerKey(VoiceRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return request.Engine == SpeechEngineKind.Voicevox
+            ? request.Speaker
+            : $"{request.Engine.ToString().ToLowerInvariant()}:{request.Speaker}";
     }
 
     /// <summary>

@@ -98,6 +98,7 @@ public static class ApplicationBootstrap
     private static AppSettings BuildAppSettings(IConfiguration configuration)
     {
         var settings = new AppSettings();
+        configuration.GetSection("Synthesis").Bind(settings.Synthesis);
         configuration.GetSection("VoiceVox").Bind(settings.VoiceVox);
         configuration.GetSection("Cache").Bind(settings.Cache);
         configuration.GetSection("Audio").Bind(settings.Audio);

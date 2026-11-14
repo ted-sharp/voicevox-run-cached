@@ -25,6 +25,9 @@ namespace VoicevoxRunCached.Services;
 [Singleton(typeof(VoiceVoxApiClient))]
 [Singleton(typeof(AudioCacheManager))]
 [Singleton(typeof(VoiceVoxEngineManager))]
+// 合成エンジン (SpeechEngineProvider が種類から取り出す)
+[Singleton(typeof(VoicevoxEngine))]
+[Singleton(typeof(SpeechEngineProvider))]
 [Singleton(typeof(TextSegmentProcessor))]
 [Singleton(typeof(SpeechLock))]
 // 音声再生サブシステム (IDisposable はプロバイダの Dispose で破棄される)

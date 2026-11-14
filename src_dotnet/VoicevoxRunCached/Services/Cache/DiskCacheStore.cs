@@ -108,7 +108,8 @@ public class DiskCacheStore
         {
             CreatedAt = _clock.UtcNow,
             Text = request.Text,
-            SpeakerId = request.SpeakerId,
+            Engine = request.Engine,
+            Speaker = request.Speaker,
             Speed = request.Speed,
             Pitch = request.Pitch,
             Volume = request.Volume
@@ -276,8 +277,8 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// メタデータの整合性検証 (Text が非空、SpeakerId >= 0、CreatedAt が default でない)。
-    /// VOICEVOX は speaker 0 (四国めたん あまあま等) を持つため 0 も有効。
+    /// メタデータの整合性検証 (Text と Speaker が非空、CreatedAt が default でない)。
+    /// VOICEVOX は speaker 0 (四国めたん あまあま等) を持つため "0" も有効。
     /// </summary>
     /// <remarks>
     /// Speed/Pitch/Volume 未反映だった旧版のキャッシュは全て MP3 なので、Opus 移行で読まれなくなった (検証不要)。
@@ -285,7 +286,7 @@ public class DiskCacheStore
     public static bool IsMetadataValid(CacheMetadata metadata)
     {
         return !String.IsNullOrWhiteSpace(metadata.Text)
-            && metadata.SpeakerId >= 0
+            && !String.IsNullOrWhiteSpace(metadata.Speaker)
             && metadata.CreatedAt != default;
     }
 

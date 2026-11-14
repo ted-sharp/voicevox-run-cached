@@ -294,13 +294,13 @@ public class SegmentProducerTests
             using var apiClient = engine.CreateApiClient();
             var cacheManager = new AudioCacheManager(
                 new CacheSettings { Directory = dir, UseExecutableBaseDirectory = false }, cacheLogger ?? NullLogger.Instance, SystemClock.Instance);
-            var producer = new SegmentProducer(apiClient, cacheManager, NullLogger.Instance);
+            var producer = new SegmentProducer(TestEngines.Create(new VoiceVoxEngineManager(new VoiceVoxSettings(), NullLogger.Instance, SystemClock.Instance), apiClient), cacheManager, NullLogger.Instance);
             var channel = Channel.CreateUnbounded<TextSegment>();
 
             var result = await producer.ProduceAsync(
                 segments,
                 channel.Writer,
-                new VoiceRequest(speakerId: FakeEngineServer.SpeakerId),
+                new VoiceRequest(speaker: FakeEngineServer.Speaker),
                 saveToCache: true,
                 allowSynthesis ? prepareSynthesis ?? (_ => Task.CompletedTask) : null,
                 cancellationToken);

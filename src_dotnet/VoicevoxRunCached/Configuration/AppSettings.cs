@@ -4,6 +4,7 @@ namespace VoicevoxRunCached.Configuration;
 
 public class AppSettings
 {
+    public SynthesisSettings Synthesis { get; set; } = new();
     public VoiceVoxSettings VoiceVox { get; set; } = new();
     public CacheSettings Cache { get; set; } = new();
     public AudioSettings Audio { get; set; } = new();
@@ -25,6 +26,26 @@ public class LockSettings
     /// 上限を超えたら実行せず、終了コード 9 (<c>LOCK_001</c>) で終わる。
     /// </remarks>
     public int? MaxWaitSeconds { get; set; }
+}
+
+// 合成エンジンの選択
+public class SynthesisSettings
+{
+    /// <summary>
+    /// 既定で使う合成エンジン。<c>--engine</c> で上書きできる。話者 (<c>--speaker</c>) の既定値は各エンジンのセクションの <c>DefaultSpeaker</c>。
+    /// </summary>
+    public SpeechEngineKind Engine { get; set; } = SpeechEngineKind.Voicevox;
+}
+
+/// <summary>
+/// 合成エンジンの種類。<c>--engine</c> と <c>Synthesis.Engine</c> の値 (大文字小文字を区別しない)。
+/// </summary>
+/// <remarks>
+/// VOICEVOX 互換のエンジン (AIVIS Speech 等) は <see cref="Voicevox"/> の中で <see cref="VoiceVoxSettings.EngineType"/> で区別する。
+/// </remarks>
+public enum SpeechEngineKind
+{
+    Voicevox
 }
 
 // VoiceVox engine settings

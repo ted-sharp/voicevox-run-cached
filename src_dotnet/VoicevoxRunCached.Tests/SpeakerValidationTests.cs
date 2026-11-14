@@ -21,7 +21,7 @@ public class SpeakerValidationTests
     [Arguments(3)]
     public void ExistingStyleId_DoesNotThrow(int speakerId)
     {
-        TextToSpeechProcessor.EnsureSpeakerExists(Speakers(), speakerId);
+        VoicevoxEngine.EnsureSpeakerExists(Speakers(), speakerId);
     }
 
     [Test]
@@ -31,7 +31,7 @@ public class SpeakerValidationTests
     {
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
         {
-            TextToSpeechProcessor.EnsureSpeakerExists(Speakers(), speakerId);
+            VoicevoxEngine.EnsureSpeakerExists(Speakers(), speakerId);
             return Task.CompletedTask;
         });
 

@@ -192,12 +192,12 @@ public class TextToSpeechProcessorTests
             using var provider = new AppServiceProvider { Settings = settings, Logger = NullLogger.Instance };
 
             // ArgumentParser の既定値 (DefaultSpeaker, speed 1.0, pitch 0.0, volume 1.0) と同じキーで保存する
-            var cachedRequest = new VoiceRequest(CachedText, 1);
+            var cachedRequest = new VoiceRequest(CachedText, "1");
             var cacheManager = provider.GetService<AudioCacheManager>();
             await cacheManager.SaveAudioCacheAsync(cachedRequest, TestAudio.SineWav(24000, 300));
             foreach (var text in alsoCached ?? [])
             {
-                await cacheManager.SaveAudioCacheAsync(new VoiceRequest(text, 1), TestAudio.SineWav(24000, 300));
+                await cacheManager.SaveAudioCacheAsync(new VoiceRequest(text, "1"), TestAudio.SineWav(24000, 300));
             }
             var cachePath = Path.Combine(cacheDir, CacheKeyGenerator.Compute(cachedRequest) + DiskCacheStore.AudioExtension);
             if (prepareCache != null)

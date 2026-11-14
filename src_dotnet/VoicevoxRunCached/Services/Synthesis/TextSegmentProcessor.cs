@@ -25,7 +25,7 @@ public partial class TextSegmentProcessor
         _maxSegmentLength = maxSegmentLength;
     }
 
-    public Task<List<TextSegment>> ProcessTextAsync(string text, int speakerId = 1, CancellationToken cancellationToken = default)
+    public Task<List<TextSegment>> ProcessTextAsync(string text, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -40,7 +40,6 @@ public partial class TextSegmentProcessor
             .Select(t => new TextSegment
             {
                 Text = WhitespaceRegex().Replace(t, " "),
-                SpeakerId = speakerId,
                 IsCached = false
             })
             .ToList();

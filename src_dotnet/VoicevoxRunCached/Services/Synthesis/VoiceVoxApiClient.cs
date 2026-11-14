@@ -75,8 +75,8 @@ public class VoiceVoxApiClient : IDisposable
     {
         return ExecuteApiAsync("generate audio query", async ct =>
         {
-            _logger.LogDebug("Audio query を生成 - Text='{Text}', SpeakerId={SpeakerId}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
-                request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
+            _logger.LogDebug("Audio query を生成 - Text='{Text}', Speaker={Speaker}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
+                request.Text, request.Speaker, request.Speed, request.Pitch, request.Volume);
 
             var url = BuildAudioQueryUrl(request, _settings.BaseUrl);
             using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url);
@@ -101,7 +101,7 @@ public class VoiceVoxApiClient : IDisposable
         ArgumentNullException.ThrowIfNull(baseUrl);
 
         var encodedText = Uri.EscapeDataString(request.Text ?? String.Empty);
-        return $"{baseUrl}/audio_query?text={encodedText}&speaker={request.SpeakerId}";
+        return $"{baseUrl}/audio_query?text={encodedText}&speaker={Uri.EscapeDataString(request.Speaker)}";
     }
 
     /// <summary>

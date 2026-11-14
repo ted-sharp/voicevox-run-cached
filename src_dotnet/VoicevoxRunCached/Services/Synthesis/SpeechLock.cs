@@ -9,21 +9,21 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// <see cref="InterProcessLock.SpeechLockPath"/> でプロセス間に直列化する入口。
 /// </summary>
 /// <remarks>
-/// <para>ロックの中で処理を実行し、ロックを解放する<b>前に</b> <see cref="VoiceVoxEngineManager.StopEngineIfNotKept"/> を呼ぶ。
+/// <para>ロックの中で処理を実行し、ロックを解放する<b>前に</b>全エンジンの <see cref="ISpeechEngine.StopIfNotKept"/> を呼ぶ。
 /// 解放してから (サービスの Dispose で) 止めると、その間にロックを取った後続のプロセスが動いているエンジンを見て合成を始め、
 /// 途中で止められて失敗するため。先に止めておけば、後続はエンジンが止まっているのを見て自分で起動する。</para>
-/// <para>エンジンを起動しないコマンド (<c>--clear</c>) では <see cref="VoiceVoxEngineManager.StopEngineIfNotKept"/> は何もしない。
+/// <para>エンジンを起動しないコマンド (<c>--clear</c>) では <see cref="ISpeechEngine.StopIfNotKept"/> は何もしない。
 /// それでもここを通すことで、ロックとエンジン停止の書き忘れが起きないようにする。</para>
 /// </remarks>
 public class SpeechLock
 {
-    private readonly VoiceVoxEngineManager _engineManager;
+    private readonly SpeechEngineProvider _engines;
     private readonly LockSettings _settings;
     private readonly ILogger _logger;
 
-    public SpeechLock(VoiceVoxEngineManager engineManager, LockSettings settings, ILogger logger)
+    public SpeechLock(SpeechEngineProvider engines, LockSettings settings, ILogger logger)
     {
-        _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
+        _engines = engines ?? throw new ArgumentNullException(nameof(engines));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -47,7 +47,10 @@ public class SpeechLock
         }
         finally
         {
-            _engineManager.StopEngineIfNotKept();
+            foreach (var engine in _engines.All)
+            {
+                engine.StopIfNotKept();
+            }
         }
     }
 

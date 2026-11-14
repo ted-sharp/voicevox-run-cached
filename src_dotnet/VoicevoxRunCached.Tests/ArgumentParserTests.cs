@@ -11,6 +11,74 @@ public class ArgumentParserTests
         VoiceVox = new VoiceVoxSettings { DefaultSpeaker = 1 }
     };
 
+    /// <summary>
+    /// <c>--init</c> の話者 (VOICEVOX の ID)。
+    /// </summary>
+    private static int ParseInitSpeaker(string[] args, AppSettings settings)
+    {
+        var (engine, speaker) = ArgumentParser.ParseInitOptions(args, settings);
+        if (engine != SpeechEngineKind.Voicevox)
+        {
+            throw new InvalidOperationException($"VOICEVOX ではありません: {engine}");
+        }
+        return Int32.Parse(speaker, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    [Test]
+    [Arguments("--engine voicevox")]
+    [Arguments("--engine VOICEVOX")]
+    [Arguments("-s 3 --engine Voicevox")]
+    public async Task Parse_EngineOption_IsCaseInsensitive(string options)
+    {
+        var (request, _) = ArgumentParser.Parse(["text", .. options.Split(' ')], DefaultSettings());
+
+        await Assert.That(request!.Engine).IsEqualTo(SpeechEngineKind.Voicevox);
+    }
+
+    [Test]
+    [Arguments("--engine unknown")]
+    [Arguments("--engine 0")]
+    [Arguments("--engine")]
+    public async Task Parse_InvalidEngine_ThrowsInvalidArguments(string options)
+    {
+        // 数字は Enum.TryParse なら通るが、名前でないので受け付けない
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.Parse(["text", .. options.Split(' ')], DefaultSettings())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
+
+    [Test]
+    public async Task Parse_SpeakerIsNormalized()
+    {
+        // キャッシュキーに入るので、同じ話者は同じ文字列にする (01 と 1 で別のキーにしない)
+        var (request, _) = ArgumentParser.Parse(["text", "-s", "01"], DefaultSettings());
+
+        await Assert.That(request!.Speaker).IsEqualTo("1");
+    }
+
+    [Test]
+    [Arguments("", SpeechEngineKind.Voicevox)]
+    [Arguments("--engine voicevox --log-level debug", SpeechEngineKind.Voicevox)]
+    public async Task ParseSpeakersOptions_ReadsEngineOrDefault(string args, SpeechEngineKind expected)
+    {
+        var engine = ArgumentParser.ParseSpeakersOptions(args.Split(' ', StringSplitOptions.RemoveEmptyEntries), DefaultSettings());
+
+        await Assert.That(engine).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments("--speaker 3")]
+    [Arguments("extra")]
+    [Arguments("--engine unknown")]
+    public async Task ParseSpeakersOptions_UnexpectedArgument_ThrowsInvalidArguments(string args)
+    {
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+            Task.FromResult(ArgumentParser.ParseSpeakersOptions(args.Split(' '), DefaultSettings())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
+    }
+
     [Test]
     public async Task Parse_EmptyArgs_RequestIsNull()
     {
@@ -29,7 +97,7 @@ public class ArgumentParserTests
 
         await Assert.That(request).IsNotNull();
         await Assert.That(request!.Text).IsEqualTo("こんにちは");
-        await Assert.That(request.SpeakerId).IsEqualTo(7);
+        await Assert.That(request.Speaker).IsEqualTo("7");
     }
 
     [Test]
@@ -37,7 +105,7 @@ public class ArgumentParserTests
     {
         var (request, _) = ArgumentParser.Parse(new[] { "text", "--speaker", "3" }, DefaultSettings());
 
-        await Assert.That(request!.SpeakerId).IsEqualTo(3);
+        await Assert.That(request!.Speaker).IsEqualTo("3");
     }
 
     [Test]
@@ -45,7 +113,7 @@ public class ArgumentParserTests
     {
         var (request, _) = ArgumentParser.Parse(new[] { "text", "-s", "5" }, DefaultSettings());
 
-        await Assert.That(request!.SpeakerId).IsEqualTo(5);
+        await Assert.That(request!.Speaker).IsEqualTo("5");
     }
 
     [Test]
@@ -53,7 +121,7 @@ public class ArgumentParserTests
     {
         var (request, _) = ArgumentParser.Parse(new[] { "text", "-s9" }, DefaultSettings());
 
-        await Assert.That(request!.SpeakerId).IsEqualTo(9);
+        await Assert.That(request!.Speaker).IsEqualTo("9");
     }
 
     [Test]
@@ -153,7 +221,7 @@ public class ArgumentParserTests
             settings);
 
         await Assert.That(request.Text).IsEqualTo("テストメッセージ");
-        await Assert.That(request.SpeakerId).IsEqualTo(3);
+        await Assert.That(request.Speaker).IsEqualTo("3");
         await Assert.That(request.Speed).IsEqualTo(1.25);
         await Assert.That(options.OutPath).IsEqualTo("test.opus");
     }
@@ -259,7 +327,7 @@ public class ArgumentParserTests
         var (request, _) = ArgumentParser.Parse([text, "-s", "3"], DefaultSettings());
 
         await Assert.That(request!.Text).IsEqualTo(text);
-        await Assert.That(request.SpeakerId).IsEqualTo(3);
+        await Assert.That(request.Speaker).IsEqualTo("3");
     }
 
     [Test]
@@ -286,7 +354,7 @@ public class ArgumentParserTests
         var (request, _) = ArgumentParser.Parse(["--", "--hello", "-s", "3"], DefaultSettings());
 
         await Assert.That(request!.Text).IsEqualTo("--hello");
-        await Assert.That(request.SpeakerId).IsEqualTo(3);
+        await Assert.That(request.Speaker).IsEqualTo("3");
     }
 
     [Test]
@@ -328,7 +396,7 @@ public class ArgumentParserTests
         var (request, _) = ArgumentParser.Parse(
             ["text", "-s", "0", "--volume", "0", "--pitch", "-0.15", "--speed", "0.5"], DefaultSettings());
 
-        await Assert.That(request!.SpeakerId).IsEqualTo(0);
+        await Assert.That(request!.Speaker).IsEqualTo("0");
         await Assert.That(request.Volume).IsEqualTo(0.0);
         await Assert.That(request.Pitch).IsEqualTo(-0.15);
         await Assert.That(request.Speed).IsEqualTo(0.5);
@@ -343,7 +411,7 @@ public class ArgumentParserTests
         var (request, options) = ArgumentParser.ParseTestCommand("hello", Array.Empty<string>(), settings);
 
         await Assert.That(request.Text).IsEqualTo("hello");
-        await Assert.That(request.SpeakerId).IsEqualTo(5);
+        await Assert.That(request.Speaker).IsEqualTo("5");
         await Assert.That(request.Speed).IsEqualTo(1.0);
         await Assert.That(options.OutPath).IsNull();
     }
@@ -436,7 +504,7 @@ public class ArgumentParserTests
     public async Task ParseInitSpeaker_ConfigurationOverrideWithoutValue_ThrowsInvalidArguments()
     {
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
-            Task.FromResult(ArgumentParser.ParseInitSpeaker(["--Filler:Enabled"], DefaultSettings())));
+            Task.FromResult(ParseInitSpeaker(["--Filler:Enabled"], DefaultSettings())));
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
     }
@@ -478,7 +546,7 @@ public class ArgumentParserTests
         var (request, options) = ArgumentParser.Parse(["--", text, "-s", "3", "--no-play"], DefaultSettings());
 
         await Assert.That(request!.Text).IsEqualTo(text);
-        await Assert.That(request.SpeakerId).IsEqualTo(3);
+        await Assert.That(request.Speaker).IsEqualTo("3");
         await Assert.That(options.NoPlay).IsTrue();
     }
 
@@ -521,7 +589,7 @@ public class ArgumentParserTests
         var settings = DefaultSettings();
         settings.VoiceVox.DefaultSpeaker = 7;
 
-        var speakerId = ArgumentParser.ParseInitSpeaker(args.Split(' ', StringSplitOptions.RemoveEmptyEntries), settings);
+        var speakerId = ParseInitSpeaker(args.Split(' ', StringSplitOptions.RemoveEmptyEntries), settings);
 
         await Assert.That(speakerId).IsEqualTo(expected);
     }
@@ -533,7 +601,7 @@ public class ArgumentParserTests
     public async Task ParseInitSpeaker_InvalidSpeaker_ThrowsInvalidArguments(string args)
     {
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
-            Task.FromResult(ArgumentParser.ParseInitSpeaker(args.Split(' '), DefaultSettings())));
+            Task.FromResult(ParseInitSpeaker(args.Split(' '), DefaultSettings())));
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
     }
@@ -547,7 +615,7 @@ public class ArgumentParserTests
     {
         // 回帰: 不明な引数を読み飛ばしていたため、--speaker=3 や打ち間違いでも既定の話者のフィラーを作って成功表示していた
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
-            Task.FromResult(ArgumentParser.ParseInitSpeaker(args.Split(' '), DefaultSettings())));
+            Task.FromResult(ParseInitSpeaker(args.Split(' '), DefaultSettings())));
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
     }
@@ -594,7 +662,7 @@ public class ArgumentParserTests
     [Arguments("--Filler:Enabled")]
     public async Task EnsureNoCommandArguments_UnexpectedArgument_ThrowsInvalidArguments(string args)
     {
-        // 回帰: speakers / --clear は引数を見ておらず、--clear --speaker 3 でも全部消して成功していた
+        // 回帰: --clear は引数を見ておらず、--clear --speaker 3 でも全部消して成功していた
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
         {
             ArgumentParser.EnsureNoCommandArguments(args.Split(' '));
@@ -613,7 +681,7 @@ public class ArgumentParserTests
             string[] overrideArgs = [$"--{section}:Key=1"];
 
             var (_, options) = ArgumentParser.Parse(["text", .. overrideArgs, "--no-play"], DefaultSettings());
-            var speakerId = ArgumentParser.ParseInitSpeaker(overrideArgs, DefaultSettings());
+            var speakerId = ParseInitSpeaker(overrideArgs, DefaultSettings());
 
             await Assert.That(options.NoPlay).IsTrue();
             await Assert.That(speakerId).IsEqualTo(1);
@@ -627,7 +695,7 @@ public class ArgumentParserTests
     public async Task ParseInitSpeaker_LogAndConfigurationArgs_AreSkipped(string args, int expected)
     {
         // ログ設定と設定の上書き (--Section:Key=値 / --Section:Key 値) は設定の読み込み側で扱うので読み飛ばす
-        var speakerId = ArgumentParser.ParseInitSpeaker(args.Split(' '), DefaultSettings());
+        var speakerId = ParseInitSpeaker(args.Split(' '), DefaultSettings());
 
         await Assert.That(speakerId).IsEqualTo(expected);
     }

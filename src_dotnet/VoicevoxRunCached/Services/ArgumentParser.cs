@@ -101,11 +101,11 @@ public static class ArgumentParser
         {
             throw OptionInsteadOfText(text);
         }
-        var request = CreateDefaultRequest(text, settings);
-        var options = ApplyOptions(PreprocessArgs(args[(textIndex + 1)..]), request);
+        var request = new VoiceRequest { Text = text };
+        var options = ApplyOptions(PreprocessArgs(args[(textIndex + 1)..]), request, settings);
 
-        logger?.LogDebug("引数解析結果 - Text='{Text}', SpeakerId={SpeakerId}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
-            request.Text, request.SpeakerId, request.Speed, request.Pitch, request.Volume);
+        logger?.LogDebug("引数解析結果 - Text='{Text}', Engine={Engine}, Speaker={Speaker}, Speed={Speed}, Pitch={Pitch}, Volume={Volume}",
+            request.Text, request.Engine, request.Speaker, request.Speed, request.Pitch, request.Volume);
 
         return (request, options);
     }
@@ -117,13 +117,14 @@ public static class ArgumentParser
     public static (VoiceRequest Request, TextToSpeechOptions Options) ParseTestCommand(
         string text, string[] args, AppSettings settings)
     {
-        var request = CreateDefaultRequest(text, settings);
-        var options = ApplyOptions(PreprocessArgs(args), request);
+        var request = new VoiceRequest { Text = text };
+        var options = ApplyOptions(PreprocessArgs(args), request, settings);
         return (request, options);
     }
 
     /// <summary>
-    /// <c>--init</c> の引数から、フィラーを生成する話者 (<c>--speaker</c> / <c>-s</c>) を読む。省略時は <c>DefaultSpeaker</c>。
+    /// <c>--init</c> の引数から、フィラーを生成するエンジン (<c>--engine</c>) と話者 (<c>--speaker</c> / <c>-s</c>) を読む。
+    /// 省略時は <c>Synthesis.Engine</c> と、そのエンジンの <c>DefaultSpeaker</c>。
     /// </summary>
     /// <remarks>
     /// フィラーは読み上げと同じ話者の声で再生するので、既定以外の話者で読み上げるならその話者の分を生成しておく。
@@ -132,17 +133,23 @@ public static class ArgumentParser
     /// それ以外の引数は読み上げと同じく <see cref="ErrorCodes.General.InvalidArguments"/> にする
     /// (<c>--speaker=3</c> や打ち間違いで、黙って既定の話者のフィラーを作って成功表示しないように)。
     /// </remarks>
-    public static int ParseInitSpeaker(string[] args, AppSettings settings)
+    public static (SpeechEngineKind Engine, string Speaker) ParseInitOptions(string[] args, AppSettings settings)
     {
         var processedArgs = PreprocessArgs(args);
-        var speakerId = settings.VoiceVox.DefaultSpeaker;
+        var engine = settings.Synthesis.Engine;
+        (string Option, string Value)? speakerArg = null;
         int i = 0;
         while (i < processedArgs.Length)
         {
             var arg = processedArgs[i];
             if (arg is "--speaker" or "-s")
             {
-                speakerId = ReadInt(processedArgs, i, min: 0);
+                speakerArg = (arg, ReadValue(processedArgs, i));
+                i += 2;
+            }
+            else if (arg == "--engine")
+            {
+                engine = ReadEngine(processedArgs, i);
                 i += 2;
             }
             else if (!TrySkipConfigurationArgs(processedArgs, ref i))
@@ -150,7 +157,33 @@ public static class ArgumentParser
                 throw UnexpectedArgument(arg);
             }
         }
-        return speakerId;
+        return (engine, ResolveSpeaker(engine, speakerArg, settings));
+    }
+
+    /// <summary>
+    /// <c>speakers</c> の引数から、一覧を出すエンジン (<c>--engine</c>) を読む。省略時は <c>Synthesis.Engine</c>。
+    /// </summary>
+    /// <remarks>
+    /// それ以外は <see cref="ErrorCodes.General.InvalidArguments"/> にする。ログ・設定の上書きは <see cref="ParseInitOptions"/> と同じく読み飛ばす。
+    /// </remarks>
+    public static SpeechEngineKind ParseSpeakersOptions(string[] args, AppSettings settings)
+    {
+        var processedArgs = PreprocessArgs(args);
+        var engine = settings.Synthesis.Engine;
+        int i = 0;
+        while (i < processedArgs.Length)
+        {
+            if (processedArgs[i] == "--engine")
+            {
+                engine = ReadEngine(processedArgs, i);
+                i += 2;
+            }
+            else if (!TrySkipConfigurationArgs(processedArgs, ref i))
+            {
+                throw UnexpectedArgument(processedArgs[i]);
+            }
+        }
+        return engine;
     }
 
     /// <summary>
@@ -158,7 +191,7 @@ public static class ArgumentParser
     /// </summary>
     /// <remarks>
     /// それ以外は <see cref="ErrorCodes.General.InvalidArguments"/> にする (<c>devices --jsn</c> のような打ち間違いで、
-    /// JSON のつもりの stdout に人向けの一覧を出して成功しないように)。ログ・設定の上書きは <see cref="ParseInitSpeaker"/> と同じく読み飛ばす。
+    /// JSON のつもりの stdout に人向けの一覧を出して成功しないように)。ログ・設定の上書きは <see cref="ParseInitOptions"/> と同じく読み飛ばす。
     /// </remarks>
     public static (bool Json, bool Full) ParseDevicesOptions(string[] args)
     {
@@ -187,11 +220,11 @@ public static class ArgumentParser
     }
 
     /// <summary>
-    /// 引数を取らないコマンド (<c>speakers</c> / <c>--clear</c>) に引数が付いていたら <see cref="ErrorCodes.General.InvalidArguments"/> にする。
+    /// 引数を取らないコマンド (<c>--clear</c>) に引数が付いていたら <see cref="ErrorCodes.General.InvalidArguments"/> にする。
     /// </summary>
     /// <remarks>
     /// 読み飛ばすと、<c>--clear --speaker 3</c> (話者 3 の分だけ消すつもり) で全部消して成功表示してしまう。
-    /// ログ・設定の上書きは <see cref="ParseInitSpeaker"/> と同じく読み飛ばす。
+    /// ログ・設定の上書きは <see cref="ParseInitOptions"/> と同じく読み飛ばす。
     /// </remarks>
     public static void EnsureNoCommandArguments(string[] args)
     {
@@ -254,6 +287,7 @@ public static class ArgumentParser
     /// </summary>
     private static readonly FrozenSet<string> ConfigurationSections = new[]
     {
+        nameof(AppSettings.Synthesis),
         nameof(AppSettings.VoiceVox),
         nameof(AppSettings.Cache),
         nameof(AppSettings.Audio),
@@ -320,24 +354,20 @@ public static class ArgumentParser
     private static readonly TextToSpeechOptions EmptyOptions = new(
         NoCache: false, CacheOnly: false, Verbose: false, OutPath: null, NoPlay: false);
 
-    private static VoiceRequest CreateDefaultRequest(string text, AppSettings settings) => new()
-    {
-        Text = text,
-        SpeakerId = settings.VoiceVox.DefaultSpeaker,
-        Speed = 1.0,
-        Pitch = 0.0,
-        Volume = 1.0
-    };
-
     /// <summary>
     /// 前処理済み引数列から音声パラメータを <see cref="VoiceRequest"/> に反映しつつ、
     /// 動作フラグを <see cref="TextToSpeechOptions"/> として返す。解釈できない引数は <see cref="ErrorCodes.General.InvalidArguments"/>。
     /// </summary>
-    private static TextToSpeechOptions ApplyOptions(string[] processedArgs, VoiceRequest request)
+    /// <remarks>
+    /// 話者は <c>--engine</c> の後ろにあっても前にあってもよいので、エンジンが決まってから検証する。
+    /// </remarks>
+    private static TextToSpeechOptions ApplyOptions(string[] processedArgs, VoiceRequest request, AppSettings settings)
     {
         bool noCache = false, cacheOnly = false, verbose = false, noPlay = false, refresh = false;
         string? outPath = null;
         int? maxWaitSeconds = null;
+        var engine = settings.Synthesis.Engine;
+        (string Option, string Value)? speakerArg = null;
 
         int i = 0;
         while (i < processedArgs.Length)
@@ -346,7 +376,11 @@ public static class ArgumentParser
             switch (arg)
             {
                 case "--speaker" or "-s":
-                    request.SpeakerId = ReadInt(processedArgs, i, min: 0);
+                    speakerArg = (arg, ReadValue(processedArgs, i));
+                    i += 2;
+                    break;
+                case "--engine":
+                    engine = ReadEngine(processedArgs, i);
                     i += 2;
                     break;
                 case "--speed":
@@ -406,6 +440,9 @@ public static class ArgumentParser
             throw InvalidOption("--refresh", "--no-cache / --cache-only と同時には指定できません。");
         }
 
+        request.Engine = engine;
+        request.Speaker = ResolveSpeaker(engine, speakerArg, settings);
+
         return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay, refresh, maxWaitSeconds);
     }
 
@@ -455,6 +492,32 @@ public static class ArgumentParser
                 $"対応していない拡張子です: '{path}' ({String.Join(" / ", AudioExportService.SupportedExtensions)} のみ)");
         }
         return path;
+    }
+
+    /// <summary>
+    /// <c>--engine</c> の値を読む (大文字小文字を区別しない)。
+    /// </summary>
+    private static SpeechEngineKind ReadEngine(string[] args, int optionIndex)
+    {
+        var raw = ReadValue(args, optionIndex);
+        // Enum.TryParse は数字 ("0") も受け付けるので、名前と一致するものだけにする
+        var engine = Enum.GetValues<SpeechEngineKind>()
+            .Select(kind => (SpeechEngineKind?)kind)
+            .FirstOrDefault(kind => String.Equals(kind.ToString(), raw, StringComparison.OrdinalIgnoreCase));
+        return engine ?? throw InvalidOption(args[optionIndex],
+            $"対応していないエンジンです: '{raw}' ({String.Join(" / ", Enum.GetNames<SpeechEngineKind>().Select(n => n.ToLowerInvariant()))} のどれか)");
+    }
+
+    /// <summary>
+    /// 話者を決める。指定があればエンジンごとに検証・正規化し、無ければそのエンジンの <c>DefaultSpeaker</c>。
+    /// </summary>
+    private static string ResolveSpeaker(SpeechEngineKind engine, (string Option, string Value)? speakerArg, AppSettings settings)
+    {
+        if (speakerArg is not { } arg)
+        {
+            return SpeechEngineProvider.DefaultSpeaker(engine, settings);
+        }
+        return SpeechEngineProvider.NormalizeSpeaker(engine, arg.Value, out var error) ?? throw InvalidOption(arg.Option, error!);
     }
 
     private static int ReadInt(string[] args, int optionIndex, int min)
@@ -508,16 +571,17 @@ Usage:
   VoicevoxRunCached <text> [options]
   VoicevoxRunCached -- <text> [options]   (read <text> even if it looks like a command, e.g. "speakers")
   VoicevoxRunCached --test [options]
-  VoicevoxRunCached speakers
+  VoicevoxRunCached speakers [--engine <name>]
   VoicevoxRunCached devices [--full] [--json]
-  VoicevoxRunCached --init [--speaker <id>]
+  VoicevoxRunCached --init [--engine <name>] [--speaker <id>]
   VoicevoxRunCached --clear
 
 Arguments:
   <text>                    The text to convert to speech (quote it if it contains spaces)
 
 Options:
-  --speaker, -s <id>       Speaker ID (default: appsettings VoiceVox.DefaultSpeaker)
+  --engine <name>          Speech engine: voicevox (default: appsettings Synthesis.Engine)
+  --speaker, -s <id>       Speaker (default: DefaultSpeaker of the engine's section, e.g. VoiceVox.DefaultSpeaker)
   --speed <value>          Speech speed (default: 1.0)
   --pitch <value>          Speech pitch (default: 0.0)
   --volume <value>         Speech volume (default: 1.0)
@@ -534,10 +598,10 @@ Options:
   --help, -h               Show this help message
 
 Commands:
-  speakers                 List available speakers
+  speakers                 List available speakers of the engine
   devices                  List audio output devices
   --test                   Play the configured test message (Test.Message)
-  --init                   Initialize filler audio cache for the speaker (default: VoiceVox.DefaultSpeaker)
+  --init                   Initialize filler audio cache for the speaker of the engine
   --clear                  Clear audio and filler cache files
 
 Enhanced Features:
