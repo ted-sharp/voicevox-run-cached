@@ -1,5 +1,7 @@
 # VoicevoxRunCached リリースノート
 
+## Unreleased (3.1.1)
+
 ## v3.1.0 - 2026-11-15
 
 - CLI/コマンド:
