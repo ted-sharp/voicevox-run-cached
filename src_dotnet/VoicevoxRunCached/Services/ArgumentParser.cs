@@ -538,7 +538,11 @@ public static class ArgumentParser
                 suggestedSolution: $"--speaker で話者を指定するか、appsettings.json の {engine}.DefaultSpeaker を設定してください " +
                     $"(話者は `VoicevoxRunCached speakers --engine {engineName}` で確認できます)。");
         }
-        return SpeechEngineProvider.NormalizeSpeaker(engine, defaultSpeaker, out _) ?? defaultSpeaker;
+        return SpeechEngineProvider.NormalizeSpeaker(engine, defaultSpeaker, out var defaultError)
+            ?? throw new ConfigurationException(
+                errorCode: ErrorCodes.Configuration.InvalidSettings,
+                message: $"Invalid {engine}.DefaultSpeaker: {defaultError}",
+                userMessage: $"appsettings.json の {engine}.DefaultSpeaker が不正です: {defaultError}");
     }
 
     private static int ReadInt(string[] args, int optionIndex, int min)

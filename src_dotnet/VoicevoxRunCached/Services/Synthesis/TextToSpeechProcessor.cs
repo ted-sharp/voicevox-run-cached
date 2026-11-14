@@ -107,11 +107,8 @@ public class TextToSpeechProcessor
         // (合成した文が全部失敗しても、キャッシュから鳴った文があれば一部失敗)
         if (synthesisResult.FailureCount == segments.Count)
         {
-            throw new VoicevoxRunCachedException(
-                errorCode: ErrorCodes.Audio.AudioGenerationFailed,
-                message: $"All {synthesisResult.AttemptedCount} segments failed to synthesize",
-                userMessage: "全てのセグメントの音声合成に失敗しました。",
-                suggestedSolution: "合成エンジンの状態とログを確認してください。");
+            throw synthesisResult.ToAllFailedException(
+                $"All {synthesisResult.AttemptedCount} segments failed to synthesize", "全てのセグメントの音声合成に失敗しました。");
         }
 
         bool hasPartialFailure = synthesisResult.FailureCount > 0;

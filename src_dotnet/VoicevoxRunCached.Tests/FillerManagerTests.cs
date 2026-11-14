@@ -262,7 +262,9 @@ public class FillerManagerTests
         // 最初のフィラーのリトライ分だけで、残りには問い合わせない
         await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(AudioConstants.RetryMaxAttempts);
         // 中止した分も失敗に数える (全部失敗なら終了コード 5、一部なら 8 のまま)
-        await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 3, SuccessCount: 0, FailureCount: 3));
+        await Assert.That(result with { FirstError = null }).IsEqualTo(new SynthesisResult(AttemptedCount: 3, SuccessCount: 0, FailureCount: 3));
+        // 全部失敗したときのエラーに理由を添えるため、最初の失敗を返す
+        await Assert.That(result.FirstError).IsNotNull();
         // ログには実際に API を呼ばなかった件数を出す
         await Assert.That(logger.Messages.Count(m => m.Contains("2 件のフィラーの生成を中止"))).IsEqualTo(1);
     }
@@ -276,7 +278,7 @@ public class FillerManagerTests
         var (result, _) = await InitializeAsync(engine, ["a", "b", "c"]);
 
         await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(3);
-        await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 3, SuccessCount: 0, FailureCount: 3));
+        await Assert.That(result with { FirstError = null }).IsEqualTo(new SynthesisResult(AttemptedCount: 3, SuccessCount: 0, FailureCount: 3));
     }
 
     [Test]

@@ -59,6 +59,7 @@ public class FillerManager
         int total = _settings.FillerTexts.Length;
         var engineUnavailable = false;
         int aborted = 0;
+        Exception? firstError = null;
 
         foreach (var fillerText in _settings.FillerTexts)
         {
@@ -106,6 +107,7 @@ public class FillerManager
                 failed++;
                 _logger.LogWarning(ex, "フィラー音声の生成に失敗: \"{Text}\"", fillerText);
 
+                firstError ??= ex;
                 engineUnavailable = engine.IsEngineUnavailable(ex);
             }
         }
@@ -118,7 +120,7 @@ public class FillerManager
 
         _logger.LogInformation("フィラーキャッシュの初期化が完了しました - 生成: {Success}, 失敗: {Failure}, 生成済み: {Skipped}",
             attempted - failed, failed, total - attempted);
-        return new SynthesisResult(attempted, attempted - failed, failed);
+        return new SynthesisResult(attempted, attempted - failed, failed, FirstError: firstError);
     }
 
     /// <summary>

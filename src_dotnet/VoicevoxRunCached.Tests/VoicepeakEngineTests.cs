@@ -197,6 +197,18 @@ public class VoicepeakEngineTests
     }
 
     [Test]
+    public async Task Parse_InvalidDefaultSpeaker_ThrowsConfigurationError()
+    {
+        // 設定の検証を通っていれば起きないが、正規化できない既定の話者を黙ってそのまま使わない
+        var settings = new AppSettings { Voicepeak = new VoicepeakSettings { DefaultSpeaker = "Otomachi Una:joy=abc" } };
+
+        var ex = await Assert.ThrowsAsync<ConfigurationException>(() =>
+            Task.FromResult(ArgumentParser.Parse(["文", "--engine", "voicepeak"], settings)));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Configuration.InvalidSettings);
+    }
+
+    [Test]
     public async Task Parse_Voicevox_AllowsSpeedOutsideVoicepeakRange()
     {
         // VOICEPEAK の範囲は VOICEPEAK のときだけ
