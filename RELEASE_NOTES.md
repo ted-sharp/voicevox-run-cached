@@ -1,11 +1,13 @@
 # VoicevoxRunCached リリースノート
 
-## Unreleased (3.1.0)
+## v3.1.0 - 2026-11-15
 
 - CLI/コマンド:
   - VOICEPEAK に対応 (`--engine voicepeak -s "ナレーター名[:感情=値]"`)。`speakers` / `--init` も `--engine` で切り替える
   - CeVIO AI に対応 (`--engine cevio -s "キャスト名[:感情=値]"`)
   - フィラーの文と、待ち 1 回に鳴らす回数をエンジンごとに設定できる (各エンジンのセクションの `FillerTexts` / `MaxFillersPerWait`)
+- 改善:
+  - 全部の文の合成に失敗したとき、エラーに最初の失敗の理由と解決策を表示する
 - 開発環境:
   - .NET 11 に移行 (ソースからビルドするには .NET 11 SDK が必要)
 

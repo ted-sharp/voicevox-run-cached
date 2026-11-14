@@ -255,7 +255,7 @@ VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラ�
 
 - **話者** (`-s`): キャスト名。感情は `キャスト名:感情=値,感情=値` (値は 0〜100 の整数) で指定し、書いていない感情は 0 になる。感情を書かなければキャストの既定値 (多くは `普通=100`)。存在しないキャスト・感情は終了コード 1。`Cevio.DefaultSpeaker` が空なら `--engine cevio` では `-s` が必須
 - **パラメータ**: `--speed` は VOICEVOX と同じ倍率 (2.0 で約 2 倍速) で 0.25〜4.0、`--pitch` は -0.15〜0.15 (CeVIO の音の高さの端で、約 ±5 半音)。範囲外はエラー (終了コード 1)。`--volume` は VOICEVOX と同じく波形に掛ける倍率 (0.5 で −6dB、0 で無音)。CeVIO の声質・抑揚は既定値のまま
-- **起動**: CeVIO AI が起動していなければ自動で起動する (`Cevio.AutoStartHost`。起動に 5 秒ほどかかる)。自分で起動した CeVIO AI は既定で読み上げの後も残す (`Cevio.KeepHostRunning: false` なら終わるときに閉じる。外部で起動済みだった CeVIO AI は閉じない)。CeVIO AI は常にウィンドウを表示する
+- **起動**: CeVIO AI が起動していなければ自動で起動する (`Cevio.AutoStartHost`。起動に 10 秒ほどかかる)。自分で起動した CeVIO AI は既定で読み上げの後も残す (`Cevio.KeepHostRunning: false` なら終わるときに閉じる。外部で起動済みだった CeVIO AI は閉じない)。CeVIO AI は常にウィンドウを表示する
 - **キャッシュ**: VOICEVOX と同じく文ごとに保存する。キーにはエンジン・キャスト・感情が入るので、VOICEVOX のキャッシュとは混ざらない。CeVIO の辞書で読みを直したときやキャストを更新したときは `--refresh` で作り直す
 - **失敗したとき**: 合成の前に CeVIO AI が無い・起動に失敗したときは終了コード 3 (応答しないまま `SynthesisTimeoutSeconds` を過ぎたときは 6)。読み上げの途中で CeVIO AI を閉じると (応答しないときも)、残りの文の合成をやめ、鳴らせた文があれば 8、無ければ 5 で終わる
 
