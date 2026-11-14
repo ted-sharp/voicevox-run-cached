@@ -1,5 +1,6 @@
 ﻿using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Synthesis;
@@ -63,6 +64,7 @@ public class SegmentProducer
         var engineUnavailable = false;
         var synthesisPrepared = false;
         Exception? preparationError = null;
+        Exception? firstError = null;
 
         try
         {
@@ -141,6 +143,7 @@ public class SegmentProducer
 
                 var synth = await SynthesizeOneAsync(engine, segment, originalRequest, stats, cancellationToken);
                 synthesizedByText[segment.Text] = synth.WavData;
+                firstError ??= synth.Error;
 
                 // 合成失敗 (AudioData == null) でも channel には流す。再生側で skip ログを出す
                 await writer.WriteAsync(segment, cancellationToken);
@@ -156,7 +159,7 @@ public class SegmentProducer
                     var remaining = segments.Skip(i + 1).Count(s => !IsReady(s) && !synthesizedByText.ContainsKey(s.Text));
                     if (remaining > 0)
                     {
-                        _logger.LogWarning("エンジンに接続できない・応答しないため、残り {Count} セグメントの合成を中止します", remaining);
+                        _logger.LogWarning("合成エンジンを使えない (接続できない・応答しない等) ため、残り {Count} セグメントの合成を中止します", remaining);
                     }
                 }
             }
@@ -185,7 +188,7 @@ public class SegmentProducer
             }
         }
 
-        return new SynthesisResult(stats.Attempted, stats.Success, stats.Failure, preparationError);
+        return new SynthesisResult(stats.Attempted, stats.Success, stats.Failure, preparationError, firstError);
     }
 
     /// <summary>
@@ -223,7 +226,7 @@ public class SegmentProducer
             _logger.LogError(ex, "Failed to synthesize segment: {Text}", segment.Text);
             stats.Failure++;
             // segment.AudioData は null のまま — 再生側で skip される
-            return new SegmentSynthesis(null, null, engine.IsEngineUnavailable(ex));
+            return new SegmentSynthesis(null, null, ex, engine.IsEngineUnavailable(ex));
         }
     }
 
@@ -274,7 +277,7 @@ public class SegmentProducer
         }
     }
 
-    private readonly record struct SegmentSynthesis(VoiceRequest? Request, byte[]? WavData, bool EngineUnavailable = false);
+    private readonly record struct SegmentSynthesis(VoiceRequest? Request, byte[]? WavData, Exception? Error = null, bool EngineUnavailable = false);
 
     private sealed class SegmentStats
     {
@@ -290,4 +293,23 @@ public class SegmentProducer
 /// <param name="PreparationError">
 /// 合成の準備 (エンジンの起動確認・話者の確認) の失敗。呼び出し元が再生を終えてから投げる。準備しなかった・成功したなら null
 /// </param>
-public readonly record struct SynthesisResult(int AttemptedCount, int SuccessCount, int FailureCount, Exception? PreparationError = null);
+/// <param name="FirstError">最初に失敗した合成の例外 (<see cref="ToAllFailedException"/> が理由として示す)。失敗が無ければ null</param>
+public readonly record struct SynthesisResult(
+    int AttemptedCount, int SuccessCount, int FailureCount, Exception? PreparationError = null, Exception? FirstError = null)
+{
+    private const string DefaultSolution = "合成エンジンの状態とログを確認してください。";
+
+    /// <summary>
+    /// 全部失敗したときのエラー (<see cref="ErrorCodes.Audio.AudioGenerationFailed"/>)。最初の失敗の理由と解決策を添える
+    /// (VOICEPEAK の存在しない話者のように準備では見つけられない失敗は、理由がログにしか出ないと何を直せばよいか分からないため)。
+    /// </summary>
+    public VoicevoxRunCachedException ToAllFailedException(string message, string userMessage) => FirstError switch
+    {
+        VoicevoxRunCachedException cause => new VoicevoxRunCachedException(ErrorCodes.Audio.AudioGenerationFailed,
+            message, $"{userMessage} {cause.UserMessage}", cause, cause.SuggestedSolution ?? DefaultSolution),
+        { } cause => new VoicevoxRunCachedException(ErrorCodes.Audio.AudioGenerationFailed,
+            message, $"{userMessage} {cause.Message}", cause, DefaultSolution),
+        null => new VoicevoxRunCachedException(ErrorCodes.Audio.AudioGenerationFailed,
+            message, userMessage, suggestedSolution: DefaultSolution),
+    };
+}

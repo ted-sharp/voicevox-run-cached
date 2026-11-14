@@ -106,6 +106,7 @@ public static class ApplicationBootstrap
         configuration.GetSection("Lock").Bind(settings.Lock);
         configuration.GetSection("Logging").Bind(settings.Logging);
         configuration.GetSection("Test").Bind(settings.Test);
+        configuration.GetSection("Voicepeak").Bind(settings.Voicepeak);
 
         // 相対パス + UseExecutableBaseDirectory=true の場合、検証前に絶対パスへ解決しておく
         // (検証はパスが書き込み可能か実際に試すため、相対パスのままだと cwd 依存になる)

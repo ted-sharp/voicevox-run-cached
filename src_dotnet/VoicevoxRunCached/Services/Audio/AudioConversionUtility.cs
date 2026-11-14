@@ -5,10 +5,39 @@ using VoicevoxRunCached.Constants;
 namespace VoicevoxRunCached.Services.Audio;
 
 /// <summary>
-/// 音声ユーティリティ (テスト・デバイス準備用の WAV 生成)。Opus 変換は <see cref="OpusCodec"/>。
+/// 音声ユーティリティ (音量の変更、テスト・デバイス準備用の WAV 生成)。Opus 変換は <see cref="OpusCodec"/>。
 /// </summary>
 public static class AudioConversionUtility
 {
+    /// <summary>
+    /// WAV の各サンプルに <paramref name="gain"/> を掛けた 16bit の WAV を返す (サンプルレート・チャンネル数はそのまま)。
+    /// </summary>
+    /// <remarks>
+    /// 1.0 を超える音量で割れても値が反対側に回り込まないよう、[-1, 1] に収めてから 16bit にする (<see cref="OpusCodec"/> と同じ)。
+    /// </remarks>
+    public static byte[] ApplyGain(byte[] wavData, float gain)
+    {
+        using var reader = new WaveFileReader(new MemoryStream(wavData));
+        var source = reader.ToSampleProvider();
+        var format = new WaveFormat(reader.WaveFormat.SampleRate, 16, reader.WaveFormat.Channels);
+
+        using var output = new MemoryStream();
+        using (var writer = new WaveFileWriter(output, format))
+        {
+            var buffer = new float[reader.WaveFormat.SampleRate * reader.WaveFormat.Channels];
+            int read;
+            while ((read = source.Read(buffer)) > 0)
+            {
+                for (var i = 0; i < read; i++)
+                {
+                    buffer[i] = Math.Clamp(buffer[i] * gain, -1f, 1f);
+                }
+                writer.WriteSamples(buffer, 0, read);
+            }
+        }
+        return output.ToArray();
+    }
+
     /// <summary>
     /// Creates a minimal WAV file with specified parameters
     /// </summary>

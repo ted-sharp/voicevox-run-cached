@@ -12,6 +12,54 @@ public class AppSettings
     public LockSettings Lock { get; set; } = new();
     public LoggingSettings Logging { get; set; } = new();
     public TestSettings Test { get; set; } = new();
+    public VoicepeakSettings Voicepeak { get; set; } = new();
+}
+
+/// <summary>
+/// エンジンごとのフィラーの設定 (各エンジンのセクションに置く)。合成の速さがエンジンで違うので、文と回数をエンジンごとに決める。
+/// </summary>
+public interface IEngineFillerSettings
+{
+    /// <summary>
+    /// このエンジンで使うフィラーの文。空なら <see cref="FillerSettings.FillerTexts"/>。
+    /// </summary>
+    /// <remarks>
+    /// 実装では初期値を入れてはいけない (<see cref="FillerSettings.FillerTexts"/> と同じく、ConfigurationBinder が設定値を追記するため)。
+    /// </remarks>
+    string[] FillerTexts { get; }
+
+    /// <summary>
+    /// 次の文を待つ 1 回のあいだに鳴らすフィラーの上限。null なら上限なし (届くまで繰り返す)、0 ならこのエンジンでは鳴らさない。
+    /// 省略したときの既定はエンジンごと (VOICEVOX は null、VOICEPEAK は 2)。上限をなくすには appsettings.json に null を書く。
+    /// </summary>
+    int? MaxFillersPerWait { get; }
+}
+
+// VOICEPEAK (コマンドライン版 voicepeak.exe) の設定
+public class VoicepeakSettings : IEngineFillerSettings
+{
+    /// <summary>
+    /// voicepeak.exe のパス。空なら <c>%ProgramFiles%\VOICEPEAK\voicepeak.exe</c>。
+    /// </summary>
+    public string ExePath { get; set; } = "";
+
+    /// <summary>
+    /// <c>--speaker</c> を省略したときの話者 (ナレーター名。<c>"Otomachi Una:joy=50"</c> のように感情も付けられる)。
+    /// 空なら <c>--engine voicepeak</c> では <c>--speaker</c> が必須。
+    /// </summary>
+    public string DefaultSpeaker { get; set; } = "";
+
+    /// <summary>
+    /// voicepeak.exe 1 回 (1 文の合成・話者一覧) を待つ上限 (秒)。超えたらプロセスを止めて失敗にする。
+    /// </summary>
+    public int TimeoutSeconds { get; set; } = 60;
+
+    public string[] FillerTexts { get; set; } = [];
+
+    /// <remarks>
+    /// 既定は 2。1 文の合成に 10 秒ほどかかり、上限が無いとその間ずっとフィラーが続くため。
+    /// </remarks>
+    public int? MaxFillersPerWait { get; set; } = 2;
 }
 
 // プロセス間ロック (読み上げ・--init・speakers・--clear の直列化) の設定
@@ -45,11 +93,12 @@ public class SynthesisSettings
 /// </remarks>
 public enum SpeechEngineKind
 {
-    Voicevox
+    Voicevox,
+    Voicepeak
 }
 
 // VoiceVox engine settings
-public class VoiceVoxSettings
+public class VoiceVoxSettings : IEngineFillerSettings
 {
     public string BaseUrl { get; set; } = "http://127.0.0.1:50021";
     public int DefaultSpeaker { get; set; } = 1;
@@ -60,6 +109,8 @@ public class VoiceVoxSettings
     public string EngineArguments { get; set; } = "";
     public EngineType EngineType { get; set; } = EngineType.Voicevox;
     public bool KeepEngineRunning { get; set; } = true;
+    public string[] FillerTexts { get; set; } = [];
+    public int? MaxFillersPerWait { get; set; }
 }
 
 public enum EngineType
