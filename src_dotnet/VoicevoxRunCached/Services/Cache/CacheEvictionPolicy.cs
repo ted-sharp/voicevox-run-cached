@@ -32,7 +32,7 @@ public class CacheEvictionPolicy
     /// ヒットのたびに更新する)。新規保存のある実行ごとに全件走査するが、meta.json の中身は読まないので数万件でも stat のみで済む。
     /// 読み込み時も <see cref="DiskCacheStore.LoadAsync"/> が同じ基準で判定する。
     /// </remarks>
-    public Task CleanupExpiredAsync(CancellationToken cancellationToken = default)
+    public void CleanupExpired(CancellationToken cancellationToken = default)
     {
         CacheErrorMapper.WithMapping(
             "キャッシュクリーンアップ",
@@ -67,7 +67,6 @@ public class CacheEvictionPolicy
                     _logger.LogInformation("期限切れキャッシュをクリーンアップしました - {Count} ファイル", expiredKeys.Count);
                 }
             });
-        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -75,9 +74,9 @@ public class CacheEvictionPolicy
     /// </summary>
     /// <remarks>
     /// 上限に達したキャッシュでは毎回ここを通るため、meta.json は読まず更新日時 (= 最終利用日時) で判定する
-    /// (<see cref="CleanupExpiredAsync"/> と同じ理由)。よく使う定型文はヒットのたびに新しくなるので残る。
+    /// (<see cref="CleanupExpired"/> と同じ理由)。よく使う定型文はヒットのたびに新しくなるので残る。
     /// </remarks>
-    public Task CleanupByMaxSizeAsync(CancellationToken cancellationToken = default)
+    public void CleanupByMaxSize(CancellationToken cancellationToken = default)
     {
         CacheErrorMapper.WithMapping(
             "サイズ制限によるキャッシュクリーンアップ",
@@ -119,7 +118,6 @@ public class CacheEvictionPolicy
                     _logger.LogInformation("サイズ制限によるキャッシュクリーンアップが完了しました - {Count} ファイル削除", deleted);
                 }
             });
-        return Task.CompletedTask;
     }
 
     /// <summary>

@@ -116,7 +116,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - meta.json の `SpeakerId` は話者の文字列 (`CacheMetadata.Speaker`)。エンジン対応前の meta.json は数値で書いているので、数値も文字列として読む (読めないと無効なメタデータとして既存キャッシュが全部消える) — `DiskCacheStoreTests.LoadAsync_MetadataWithNumericSpeakerId_Hits`
 - キーにエンジン・話者・Speed/Pitch/Volume が入るので、ユーザー指定値を `VoiceRequest` に乗せて `ProcessTextSegmentsAsync(segments, request)` に渡す (既定値で引くと永遠にミスする)
 - 期限 (`ExpirationDays`)・容量 (`MaxSizeGB`) の古さは**最終利用日時 = meta.json の更新日時** (LRU)。`SaveAsync` が CreatedAt (IClock) に設定し、`LoadAsync` がヒットのたびに更新する。meta.json の中身は判定に使わない。期限切れは読み込み時にも削除する
-- `RunMaintenanceAsync` (旧 `.mp3`・`.opus.tmp`・期限切れ・容量超過の削除) は、新規保存のあった実行の最後に `SegmentProducer` が 1 回だけ呼ぶ (保存ごとに全走査しない)
+- `RunMaintenance` (旧 `.mp3`・`.opus.tmp`・期限切れ・容量超過の削除) は、新規保存のあった実行の最後に `SegmentProducer` が 1 回だけ呼ぶ (保存ごとに全走査しない)
 - `SaveAsync` は **meta.json を先に**書き、`.opus` は `{key}.opus.tmp` に書いてから `File.Move` で置く (途中で落ちても残るのは meta.json か `.tmp` だけ。`.opus` が途中までだと以後ずっとヒットして再生に失敗する)。フィラー (`InitializeFillerCacheAsync`) も同じ
 - `.opus.tmp` は `--clear` (`DeleteAll` / `ClearFillerCacheAsync`) が消す。キャッシュ側は maintenance の `DeleteTemporaryFiles` でも消す (ロックの中・全保存の後なので書き込み中のものは無い)。フィラー側は次の生成で上書きされるので対象外
 - 削除の失敗: 読み込み時・eviction (`Delete`) は best-effort で Warning。`--clear` は削除が目的なので `CacheErrorMapper` で `CacheException` にする。`--init` の旧 `.mp3` フィラー削除は best-effort

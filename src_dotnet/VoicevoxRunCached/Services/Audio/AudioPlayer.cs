@@ -269,7 +269,8 @@ public class AudioPlayer : IDisposable
         CancellationToken cancellationToken)
     {
         WaveStream? reader = null;
-        var tcs = new TaskCompletionSource<bool>();
+        // 続きを NAudio の PlaybackStopped のスレッドでそのまま走らせない (次の文の Init / Play がイベントの処理中に走るため)
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
 
         void OnPlaybackStopped(object? sender, StoppedEventArgs e)
         {
@@ -296,21 +297,18 @@ public class AudioPlayer : IDisposable
             cancellationToken.ThrowIfCancellationRequested();
             wavePlayer.Play();
 
-            await using var registration = cancellationToken.Register(() => tcs.TrySetCanceled(cancellationToken));
-
+            // WaitAsync はキャンセルなら OperationCanceledException、時間切れなら TimeoutException を投げ、どちらでもタイマーを破棄する
             var timeout = reader.TotalTime + TimeSpan.FromMilliseconds(AudioConstants.PlaybackTimeoutMarginMs);
-            var timeoutTask = Task.Delay(timeout, cancellationToken);
-            var completed = await Task.WhenAny(tcs.Task, timeoutTask);
-            if (completed == timeoutTask)
+            try
             {
-                // timeoutTask も同じ token で完了するので、Ctrl+C をタイムアウトと誤報告しないよう先に確認する
-                cancellationToken.ThrowIfCancellationRequested();
+                await tcs.Task.WaitAsync(timeout, cancellationToken);
+            }
+            catch (TimeoutException) when (!tcs.Task.IsCompleted)
+            {
                 _logger.LogWarning("セグメント再生がタイムアウトしました。強制停止します。");
                 wavePlayer.Stop();
                 throw new TimeoutException("セグメント再生がタイムアウトしました");
             }
-
-            await tcs.Task;
 
             await Task.Delay(trailingDelayMs, cancellationToken);
             wavePlayer.Stop();

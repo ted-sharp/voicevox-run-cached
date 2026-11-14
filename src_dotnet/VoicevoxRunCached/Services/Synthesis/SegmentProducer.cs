@@ -183,7 +183,7 @@ public class SegmentProducer
                 //    再生側は 1. で解放済みなので、残りの再生と並走する。
                 if (!cancellationToken.IsCancellationRequested)
                 {
-                    await RunCacheMaintenanceBestEffortAsync(cancellationToken);
+                    RunCacheMaintenanceBestEffort(cancellationToken);
                 }
             }
         }
@@ -261,11 +261,11 @@ public class SegmentProducer
         }
     }
 
-    private async Task RunCacheMaintenanceBestEffortAsync(CancellationToken cancellationToken)
+    private void RunCacheMaintenanceBestEffort(CancellationToken cancellationToken)
     {
         try
         {
-            await _cacheManager.RunMaintenanceAsync(cancellationToken);
+            _cacheManager.RunMaintenance(cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

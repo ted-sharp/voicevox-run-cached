@@ -237,7 +237,7 @@ public class DiskCacheStore
     /// </summary>
     /// <remarks>
     /// 一時ファイルの名前はキーごとに違い、同じ文を保存し直すまで上書きされず eviction も数えないので、ここで消さないと溜まり続ける。
-    /// 呼ぶのはこの実行の保存がすべて終わった後 (<see cref="AudioCacheManager.RunMaintenanceAsync"/>) で、キャッシュへの保存は
+    /// 呼ぶのはこの実行の保存がすべて終わった後 (<see cref="AudioCacheManager.RunMaintenance"/>) で、キャッシュへの保存は
     /// 読み上げのプロセス間ロックの中でしか行わないため、残っているものは書き込み中ではない。
     /// best-effort で、失敗は Warning に留める。
     /// </remarks>

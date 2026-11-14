@@ -27,9 +27,9 @@ public class VoiceVoxApiClient : IDisposable
         _retryPolicyService = retryPolicyService ?? throw new ArgumentNullException(nameof(retryPolicyService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
+        // URL は各メソッドで BaseUrl から組み立てる (BaseAddress は使わない)
         _httpClient = new HttpClient
         {
-            BaseAddress = new Uri(_settings.BaseUrl),
             // タイムアウト (ConnectionTimeout) は SendAsync でリクエストごとに掛ける。
             // /initialize_speaker だけはモデルの読み込みが終わるまで待つため
             Timeout = Timeout.InfiniteTimeSpan

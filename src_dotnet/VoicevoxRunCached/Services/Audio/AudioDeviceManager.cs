@@ -100,7 +100,7 @@ public class AudioDeviceManager : IDisposable
                 ? 0.0f
                 : (float)Math.Max(0.001, Math.Min(1.0, _settings.PreparationVolume));
 
-            var tcs = new TaskCompletionSource<bool>();
+            var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
             wavePlayer.PlaybackStopped += (_, _) => tcs.TrySetResult(true);
 
             wavePlayer.Init(reader);

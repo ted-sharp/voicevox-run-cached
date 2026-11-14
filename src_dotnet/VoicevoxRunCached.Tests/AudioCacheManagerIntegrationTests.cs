@@ -48,7 +48,7 @@ public class AudioCacheManagerIntegrationTests
     public async Task SaveAudioCache_DoesNotEvict_RunMaintenanceDoes()
     {
         // 上限 ~107B。保存ごとの全走査をやめたので、Save 単体では上限超過でも消えず、
-        // RunMaintenanceAsync で初めて古い順に削除される
+        // RunMaintenance で初めて古い順に削除される
         var (mgr, dir) = CreateManager(maxSizeGb: 1e-7);
         try
         {
@@ -58,7 +58,7 @@ public class AudioCacheManagerIntegrationTests
 
             await Assert.That(Directory.GetFiles(dir, "*.opus").Length).IsEqualTo(2);
 
-            await mgr.RunMaintenanceAsync();
+            mgr.RunMaintenance();
 
             await Assert.That(Directory.GetFiles(dir, "*.opus").Length).IsLessThan(2);
         }
@@ -77,7 +77,7 @@ public class AudioCacheManagerIntegrationTests
             await mgr.SaveAudioCacheAsync(request, AudioConversionUtility.CreateMinimalWavData(300));
             await File.WriteAllBytesAsync(Path.Combine(dir, "interrupted.opus.tmp"), [0x01]);
 
-            await mgr.RunMaintenanceAsync();
+            mgr.RunMaintenance();
 
             await Assert.That(Directory.GetFiles(dir, "*.tmp")).IsEmpty();
             await Assert.That(await mgr.GetCachedAudioAsync(request)).IsNotNull();

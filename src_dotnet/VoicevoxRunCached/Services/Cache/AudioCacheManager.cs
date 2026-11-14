@@ -99,7 +99,7 @@ public class AudioCacheManager
 
     /// <summary>
     /// 音声データをキャッシュに保存する。WAV はディスク保存前に Ogg Opus に変換される。
-    /// eviction はここでは行わない (保存ごとに全ファイル走査するのを避けるため、<see cref="RunMaintenanceAsync"/> でまとめて行う)。
+    /// eviction はここでは行わない (保存ごとに全ファイル走査するのを避けるため、<see cref="RunMaintenance"/> でまとめて行う)。
     /// </summary>
     /// <remarks>
     /// 例外は wrapping せずそのまま伝播させる。呼び出し元 (SegmentProducer.SaveCacheBestEffortAsync) が
@@ -126,12 +126,12 @@ public class AudioCacheManager
     /// ディレクトリ全体を走査するため、セグメント保存ごとではなく 1 実行につき 1 回だけ呼ぶこと
     /// (<see cref="SegmentProducer"/> が全保存完了後に呼ぶ)。
     /// </remarks>
-    public async Task RunMaintenanceAsync(CancellationToken cancellationToken = default)
+    public void RunMaintenance(CancellationToken cancellationToken = default)
     {
         _disk.DeleteLegacyFiles();
         _disk.DeleteTemporaryFiles();
-        await _eviction.CleanupExpiredAsync(cancellationToken);
-        await _eviction.CleanupByMaxSizeAsync(cancellationToken);
+        _eviction.CleanupExpired(cancellationToken);
+        _eviction.CleanupByMaxSize(cancellationToken);
     }
 
     public Task ClearAllCacheAsync(CancellationToken cancellationToken = default)

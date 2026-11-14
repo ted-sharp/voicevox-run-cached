@@ -40,14 +40,14 @@ public class CacheEvictionPolicyTests
     }
 
     [Test]
-    public async Task CleanupExpiredAsync_KeepsEntriesWithinExpiration()
+    public async Task CleanupExpired_KeepsEntriesWithinExpiration()
     {
         var (policy, disk, dir) = Create(expirationDays: 7);
         try
         {
             await SeedAsync(disk, "recent", new byte[10], DateTime.UtcNow.AddDays(-6));
 
-            await policy.CleanupExpiredAsync();
+            policy.CleanupExpired();
 
             await Assert.That(File.Exists(Path.Combine(dir, "recent.opus"))).IsTrue();
             await Assert.That(File.Exists(Path.Combine(dir, "recent.meta.json"))).IsTrue();
@@ -56,7 +56,7 @@ public class CacheEvictionPolicyTests
     }
 
     [Test]
-    public async Task CleanupExpiredAsync_RemovesOnlyExpired()
+    public async Task CleanupExpired_RemovesOnlyExpired()
     {
         var (policy, disk, dir) = Create(expirationDays: 7);
         try
@@ -64,7 +64,7 @@ public class CacheEvictionPolicyTests
             await SeedAsync(disk, "fresh", new byte[10], DateTime.UtcNow.AddDays(-1));
             await SeedAsync(disk, "stale", new byte[10], DateTime.UtcNow.AddDays(-30));
 
-            await policy.CleanupExpiredAsync();
+            policy.CleanupExpired();
 
             await Assert.That(File.Exists(Path.Combine(dir, "fresh.opus"))).IsTrue();
             await Assert.That(File.Exists(Path.Combine(dir, "stale.opus"))).IsFalse();
@@ -82,7 +82,7 @@ public class CacheEvictionPolicyTests
             await SeedAsync(disk, "k2", new byte[100], DateTime.UtcNow);
 
             // 上限 1GB なので 200B では削除されない
-            await policy.CleanupByMaxSizeAsync();
+            policy.CleanupByMaxSize();
 
             await Assert.That(File.Exists(Path.Combine(dir, "k1.opus"))).IsTrue();
             await Assert.That(File.Exists(Path.Combine(dir, "k2.opus"))).IsTrue();
@@ -101,7 +101,7 @@ public class CacheEvictionPolicyTests
             await SeedAsync(disk, "old", new byte[200], DateTime.UtcNow.AddDays(-2));
             await SeedAsync(disk, "new", new byte[200], DateTime.UtcNow);
 
-            await policy.CleanupByMaxSizeAsync();
+            policy.CleanupByMaxSize();
 
             // 古いものから削除される
             await Assert.That(File.Exists(Path.Combine(dir, "old.opus"))).IsFalse();
@@ -126,7 +126,7 @@ public class CacheEvictionPolicyTests
             clock.UtcNow = start.AddDays(2);
             await Assert.That(await disk.LoadAsync("used")).IsNotNull();
 
-            await policy.CleanupByMaxSizeAsync();
+            policy.CleanupByMaxSize();
 
             await Assert.That(File.Exists(Path.Combine(dir, "used.opus"))).IsTrue();
             await Assert.That(File.Exists(Path.Combine(dir, "unused.opus"))).IsFalse();
