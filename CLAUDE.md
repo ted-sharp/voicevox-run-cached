@@ -52,12 +52,12 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - 起動時の設定検証 (`DirectoryValidation.BeWritableDirectory`) はロックより前に走るので、書き込み確認のファイル名は毎回一意にし (固定名だと同時起動で共有違反)、`FileOptions.DeleteOnClose` で OS に消させる
 
 ### 合成エンジンの切り替え (`ISpeechEngine` / `SpeechEngineProvider`)
-- 合成エンジンは `ISpeechEngine` (準備 `PrepareAsync`・1 文の合成 `SynthesizeAsync` (WAV)・`GetSpeakersAsync`・`IsEngineUnavailable`・`StopIfNotKept`) の裏に置き、読み上げ・`--init`・`speakers`・`SpeechLock` はこれだけを使う。`SpeechEngineProvider.Get(SpeechEngineKind)` で取り出す
+- 合成エンジンは `ISpeechEngine` (準備 `PrepareAsync`・1 文の合成 `SynthesizeAsync` (WAV)・`GetSpeakersAsync`・`IsEngineUnavailable`・`StopIfNotKept`・フィラー設定 `FillerSettings`) の裏に置き、読み上げ・`--init`・`speakers`・`SpeechLock` はこれだけを使う。`SpeechEngineProvider.Get(SpeechEngineKind)` で取り出す
 - 使うエンジンは `Synthesis.Engine` (既定 `Voicevox`) か `--engine <名前>` (大文字小文字を区別しない。数字は不可)。読み上げ・`--test`・`--init`・`speakers` が取る
 - 話者 (`VoiceRequest.Speaker`) は文字列。`--speaker` は `SpeechEngineProvider.NormalizeSpeaker` でエンジンごとに検証・正規化する (キャッシュキーに入るので `01` → `1` のように同じ話者を同じ文字列に)。省略時は `SpeechEngineProvider.DefaultSpeaker` (各エンジンのセクションの `DefaultSpeaker`。これも正規化する。空なら `--speaker` 必須の `InvalidArguments`)。`--engine` と `--speaker` の順は問わない (エンジンが決まってから検証する) — `ArgumentParserTests`
 - 話速・音高の範囲がエンジンで違うときは `SpeechEngineProvider.ValidateParameters` で、ロックを待つ前に `InvalidArguments` にする (VOICEVOX は共通の検証だけ)
 - `SpeechLock` はロックの解放前に**全エンジン**の `StopIfNotKept` を呼ぶ
-- エンジンを足すときは `SpeechEngineKind` に値を、`SpeechEngineProvider` (コンストラクタ・`All`・`Get`・`DefaultSpeaker`・`NormalizeSpeaker`・`ValidateParameters`) と `AppServiceProvider` に実装を足す。キャッシュキーは `CacheKeyGenerator.SpeakerKey` が `{エンジン名の小文字}:{話者}` にするので変更不要
+- エンジンを足すときは `SpeechEngineKind` に値を、`SpeechEngineProvider` (コンストラクタ・`All`・`Get`・`DefaultSpeaker`・`NormalizeSpeaker`・`ValidateParameters`) と `AppServiceProvider` に実装を足す。エンジンの設定クラスは `IEngineFillerSettings` (`FillerTexts`・`MaxFillersPerWait`) を実装し、バリデーターで `Include(new EngineFillerSettingsValidator())` する。キャッシュキーは `CacheKeyGenerator.SpeakerKey` が `{エンジン名の小文字}:{話者}` にするので変更不要
 
 ### VOICEPEAK (`VoicepeakEngine`)
 - `voicepeak.exe` (製品版のコマンドライン) を 1 文ごとに起動し、一時 WAV (`%TEMP%\vrc_voicepeak_*.wav`。読んだら消す) に出させる。1 回 10 秒ほどかかる (`--list-narrator` / `--list-emotion` も同じ)。1 回に渡せる本文は 140 文字まで (分割の上限 100 より大きい)
@@ -90,6 +90,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - 片側の例外は `WhenAllOrCancelOnFaultAsync` が linked CTS をキャンセルしてもう一方も止める (`Task.WhenAll` だけだと再生が落ちても残りを合成し続ける) — `WhenAllOrCancelOnFaultTests`
 - キャッシュ保存は channel に書いた後に fire-and-forget し、producer の `finally` で `Task.WhenAll` で待つ。`writer.TryComplete()` は `WhenAll` より**前** (逆だと最後の再生の後に `FillerStartDelayMs` を超えてフィラーが誤発火する) — `ChannelProducerOrderingTests`
 - フィラー: 次のセグメントが `FillerStartDelayMs` 以内に来なければ `FillerManager.GetRandomFillerAudioAsync(engine, speaker, volume)` の相槌を挟む。読み上げと同じエンジン・話者の声 (話者ごとに `--init [--engine <名前>] -s <話者>` で生成)。音量は再生時に `--volume` を掛ける (話速・音高は既定のまま)。`--init` は `Filler.Enabled` に関係なく生成し、`Enabled` は再生にだけ効く。未生成の話者では鳴らさず、Warning は 1 実行 1 回
+- フィラーの文と回数はエンジンごと (エンジンの速さが違うため。VOICEPEAK は 1 文 10 秒ほど)。文はエンジンのセクションの `FillerTexts` (空なら `Filler.FillerTexts`) で、`--init` と再生の両方がこれを使う。次の文を待つ 1 回に鳴らす数の上限は `MaxFillersPerWait` (null = 上限なし、0 = 鳴らさない。VOICEPEAK の既定は 2) を `AudioPlayer.PlayStreamingAsync` に渡し、`FillerWaitBudget` が数える (セグメントが届いたら数え直す) — `FillerWaitBudgetTests` / `FillerManagerTests.EngineFillerTexts_*`
 - フィラーの失敗は本編を止めない (`AudioPlayer.TryPlayFillerAsync` が Warning にし、その読み上げではフィラーを使わない)。ただし再生タイムアウト (`TimeoutException`) は投げ直す (共有 WavePlayer を途中で `Stop()` しており、遅れて届く `PlaybackStopped` で本編が切れうる)
 
 ### 音声形式

@@ -12,6 +12,8 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// <remarks>
 /// フィラーは読み上げと同じ話者の声で再生する (途中で声が変わらないように)。キャッシュキーにエンジンと話者が含まれるので、
 /// 話者ごとに <c>--init [--engine &lt;名前&gt;] -s &lt;話者&gt;</c> で生成しておく。生成していない話者ではフィラーを鳴らさない。
+/// 文はエンジンごとに変えられる (エンジンのセクションの <c>FillerTexts</c>。空なら <see cref="FillerSettings.FillerTexts"/>)。
+/// 合成に時間のかかるエンジン (VOICEPEAK) では長めの文にして、待ちを少ない回数で埋める。
 /// </remarks>
 public class FillerManager
 {
@@ -49,19 +51,20 @@ public class FillerManager
         // 無効のままでも生成する
         Directory.CreateDirectory(_settings.Directory);
         DeleteLegacyFiles();
-        _logger.LogInformation("フィラーキャッシュの初期化を開始します - テキスト数: {Count}", _settings.FillerTexts.Length);
+        var fillerTexts = FillerTextsFor(engine);
+        _logger.LogInformation("フィラーキャッシュの初期化を開始します - テキスト数: {Count}", fillerTexts.Length);
 
         using var spinner = new ProgressSpinner("Initializing filler cache...");
 
         int processed = 0;
         int attempted = 0;
         int failed = 0;
-        int total = _settings.FillerTexts.Length;
+        int total = fillerTexts.Length;
         var engineUnavailable = false;
         int aborted = 0;
         Exception? firstError = null;
 
-        foreach (var fillerText in _settings.FillerTexts)
+        foreach (var fillerText in fillerTexts)
         {
             cancellationToken.ThrowIfCancellationRequested();
             processed++;
@@ -142,7 +145,7 @@ public class FillerManager
         }
     }
 
-    /// <param name="engine">読み上げ中のエンジン</param>
+    /// <param name="engine">読み上げ中のエンジン。そのエンジンのフィラーの文 (<see cref="ISpeechEngine.FillerSettings"/>) から選ぶ</param>
     /// <param name="speaker">読み上げ中の話者。そのエンジン・話者のフィラーだけを返す</param>
     /// <param name="volume">読み上げの音量 (<c>--volume</c>)。フィラーの音量もこれに合わせる</param>
     /// <param name="cancellationToken">キャンセル</param>
@@ -151,19 +154,21 @@ public class FillerManager
     /// フィラーは既定のパラメータ (話速 1.0・音高 0.0・音量 1.0) で生成してあり、話速・音高は読み上げと違うことがある。
     /// 音量は再生時に掛けて合わせる (VOICEVOX の volumeScale も振幅に掛ける線形の倍率なので、効き方が同じになる)。
     /// </remarks>
-    public async Task<byte[]?> GetRandomFillerAudioAsync(SpeechEngineKind engine, string speaker, double volume, CancellationToken cancellationToken = default)
+    public async Task<byte[]?> GetRandomFillerAudioAsync(ISpeechEngine engine, string speaker, double volume, CancellationToken cancellationToken = default)
     {
-        if (!_settings.Enabled || _settings.FillerTexts.Length == 0)
+        ArgumentNullException.ThrowIfNull(engine);
+        var fillerTexts = FillerTextsFor(engine);
+        if (!_settings.Enabled || fillerTexts.Length == 0)
         {
             _logger.LogDebug("フィラー機能が無効またはテキストが設定されていません");
             return null;
         }
 
-        string selectedFiller = SelectFillerText();
+        string selectedFiller = SelectFillerText(fillerTexts);
         _lastUsedFiller = selectedFiller;
         _logger.LogDebug("ランダムフィラー音声を選択: \"{Text}\"", selectedFiller);
 
-        var fillerRequest = BuildFillerRequest(selectedFiller, engine, speaker);
+        var fillerRequest = BuildFillerRequest(selectedFiller, engine.Kind, speaker);
         var fillerCachePath = ResolveFillerCachePath(fillerRequest);
 
         if (!File.Exists(fillerCachePath))
@@ -173,12 +178,12 @@ public class FillerManager
             {
                 // 一部だけ未生成のこともある (FillerTexts を追加した・--init が一部失敗した)。--init は生成済みを飛ばすので案内は同じ
                 _logger.LogWarning("この話者に未生成のフィラーがあります (--init --engine {Engine} -s {Speaker} で生成できます) - text=\"{Text}\"",
-                    engine.ToString().ToLowerInvariant(), speaker, selectedFiller);
+                    engine.Kind.ToString().ToLowerInvariant(), speaker, selectedFiller);
                 _missingFillerWarned = true;
             }
             else
             {
-                _logger.LogDebug("話者 {Speaker} ({Engine}) のフィラーが未生成です - text=\"{Text}\"", speaker, engine, selectedFiller);
+                _logger.LogDebug("話者 {Speaker} ({Engine}) のフィラーが未生成です - text=\"{Text}\"", speaker, engine.Kind, selectedFiller);
             }
             return null;
         }
@@ -191,20 +196,26 @@ public class FillerManager
         return gain == 1.0 ? data : AudioConversionUtility.ApplyGain(OpusCodec.DecodeToWav(data), (float)gain);
     }
 
-    private string SelectFillerText()
+    /// <summary>
+    /// エンジンのフィラーの文 (エンジンのセクションの <c>FillerTexts</c>)。空なら共通の <see cref="FillerSettings.FillerTexts"/>。
+    /// </summary>
+    private string[] FillerTextsFor(ISpeechEngine engine)
+        => engine.FillerSettings.FillerTexts.Length > 0 ? engine.FillerSettings.FillerTexts : _settings.FillerTexts;
+
+    private string SelectFillerText(string[] fillerTexts)
     {
-        if (_settings.FillerTexts.Length == 1)
+        if (fillerTexts.Length == 1)
         {
-            return _settings.FillerTexts[0];
+            return fillerTexts[0];
         }
 
-        var availableFillers = _settings.FillerTexts
+        var availableFillers = fillerTexts
             .Where(f => f != _lastUsedFiller)
             .ToArray();
 
         if (availableFillers.Length == 0)
         {
-            availableFillers = _settings.FillerTexts;
+            availableFillers = fillerTexts;
         }
 
         return availableFillers[Random.Shared.Next(availableFillers.Length)];

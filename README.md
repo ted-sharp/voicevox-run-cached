@@ -174,7 +174,9 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "ConnectionTimeout": 30,      // 秒。HTTP リクエスト 1 回の上限 (タイムアウトはリトライしない)。話者の初期化 (モデルの読み込み) は完了まで待つ
     "AutoStartEngine": true,
     "StartupTimeoutSeconds": 30,
-    "KeepEngineRunning": true     // false ならアプリ終了時にエンジンも停止 (強制終了時を除く。Hooks の注意を参照)
+    "KeepEngineRunning": true,    // false ならアプリ終了時にエンジンも停止 (強制終了時を除く。Hooks の注意を参照)
+    "FillerTexts": [],            // このエンジンのフィラーの文。空なら Filler.FillerTexts
+    // "MaxFillersPerWait": 1     // 次の文を待つ 1 回に鳴らすフィラーの上限。未設定 = 上限なし、0 = このエンジンでは鳴らさない
   },
   "Cache": {
     "Directory": "./cache/audio/",
@@ -212,7 +214,9 @@ VoicevoxRunCached --clear               # キャッシュ全削除
   "Voicepeak": {
     "ExePath": "",                // 空なら %ProgramFiles%\VOICEPEAK\voicepeak.exe
     "DefaultSpeaker": "",         // 例: "Otomachi Una" / "Otomachi Una:joy=50"。空なら --engine voicepeak では -s が必須
-    "TimeoutSeconds": 60          // voicepeak.exe 1 回 (1 文) を待つ上限 (秒、10-600)
+    "TimeoutSeconds": 60,         // voicepeak.exe 1 回 (1 文) を待つ上限 (秒、10-600)
+    "FillerTexts": ["えーっと、ちょっと待ってくださいね、", "少々お待ちください、", "..."],  // 1 文 10 秒ほどかかるので長めのフィラー
+    "MaxFillersPerWait": 2        // 次の文を待つ 1 回に鳴らすフィラーの上限
   }
 }
 ```
@@ -232,7 +236,7 @@ VoicevoxRunCached --init --engine voicepeak -s "Otomachi Una"       # フィラ�
 
 - 話者は `ナレーター名` か `ナレーター名:感情=値,...` (値は 0〜100)。感情が違えば別のキャッシュになる
 - `--speed` は 0.5〜2.0、`--pitch` は -0.15〜0.15 (VOICEPEAK の -300〜300 に換算)。範囲外はエラー (終了コード 1)。`--volume` は合成した音声に掛ける
-- **1 文の合成に 10 秒ほどかかる** (`voicepeak.exe` を文ごとに起動するため。`speakers` も同じくらいかかる)。キャッシュ済みの文はすぐ鳴るので、Hooks のような決まった文の通知に向く。初めての文の待ち時間はフィラーで埋められる
+- **1 文の合成に 10 秒ほどかかる** (`voicepeak.exe` を文ごとに起動するため。`speakers` も同じくらいかかる)。キャッシュ済みの文はすぐ鳴るので、Hooks のような決まった文の通知に向く。初めての文の待ち時間はフィラーで埋められる (VOICEPEAK 用の長めのフィラーを待ち 1 回に 2 回まで。[フィラー音声](#フィラー音声))
 - 存在しない話者・感情の名前は、最初の文の合成が失敗した時点で残りの文の合成をやめる (VOICEPEAK が理由を返さないので、`speakers --engine voicepeak` で名前を確認する)
 
 ## 仕組み
@@ -265,6 +269,8 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 フィラーは `--init` で事前生成したキャッシュからしか再生されない。有効にする前に一度 `--init` を実行しておくこと (`--init` は `Filler.Enabled` に関係なく生成する。未生成だとフィラーは鳴らず、Warning ログが 1 回出るだけ)。`--clear` はフィラーのキャッシュも消すので、その後は `--init` をやり直す。
 
 フィラーは読み上げと同じ話者の声で再生する (途中で声が変わらないように)。`--init` が生成するのは既定のエンジン・`DefaultSpeaker` の分なので、`--speaker 3` のように別の話者 (や `--engine` で別のエンジン) で読み上げるなら `--init -s 3` (`--init --engine <name> -s <話者>`) でその話者の分も生成しておく。生成していない話者ではフィラーは鳴らない。フィラーの音量は読み上げの `--volume` に合わせる (話速・音高は既定のまま)。フィラーの読み込みや再生に失敗しても本編の読み上げは止めず、その回はフィラーを使わない (再生がタイムアウトしたときは、再生デバイスの異常として本編と同じく止める)。
+
+フィラーの文と回数はエンジンごとに変えられる。各エンジンのセクションの `FillerTexts` (空なら `Filler.FillerTexts`) と `MaxFillersPerWait` (次の文を待つ 1 回に鳴らす上限。未設定なら届くまで繰り返す、0 ならそのエンジンでは鳴らさない)。VOICEPEAK は 1 文の合成に 10 秒ほどかかるので、既定で長めの文を待ち 1 回に 2 回までにしている。文を変えたら `--init` でその文の分を生成し直す。
 
 ### 同時実行
 

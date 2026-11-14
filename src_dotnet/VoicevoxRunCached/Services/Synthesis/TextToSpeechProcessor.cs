@@ -229,10 +229,12 @@ public class TextToSpeechProcessor
     private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, VoiceRequest request, bool verbose, CancellationToken cancellationToken)
     {
         var playbackStartTime = _clock.UtcNow;
-        // フィラーも読み上げと同じ話者の声 (--init -s で話者ごとに生成したもの)・同じ音量にする
+        // フィラーも読み上げと同じ話者の声 (--init -s で話者ごとに生成したもの)・同じ音量にする。文と待ち 1 回の回数はエンジンごと
+        var engine = _engines.Get(request.Engine);
         await _audioPlayer.PlayStreamingAsync(
             reader,
-            ct => _fillerManager.GetRandomFillerAudioAsync(request.Engine, request.Speaker, request.Volume, ct),
+            ct => _fillerManager.GetRandomFillerAudioAsync(engine, request.Speaker, request.Volume, ct),
+            engine.FillerSettings.MaxFillersPerWait,
             cancellationToken);
 
         if (verbose)

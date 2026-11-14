@@ -35,6 +35,8 @@ public class VoiceVoxSettingsValidator : AbstractValidator<VoiceVoxSettings>
         RuleFor(x => x.EnginePath)
             .Must((_, path) => String.IsNullOrEmpty(path) || File.Exists(path))
             .WithMessage("EnginePathが指定されている場合、ファイルが存在する必要があります");
+
+        Include(new EngineFillerSettingsValidator());
     }
 
     private static bool BeValidUrl(string url)
@@ -252,5 +254,22 @@ public class VoicepeakSettingsValidator : AbstractValidator<VoicepeakSettings>
 
         RuleFor(x => x.TimeoutSeconds)
             .InclusiveBetween(10, 600).WithMessage("TimeoutSecondsは10-600秒の範囲である必要があります");
+
+        Include(new EngineFillerSettingsValidator());
+    }
+}
+
+// 各エンジンのセクションのフィラー設定 (IEngineFillerSettings) のバリデーター
+public class EngineFillerSettingsValidator : AbstractValidator<IEngineFillerSettings>
+{
+    public EngineFillerSettingsValidator()
+    {
+        RuleFor(x => x.FillerTexts)
+            .Must(texts => texts.All(t => !String.IsNullOrWhiteSpace(t)))
+            .WithMessage("FillerTextsの各要素は空文字列であってはいけません");
+
+        RuleFor(x => x.MaxFillersPerWait)
+            .GreaterThanOrEqualTo(0).When(x => x.MaxFillersPerWait.HasValue)
+            .WithMessage("MaxFillersPerWaitは0以上である必要があります (未設定なら上限なし)");
     }
 }

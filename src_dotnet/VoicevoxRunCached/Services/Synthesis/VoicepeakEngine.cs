@@ -33,6 +33,8 @@ public class VoicepeakEngine : ISpeechEngine
 
     public SpeechEngineKind Kind => SpeechEngineKind.Voicepeak;
 
+    public IEngineFillerSettings FillerSettings => _settings;
+
     public Task PrepareAsync(string speaker, CancellationToken cancellationToken)
     {
         // 話者の存在確認 (--list-narrator) は 10 秒ほどかかるのでしない。存在しなければ最初の合成が失敗し、残りは合成しない
