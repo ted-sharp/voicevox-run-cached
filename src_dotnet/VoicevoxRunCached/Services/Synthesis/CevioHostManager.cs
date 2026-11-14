@@ -32,6 +32,11 @@ public class CevioHostManager
     }
 
     /// <summary>
+    /// 起動したプロセス (引数の ID) のほかに、同じ実行ファイル名のプロセスが動いているか。テストで差し替える。
+    /// </summary>
+    public Func<string, int, bool> IsAnotherInstanceRunning { get; init; } = IsProcessRunning;
+
+    /// <summary>
     /// ホストが起動していなければ (<see cref="CevioSettings.AutoStartHost"/> なら) 起動し、使えるようになるまで待つ。
     /// </summary>
     /// <exception cref="VoicevoxRunCachedException">CeVIO AI を使えない (<see cref="ErrorCodes.Engine.EngineNotAvailable"/>)</exception>
@@ -64,6 +69,8 @@ public class CevioHostManager
         // Minimized にしておくのは、効く版になっても邪魔にならず、ウィンドウを戻して閉じられるようにするため (Hidden だと閉じられない)
         using var process = StartProcess(hostPath);
         _startedByUs = true;
+        // 起動したプロセスが終わった後も、起動中の別の CeVIO AI を待っているか
+        var waitingForOtherInstance = false;
 
         var timeout = TimeSpan.FromSeconds(_settings.StartupTimeoutSeconds);
         var startTime = _clock.UtcNow;
@@ -74,12 +81,19 @@ public class CevioHostManager
                 _logger.LogInformation("CeVIO AI が起動しました");
                 return;
             }
-            // 起動に失敗して終わった (ライセンス等)。タイムアウトまで待たない
-            if (process is { HasExited: true })
+            if (!waitingForOtherInstance && process is { HasExited: true })
             {
+                // CeVIO AI は 1 つしか動かない。起動中 (まだ IsHostStarted が false) の CeVIO AI があると、
+                // 起動したプロセスはそちらに任せてすぐ (約 0.7 秒・終了コード 0) 終わる。そのときは起動を待ち、閉じる対象にしない
                 _startedByUs = false;
-                throw NotAvailable($"CeVIO AI exited during startup (exit code {process.ExitCode})", "CeVIO AI の起動に失敗しました。",
-                    "CeVIO AI を手動で起動して、エラーが出ないか確認してください。");
+                if (!IsAnotherInstanceRunning(hostPath, process.Id))
+                {
+                    // 起動に失敗して終わった (ライセンス等)。タイムアウトまで待たない
+                    throw NotAvailable($"CeVIO AI exited during startup (exit code {process.ExitCode})", "CeVIO AI の起動に失敗しました。",
+                        "CeVIO AI を手動で起動して、エラーが出ないか確認してください。");
+                }
+                _logger.LogInformation("起動中の CeVIO AI を待ちます");
+                waitingForOtherInstance = true;
             }
             await Task.Delay(AudioConstants.EngineStartupPollIntervalMs, cancellationToken);
         }
@@ -134,6 +148,22 @@ public class CevioHostManager
                 userMessage: $"CeVIO AI を起動できませんでした: {hostPath} ({ex.Message})",
                 innerException: ex,
                 suggestedSolution: "CeVIO AI を手動で起動できるか、appsettings.json の Cevio.HostPath が正しいか確認してください。");
+        }
+    }
+
+    private static bool IsProcessRunning(string hostPath, int excludedProcessId)
+    {
+        var processes = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(hostPath));
+        try
+        {
+            return processes.Any(p => p.Id != excludedProcessId);
+        }
+        finally
+        {
+            foreach (var p in processes)
+            {
+                p.Dispose();
+            }
         }
     }
 

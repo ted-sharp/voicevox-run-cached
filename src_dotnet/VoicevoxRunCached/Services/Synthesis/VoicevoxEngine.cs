@@ -13,16 +13,20 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// </remarks>
 public class VoicevoxEngine : ISpeechEngine
 {
+    private readonly VoiceVoxSettings _settings;
     private readonly VoiceVoxEngineManager _engineManager;
     private readonly VoiceVoxApiClient _apiClient;
 
-    public VoicevoxEngine(VoiceVoxEngineManager engineManager, VoiceVoxApiClient apiClient)
+    public VoicevoxEngine(VoiceVoxSettings settings, VoiceVoxEngineManager engineManager, VoiceVoxApiClient apiClient)
     {
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
         _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
     }
 
     public SpeechEngineKind Kind => SpeechEngineKind.Voicevox;
+
+    public IEngineFillerSettings FillerSettings => _settings;
 
     public async Task PrepareAsync(string speaker, CancellationToken cancellationToken)
     {

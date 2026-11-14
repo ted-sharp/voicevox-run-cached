@@ -11,6 +11,11 @@ namespace VoicevoxRunCached.Tests;
 
 public class FillerManagerTests
 {
+    /// <summary>
+    /// フィラーの文を持たない VOICEVOX (共通の <see cref="FillerSettings.FillerTexts"/> を使う)。合成した文を記録するので、参照のたびに作る (テスト間で共有しない)。
+    /// </summary>
+    private static StubSpeechEngine Voicevox => new(SpeechEngineKind.Voicevox);
+
     [Test]
     public async Task GetRandomFillerAudio_WhenDisabled_ReturnsNull()
     {
@@ -22,7 +27,7 @@ public class FillerManagerTests
         };
         var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
 
-        var data = await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "1", volume: 1.0);
+        var data = await mgr.GetRandomFillerAudioAsync(Voicevox, "1", volume: 1.0);
 
         await Assert.That(data).IsNull();
     }
@@ -38,7 +43,7 @@ public class FillerManagerTests
         };
         var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
 
-        var data = await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "1", volume: 1.0);
+        var data = await mgr.GetRandomFillerAudioAsync(Voicevox, "1", volume: 1.0);
 
         await Assert.That(data).IsNull();
     }
@@ -59,7 +64,7 @@ public class FillerManagerTests
             };
             var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
 
-            var data = await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "1", volume: 1.0);
+            var data = await mgr.GetRandomFillerAudioAsync(Voicevox, "1", volume: 1.0);
 
             await Assert.That(data).IsNull();
         }
@@ -83,9 +88,9 @@ public class FillerManagerTests
             using var apiClient = engine.CreateApiClient();
             await mgr.InitializeFillerCacheAsync(TestEngines.Voicevox(apiClient), "1");
 
-            await Assert.That(await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "1", volume: 1.0)).IsNotNull();
-            await Assert.That(await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "3", volume: 1.0)).IsNull();
-            await Assert.That(await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "3", volume: 1.0)).IsNull();
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(Voicevox, "1", volume: 1.0)).IsNotNull();
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(Voicevox, "3", volume: 1.0)).IsNull();
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(Voicevox, "3", volume: 1.0)).IsNull();
 
             // 未生成の Warning (生成方法の案内付き) は合成待ちのたびではなく 1 回だけ
             await Assert.That(logger.Messages.Count(m => m.Contains("--init --engine voicevox -s 3"))).IsEqualTo(1);
@@ -113,8 +118,8 @@ public class FillerManagerTests
             await mgr.InitializeFillerCacheAsync(TestEngines.Voicevox(apiClient), "1");
             var stored = await File.ReadAllBytesAsync(Directory.GetFiles(dir, "*.opus").Single());
 
-            var unchanged = await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "1", volume: 1.0);
-            var half = await mgr.GetRandomFillerAudioAsync(SpeechEngineKind.Voicevox, "1", volume: 0.5);
+            var unchanged = await mgr.GetRandomFillerAudioAsync(Voicevox, "1", volume: 1.0);
+            var half = await mgr.GetRandomFillerAudioAsync(Voicevox, "1", volume: 0.5);
 
             // 1.0 なら生成した Opus をそのまま返す
             await Assert.That(unchanged!.SequenceEqual(stored)).IsTrue();
@@ -262,7 +267,9 @@ public class FillerManagerTests
         // 最初のフィラーのリトライ分だけで、残りには問い合わせない
         await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(AudioConstants.RetryMaxAttempts);
         // 中止した分も失敗に数える (全部失敗なら終了コード 5、一部なら 8 のまま)
-        await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 3, SuccessCount: 0, FailureCount: 3));
+        await Assert.That(result with { FirstError = null }).IsEqualTo(new SynthesisResult(AttemptedCount: 3, SuccessCount: 0, FailureCount: 3));
+        // 全部失敗したときのエラーに理由を添えるため、最初の失敗を返す
+        await Assert.That(result.FirstError).IsNotNull();
         // ログには実際に API を呼ばなかった件数を出す
         await Assert.That(logger.Messages.Count(m => m.Contains("2 件のフィラーの生成を中止"))).IsEqualTo(1);
     }
@@ -276,7 +283,7 @@ public class FillerManagerTests
         var (result, _) = await InitializeAsync(engine, ["a", "b", "c"]);
 
         await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(3);
-        await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 3, SuccessCount: 0, FailureCount: 3));
+        await Assert.That(result with { FirstError = null }).IsEqualTo(new SynthesisResult(AttemptedCount: 3, SuccessCount: 0, FailureCount: 3));
     }
 
     [Test]
@@ -303,6 +310,61 @@ public class FillerManagerTests
         await Assert.That(result.SuccessCount).IsEqualTo(2);
         await Assert.That(files.Length).IsEqualTo(2);
         await Assert.That(files.All(f => f.EndsWith(".opus", StringComparison.Ordinal))).IsTrue();
+    }
+
+    [Test]
+    public async Task EngineFillerTexts_AreUsedForInitAndPlayback()
+    {
+        // 合成の遅いエンジン (VOICEPEAK) では長めのフィラーにするため、文はエンジンのセクションの FillerTexts を使う
+        var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var settings = new FillerSettings { Enabled = true, Directory = dir, FillerTexts = ["共通"] };
+            var logger = new RecordingLogger();
+            var mgr = new FillerManager(settings, new CacheSettings(), logger);
+            var voicepeak = new StubSpeechEngine(SpeechEngineKind.Voicepeak, ["長めのフィラー、"]);
+
+            await mgr.InitializeFillerCacheAsync(voicepeak, "Otomachi Una");
+
+            await Assert.That(String.Join("|", voicepeak.SynthesizedTexts)).IsEqualTo("長めのフィラー、");
+            // 共通の文 (未生成) を選ぶと null になり Warning が出る。エンジンの文から選ぶので毎回鳴る
+            for (var i = 0; i < 5; i++)
+            {
+                await Assert.That(await mgr.GetRandomFillerAudioAsync(voicepeak, "Otomachi Una", volume: 1.0)).IsNotNull();
+            }
+            await Assert.That(logger.Messages.Any(m => m.Contains("未生成"))).IsFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task EngineFillerTexts_Empty_UsesCommonTexts()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var settings = new FillerSettings { Enabled = true, Directory = dir, FillerTexts = ["共通"] };
+            var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
+            var voicevox = new StubSpeechEngine(SpeechEngineKind.Voicevox);
+
+            await mgr.InitializeFillerCacheAsync(voicevox, "1");
+
+            await Assert.That(String.Join("|", voicevox.SynthesizedTexts)).IsEqualTo("共通");
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(voicevox, "1", volume: 1.0)).IsNotNull();
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
+        }
     }
 
     /// <summary>

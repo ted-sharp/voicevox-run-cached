@@ -489,26 +489,10 @@ public class ValidatorsTests
     }
 
     [Test]
-    [Arguments("", false)]
-    [Arguments("花隈千冬", true)]
-    public async Task AppSettings_CevioAsDefaultEngine_RequiresDefaultSpeaker(string defaultSpeaker, bool expected)
+    public async Task CevioSettings_EmptyFillerText_Fails()
     {
-        // -s を省略したときのキャストが無いと、読み上げのたびに引数エラーになる
-        var dir = CreateTempCacheDir();
-        try
-        {
-            var settings = new AppSettings
-            {
-                Synthesis = new SynthesisSettings { Engine = SpeechEngineKind.Cevio },
-                Cevio = new CevioSettings { DefaultSpeaker = defaultSpeaker },
-                Cache = new CacheSettings { Directory = dir },
-            };
-            var result = new AppSettingsValidator().Validate(settings);
-            await Assert.That(result.IsValid).IsEqualTo(expected);
-        }
-        finally
-        {
-            Directory.Delete(dir, true);
-        }
+        // エンジンごとのフィラー設定 (EngineFillerSettingsValidator) を CeVIO でも検証する
+        var result = new CevioSettingsValidator().Validate(new CevioSettings { FillerTexts = ["えーっと、", " "] });
+        await Assert.That(result.IsValid).IsFalse();
     }
 }

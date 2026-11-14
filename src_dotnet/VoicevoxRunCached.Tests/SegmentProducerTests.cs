@@ -29,7 +29,9 @@ public class SegmentProducerTests
         // キャッシュ済みの B は再生に回る。中止した C は流さない
         await Assert.That(String.Join("|", written)).IsEqualTo("A|B");
         // 中止した分も失敗に数える (全部失敗なら終了コード 5、一部なら 8 のまま)
-        await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 2, SuccessCount: 0, FailureCount: 2));
+        await Assert.That(result with { FirstError = null }).IsEqualTo(new SynthesisResult(AttemptedCount: 2, SuccessCount: 0, FailureCount: 2));
+        // 全部失敗したときのエラーに理由を添えるため、最初の失敗を返す
+        await Assert.That(result.FirstError).IsNotNull();
     }
 
     [Test]
@@ -42,7 +44,7 @@ public class SegmentProducerTests
 
         await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(2);
         await Assert.That(String.Join("|", written)).IsEqualTo("A|B|C");
-        await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 2, SuccessCount: 0, FailureCount: 2));
+        await Assert.That(result with { FirstError = null }).IsEqualTo(new SynthesisResult(AttemptedCount: 2, SuccessCount: 0, FailureCount: 2));
     }
 
     [Test]
@@ -75,7 +77,7 @@ public class SegmentProducerTests
 
         await Assert.That(engine.AudioQueryRequestCount).IsEqualTo(2);
         await Assert.That(String.Join("|", written)).IsEqualTo("A:False|B:True");
-        await Assert.That(result).IsEqualTo(new SynthesisResult(3, 1, 2));
+        await Assert.That(result with { FirstError = null }).IsEqualTo(new SynthesisResult(3, 1, 2));
     }
 
     [Test]
@@ -89,7 +91,7 @@ public class SegmentProducerTests
             [new TextSegment("A"), new TextSegment("B"), new TextSegment("A"), new TextSegment("C")]);
 
         await Assert.That(String.Join("|", written)).IsEqualTo("A:True|B:False|A:True");
-        await Assert.That(result).IsEqualTo(new SynthesisResult(AttemptedCount: 4, SuccessCount: 2, FailureCount: 2));
+        await Assert.That(result with { FirstError = null }).IsEqualTo(new SynthesisResult(AttemptedCount: 4, SuccessCount: 2, FailureCount: 2));
     }
 
     [Test]

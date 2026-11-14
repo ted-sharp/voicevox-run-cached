@@ -1,5 +1,6 @@
 ﻿using System.Globalization;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Synthesis;
 
@@ -7,18 +8,21 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// <see cref="SpeechEngineKind"/> から <see cref="ISpeechEngine"/> を取り出す。エンジンごとの話者の既定値と正規化もここに置く。
 /// </summary>
 /// <remarks>
-/// エンジンを足すときは、コンストラクタ・<see cref="All"/>・<see cref="Get"/>・<see cref="DefaultSpeaker"/>・<see cref="NormalizeSpeaker"/> に追加する。
+/// エンジンを足すときは、コンストラクタ・<see cref="All"/>・<see cref="Get"/>・<see cref="DefaultSpeaker"/>・<see cref="NormalizeSpeaker"/>・
+/// <see cref="ValidateParameters"/> に追加する。
 /// </remarks>
 public class SpeechEngineProvider
 {
     private readonly VoicevoxEngine _voicevox;
+    private readonly VoicepeakEngine _voicepeak;
     private readonly CevioEngine _cevio;
 
-    public SpeechEngineProvider(VoicevoxEngine voicevox, CevioEngine cevio)
+    public SpeechEngineProvider(VoicevoxEngine voicevox, VoicepeakEngine voicepeak, CevioEngine cevio)
     {
         _voicevox = voicevox ?? throw new ArgumentNullException(nameof(voicevox));
+        _voicepeak = voicepeak ?? throw new ArgumentNullException(nameof(voicepeak));
         _cevio = cevio ?? throw new ArgumentNullException(nameof(cevio));
-        All = [_voicevox, _cevio];
+        All = [_voicevox, _voicepeak, _cevio];
     }
 
     /// <summary>
@@ -29,12 +33,13 @@ public class SpeechEngineProvider
     public ISpeechEngine Get(SpeechEngineKind kind) => kind switch
     {
         SpeechEngineKind.Voicevox => _voicevox,
+        SpeechEngineKind.Voicepeak => _voicepeak,
         SpeechEngineKind.Cevio => _cevio,
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "未対応のエンジンです"),
     };
 
     /// <summary>
-    /// <c>--speaker</c> を省略したときの話者 (各エンジンのセクションの <c>DefaultSpeaker</c>)。
+    /// <c>--speaker</c> を省略したときの話者 (各エンジンのセクションの <c>DefaultSpeaker</c>)。未設定なら空文字列。
     /// </summary>
     public static string DefaultSpeaker(SpeechEngineKind kind, AppSettings settings)
     {
@@ -42,7 +47,8 @@ public class SpeechEngineProvider
         return kind switch
         {
             SpeechEngineKind.Voicevox => settings.VoiceVox.DefaultSpeaker.ToString(CultureInfo.InvariantCulture),
-            SpeechEngineKind.Cevio => CevioDefaultSpeaker(settings.Cevio),
+            SpeechEngineKind.Voicepeak => settings.Voicepeak.DefaultSpeaker,
+            SpeechEngineKind.Cevio => settings.Cevio.DefaultSpeaker,
             _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "未対応のエンジンです"),
         };
     }
@@ -54,25 +60,24 @@ public class SpeechEngineProvider
     public static string? NormalizeSpeaker(SpeechEngineKind kind, string raw, out string? error) => kind switch
     {
         SpeechEngineKind.Voicevox => VoicevoxEngine.NormalizeSpeaker(raw, out error),
+        SpeechEngineKind.Voicepeak => VoicepeakEngine.NormalizeSpeaker(raw, out error),
         SpeechEngineKind.Cevio => CevioEngine.NormalizeSpeaker(raw, out error),
         _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, "未対応のエンジンです"),
     };
 
-    /// <remarks>
-    /// CeVIO はキャストに決まった既定が無いので、<c>Cevio.DefaultSpeaker</c> が空なら <c>-s</c> を求める。
-    /// 書式は設定の検証 (<see cref="CevioSettingsValidator"/>) で確かめてある。
-    /// </remarks>
-    private static string CevioDefaultSpeaker(CevioSettings settings)
+    /// <summary>
+    /// 話速・音高・音量がエンジンで指定できる範囲か (共通の検証 (<c>--speed</c> は 0 より大きい等) の後に、エンジンごとの範囲を見る)。
+    /// </summary>
+    /// <returns>範囲外ならオプション名と理由。範囲内なら null</returns>
+    public static (string Option, string Reason)? ValidateParameters(VoiceRequest request)
     {
-        if (String.IsNullOrWhiteSpace(settings.DefaultSpeaker))
+        ArgumentNullException.ThrowIfNull(request);
+        return request.Engine switch
         {
-            throw new Exceptions.VoicevoxRunCachedException(
-                errorCode: Exceptions.ErrorCodes.General.InvalidArguments,
-                message: "Cevio.DefaultSpeaker is not set",
-                userMessage: "CeVIO のキャストが指定されていません。",
-                suggestedSolution: "-s でキャスト名を指定するか、appsettings.json の Cevio.DefaultSpeaker を設定してください (`VoicevoxRunCached speakers --engine cevio` で確認できます)。");
-        }
-        return CevioEngine.NormalizeSpeaker(settings.DefaultSpeaker, out var error)
-            ?? throw new InvalidOperationException($"Cevio.DefaultSpeaker が不正です: {error}");
+            SpeechEngineKind.Voicevox => null,
+            SpeechEngineKind.Voicepeak => VoicepeakEngine.ValidateParameters(request),
+            SpeechEngineKind.Cevio => CevioEngine.ValidateParameters(request),
+            _ => throw new ArgumentOutOfRangeException(nameof(request), request.Engine, "未対応のエンジンです"),
+        };
     }
 }

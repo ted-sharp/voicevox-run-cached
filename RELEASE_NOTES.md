@@ -2,10 +2,12 @@
 
 ## Unreleased (3.1.0)
 
+- CLI/コマンド:
+  - VOICEPEAK に対応 (`--engine voicepeak -s "ナレーター名[:感情=値]"`)。`speakers` / `--init` も `--engine` で切り替える
+  - CeVIO AI に対応 (`--engine cevio -s "キャスト名[:感情=値]"`)
+  - フィラーの文と、待ち 1 回に鳴らす回数をエンジンごとに設定できる (各エンジンのセクションの `FillerTexts` / `MaxFillersPerWait`)
 - 開発環境:
   - .NET 11 に移行 (ソースからビルドするには .NET 11 SDK が必要)
-- 新機能:
-  - CeVIO AI に対応 (`--engine cevio -s <キャスト名>`。感情は `-s "キャスト名:嬉しい=50"`)
 
 ## v3.0.0 - 2026-11-08
 

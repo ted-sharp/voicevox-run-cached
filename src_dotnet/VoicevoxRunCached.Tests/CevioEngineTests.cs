@@ -86,6 +86,30 @@ public class CevioEngineTests
         await Assert.That(CevioEngine.ToCevioTone(pitch)).IsEqualTo(expected);
     }
 
+    [Test]
+    [Arguments(0.25, 0.15)]
+    [Arguments(4.0, -0.15)]
+    [Arguments(1.0, 0.0)]
+    [Arguments(4.004, 0.154)]
+    public async Task ValidateParameters_InRange_ReturnsNull(double speed, double pitch)
+    {
+        // 判定はキャッシュキーと同じく F2 に丸めた値
+        await Assert.That(CevioEngine.ValidateParameters(new VoiceRequest("文", FakeCevioRemoteService.Cast, speed, pitch))).IsNull();
+    }
+
+    [Test]
+    [Arguments(0.24, 0.0, "--speed")]
+    [Arguments(4.01, 0.0, "--speed")]
+    [Arguments(1.0, 0.16, "--pitch")]
+    [Arguments(1.0, -0.16, "--pitch")]
+    public async Task ValidateParameters_OutOfRange_ReturnsOption(double speed, double pitch, string option)
+    {
+        // Speed / Tone の端を超える値は黙って端に丸めず、引数エラーにする (VOICEPEAK と同じ)
+        var invalid = CevioEngine.ValidateParameters(new VoiceRequest("文", FakeCevioRemoteService.Cast, speed, pitch));
+
+        await Assert.That(invalid?.Option).IsEqualTo(option);
+    }
+
     // 準備 -------------------------------------------------------------------
 
     [Test]

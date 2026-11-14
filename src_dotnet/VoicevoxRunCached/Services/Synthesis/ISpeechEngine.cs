@@ -47,6 +47,11 @@ public interface ISpeechEngine
     /// このプロセスが起動したエンジンを、設定で常駐させないなら止める。<see cref="SpeechLock"/> がロックを解放する前に呼ぶ。
     /// </summary>
     void StopIfNotKept();
+
+    /// <summary>
+    /// このエンジンのフィラーの文と回数 (エンジンのセクションの <c>FillerTexts</c> / <c>MaxFillersPerWait</c>)。
+    /// </summary>
+    IEngineFillerSettings FillerSettings { get; }
 }
 
 /// <summary>

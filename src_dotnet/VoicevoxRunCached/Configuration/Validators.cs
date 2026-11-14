@@ -3,7 +3,6 @@ using VoicevoxRunCached.Constants;
 
 namespace VoicevoxRunCached.Configuration;
 
-// VoiceVoxSettings のバリデーター
 // SynthesisSettings のバリデーター
 public class SynthesisSettingsValidator : AbstractValidator<SynthesisSettings>
 {
@@ -15,6 +14,7 @@ public class SynthesisSettingsValidator : AbstractValidator<SynthesisSettings>
     }
 }
 
+// VoiceVoxSettings のバリデーター
 public class VoiceVoxSettingsValidator : AbstractValidator<VoiceVoxSettings>
 {
     public VoiceVoxSettingsValidator()
@@ -35,6 +35,8 @@ public class VoiceVoxSettingsValidator : AbstractValidator<VoiceVoxSettings>
         RuleFor(x => x.EnginePath)
             .Must((_, path) => String.IsNullOrEmpty(path) || File.Exists(path))
             .WithMessage("EnginePathが指定されている場合、ファイルが存在する必要があります");
+
+        Include(new EngineFillerSettingsValidator());
     }
 
     private static bool BeValidUrl(string url)
@@ -204,6 +206,8 @@ public class AppSettingsValidator : AbstractValidator<AppSettings>
         RuleFor(x => x.Filler).SetValidator(new FillerSettingsValidator());
         RuleFor(x => x.Lock).SetValidator(new LockSettingsValidator());
         RuleFor(x => x.Logging).SetValidator(new LoggingSettingsValidator());
+        RuleFor(x => x.Voicepeak).SetValidator(new VoicepeakSettingsValidator());
+        RuleFor(x => x.Cevio).SetValidator(new CevioSettingsValidator());
 
         // 同じディレクトリだと、キャッシュの容量超過の削除がフィラーの .opus も数えて消し、--clear もまとめて消す。
         // --init は Filler.Enabled に関係なく生成するので、Enabled でなくても検証する
@@ -211,13 +215,6 @@ public class AppSettingsValidator : AbstractValidator<AppSettings>
             .Must(x => !IsSameDirectory(x.Cache.Directory, x.Filler.Directory))
             .WithName("Filler.Directory")
             .WithMessage("Cache Directory と Filler Directory には別のディレクトリを指定する必要があります");
-
-        RuleFor(x => x.Cevio).SetValidator(new CevioSettingsValidator());
-        // 既定のエンジンにするなら、-s を省略したときのキャストが要る
-        RuleFor(x => x.Cevio.DefaultSpeaker)
-            .NotEmpty().When(x => x.Synthesis.Engine == SpeechEngineKind.Cevio)
-            .WithName("Cevio.DefaultSpeaker")
-            .WithMessage("Synthesis.Engine が Cevio のときは Cevio.DefaultSpeaker (キャスト名) が必須です");
     }
 
     /// <remarks>
@@ -238,15 +235,44 @@ public class AppSettingsValidator : AbstractValidator<AppSettings>
     }
 }
 
+// VoicepeakSettings のバリデーター
+public class VoicepeakSettingsValidator : AbstractValidator<VoicepeakSettings>
+{
+    public VoicepeakSettingsValidator()
+    {
+        RuleFor(x => x.ExePath)
+            .Must(path => String.IsNullOrEmpty(path) || File.Exists(path))
+            .WithMessage("ExePathが指定されている場合、ファイルが存在する必要があります");
+
+        // 空なら --engine voicepeak のときに --speaker が必須 (ArgumentParser が案内する)
+        RuleFor(x => x.DefaultSpeaker).Custom((speaker, context) =>
+        {
+            if (!String.IsNullOrEmpty(speaker) && VoicepeakEngine.NormalizeSpeaker(speaker, out var error) == null)
+            {
+                context.AddFailure($"DefaultSpeakerの指定が不正です: {error}");
+            }
+        });
+
+        RuleFor(x => x.TimeoutSeconds)
+            .InclusiveBetween(10, 600).WithMessage("TimeoutSecondsは10-600秒の範囲である必要があります");
+
+        Include(new EngineFillerSettingsValidator());
+    }
+}
+
 // CevioSettings のバリデーター
 public class CevioSettingsValidator : AbstractValidator<CevioSettings>
 {
     public CevioSettingsValidator()
     {
-        // 空は許す (CeVIO を使うときに -s を求める)。書いてあれば -s と同じ書式
-        RuleFor(x => x.DefaultSpeaker)
-            .Must(speaker => String.IsNullOrEmpty(speaker) || Services.Synthesis.CevioEngine.NormalizeSpeaker(speaker, out _) is not null)
-            .WithMessage("DefaultSpeakerは キャスト名 か キャスト名:感情=値,... (値は0-100の整数) である必要があります");
+        // 空なら --engine cevio のときに --speaker が必須 (ArgumentParser が案内する)
+        RuleFor(x => x.DefaultSpeaker).Custom((speaker, context) =>
+        {
+            if (!String.IsNullOrEmpty(speaker) && CevioEngine.NormalizeSpeaker(speaker, out var error) == null)
+            {
+                context.AddFailure($"DefaultSpeakerの指定が不正です: {error}");
+            }
+        });
 
         RuleFor(x => x.StartupTimeoutSeconds)
             .InclusiveBetween(5, 600).WithMessage("StartupTimeoutSecondsは5-600秒の範囲である必要があります");
@@ -257,5 +283,22 @@ public class CevioSettingsValidator : AbstractValidator<CevioSettings>
 
         RuleFor(x => x.SynthesisTimeoutSeconds)
             .InclusiveBetween(1, 300).WithMessage("SynthesisTimeoutSecondsは1-300秒の範囲である必要があります");
+
+        Include(new EngineFillerSettingsValidator());
+    }
+}
+
+// 各エンジンのセクションのフィラー設定 (IEngineFillerSettings) のバリデーター
+public class EngineFillerSettingsValidator : AbstractValidator<IEngineFillerSettings>
+{
+    public EngineFillerSettingsValidator()
+    {
+        RuleFor(x => x.FillerTexts)
+            .Must(texts => texts.All(t => !String.IsNullOrWhiteSpace(t)))
+            .WithMessage("FillerTextsの各要素は空文字列であってはいけません");
+
+        RuleFor(x => x.MaxFillersPerWait)
+            .GreaterThanOrEqualTo(0).When(x => x.MaxFillersPerWait.HasValue)
+            .WithMessage("MaxFillersPerWaitは0以上である必要があります (null なら上限なし)");
     }
 }

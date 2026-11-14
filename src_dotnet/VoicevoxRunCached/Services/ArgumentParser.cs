@@ -295,6 +295,7 @@ public static class ArgumentParser
         nameof(AppSettings.Lock),
         nameof(AppSettings.Logging),
         nameof(AppSettings.Test),
+        nameof(AppSettings.Voicepeak),
         nameof(AppSettings.Cevio),
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
@@ -443,6 +444,10 @@ public static class ArgumentParser
 
         request.Engine = engine;
         request.Speaker = ResolveSpeaker(engine, speakerArg, settings);
+        if (SpeechEngineProvider.ValidateParameters(request) is { } invalid)
+        {
+            throw InvalidOption(invalid.Option, invalid.Reason);
+        }
 
         return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay, refresh, maxWaitSeconds);
     }
@@ -512,13 +517,33 @@ public static class ArgumentParser
     /// <summary>
     /// 話者を決める。指定があればエンジンごとに検証・正規化し、無ければそのエンジンの <c>DefaultSpeaker</c>。
     /// </summary>
+    /// <remarks>
+    /// <c>DefaultSpeaker</c> も正規化する (設定の書き方が違っても同じキャッシュキーになるように。形式は設定の検証で確認済み)。
+    /// 未設定 (VOICEPEAK の既定) なら <c>--speaker</c> が必要。
+    /// </remarks>
     private static string ResolveSpeaker(SpeechEngineKind engine, (string Option, string Value)? speakerArg, AppSettings settings)
     {
-        if (speakerArg is not { } arg)
+        if (speakerArg is { } arg)
         {
-            return SpeechEngineProvider.DefaultSpeaker(engine, settings);
+            return SpeechEngineProvider.NormalizeSpeaker(engine, arg.Value, out var error) ?? throw InvalidOption(arg.Option, error!);
         }
-        return SpeechEngineProvider.NormalizeSpeaker(engine, arg.Value, out var error) ?? throw InvalidOption(arg.Option, error!);
+
+        var defaultSpeaker = SpeechEngineProvider.DefaultSpeaker(engine, settings);
+        if (String.IsNullOrWhiteSpace(defaultSpeaker))
+        {
+            var engineName = engine.ToString().ToLowerInvariant();
+            throw new VoicevoxRunCachedException(
+                errorCode: ErrorCodes.General.InvalidArguments,
+                message: $"No speaker specified for {engineName}",
+                userMessage: $"{engineName} の話者が指定されていません。",
+                suggestedSolution: $"--speaker で話者を指定するか、appsettings.json の {engine}.DefaultSpeaker を設定してください " +
+                    $"(話者は `VoicevoxRunCached speakers --engine {engineName}` で確認できます)。");
+        }
+        return SpeechEngineProvider.NormalizeSpeaker(engine, defaultSpeaker, out var defaultError)
+            ?? throw new ConfigurationException(
+                errorCode: ErrorCodes.Configuration.InvalidSettings,
+                message: $"Invalid {engine}.DefaultSpeaker: {defaultError}",
+                userMessage: $"appsettings.json の {engine}.DefaultSpeaker が不正です: {defaultError}");
     }
 
     private static int ReadInt(string[] args, int optionIndex, int min)
@@ -581,7 +606,7 @@ Arguments:
   <text>                    The text to convert to speech (quote it if it contains spaces)
 
 Options:
-  --engine <name>          Speech engine: voicevox | cevio (default: appsettings Synthesis.Engine)
+  --engine <name>          Speech engine: voicevox | voicepeak | cevio (default: appsettings Synthesis.Engine)
   --speaker, -s <id>       Speaker (default: DefaultSpeaker of the engine's section, e.g. VoiceVox.DefaultSpeaker)
   --speed <value>          Speech speed (default: 1.0)
   --pitch <value>          Speech pitch (default: 0.0)

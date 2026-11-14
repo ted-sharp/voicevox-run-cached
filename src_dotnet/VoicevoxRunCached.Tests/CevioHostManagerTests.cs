@@ -69,8 +69,13 @@ public class CevioHostManagerTests
     public async Task HostExitsDuringStartup_FailsWithoutWaitingForTimeout()
     {
         // 引数なしの ping はすぐ終わる。起動に失敗して終わったホストを、タイムアウト (60 秒) まで待たない
+        // (ほかのテストも ping を動かすので、同じ名前のプロセスは無いことにする)
         var remote = new FakeCevioRemoteService { HostStarted = () => false };
-        var manager = Create(remote, new CevioSettings { HostPath = Ping, StartupTimeoutSeconds = 60, KeepHostRunning = false });
+        var manager = new CevioHostManager(
+            new CevioSettings { HostPath = Ping, StartupTimeoutSeconds = 60, KeepHostRunning = false }, remote, NullLogger.Instance, SystemClock.Instance)
+        {
+            IsAnotherInstanceRunning = (_, _) => false,
+        };
         var stopwatch = System.Diagnostics.Stopwatch.StartNew();
 
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => manager.EnsureRunningOrThrowAsync(CancellationToken.None));
@@ -78,6 +83,32 @@ public class CevioHostManagerTests
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Engine.EngineNotAvailable);
         await Assert.That(stopwatch.Elapsed).IsLessThan(TimeSpan.FromSeconds(30));
+        await Assert.That(remote.CloseHostCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task HostHandedToStartingInstance_WaitsAndIsNotClosed()
+    {
+        // CeVIO AI は 1 つしか動かない。ユーザーが起動中 (まだ IsHostStarted が false) の CeVIO AI があると、起動したプロセスは
+        // そちらに任せてすぐ終わる。失敗にせず起動を待ち、自分が起動したものではないので KeepHostRunning: false でも閉じない
+        // 起動したプロセス (引数なしの ping) が終わり、ほかのプロセスを確かめた後の 2 回目の確認で起動済みになる
+        string? checkedPath = null;
+        var checksAfterHandOver = 0;
+        var remote = new FakeCevioRemoteService { HostStarted = () => checkedPath != null && ++checksAfterHandOver > 1 };
+        var manager = new CevioHostManager(
+            new CevioSettings { HostPath = Ping, StartupTimeoutSeconds = 30, KeepHostRunning = false }, remote, NullLogger.Instance, SystemClock.Instance)
+        {
+            IsAnotherInstanceRunning = (path, _) =>
+            {
+                checkedPath = path;
+                return true;
+            },
+        };
+
+        await manager.EnsureRunningOrThrowAsync(CancellationToken.None);
+        manager.StopHostIfNotKept();
+
+        await Assert.That(checkedPath).IsEqualTo(Ping);
         await Assert.That(remote.CloseHostCount).IsEqualTo(0);
     }
 

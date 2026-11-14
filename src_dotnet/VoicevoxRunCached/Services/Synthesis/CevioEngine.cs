@@ -1,6 +1,5 @@
 ﻿using System.Globalization;
 using System.Runtime.InteropServices;
-using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
@@ -17,7 +16,7 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// <list type="bullet">
 /// <item>話速: <see cref="ToCevioSpeed"/>。CeVIO の Speed は 25 上がるごとに約 2 倍速くなる (実測)</item>
 /// <item>音高: <see cref="ToCevioTone"/>。CeVIO の Tone は 0〜100 で約 ±5 半音 (実測)。VOICEVOX の GUI の音高の範囲 (±0.15) を端にそろえる</item>
-/// <item>音量: CeVIO の Volume は 50 のまま、合成した波形に <c>--volume</c> を掛ける (<see cref="ApplyGain"/>)。
+/// <item>音量: CeVIO の Volume は 50 のまま、合成した波形に <c>--volume</c> を掛ける (<see cref="AudioConversionUtility.ApplyGain"/>)。
 /// VOICEVOX の volumeScale と同じく振幅の倍率になる (CeVIO の Volume は 0〜100 で約 ±7dB しかなく、0 でも無音にならない)</item>
 /// </list>
 /// </remarks>
@@ -28,8 +27,17 @@ public class CevioEngine : ISpeechEngine
     /// </summary>
     public const double PitchRange = 0.15;
 
+    /// <summary>
+    /// <see cref="ToCevioSpeed"/> で Speed の端 (0 / 100) になる話速。
+    /// </summary>
+    public const double MinSpeed = 0.25;
+
+    /// <inheritdoc cref="MinSpeed"/>
+    public const double MaxSpeed = 4.0;
+
     private readonly CevioHostManager _hostManager;
     private readonly ICevioRemoteService _remote;
+    private readonly CevioSettings _settings;
     private readonly TimeSpan _timeout;
     // 準備したキャストの感情の既定値。感情を指定しない話者の合成で、前の合成の感情が残らないよう毎回設定する
     private readonly Dictionary<string, IReadOnlyList<CevioComponent>> _castComponents = new(StringComparer.Ordinal);
@@ -38,11 +46,13 @@ public class CevioEngine : ISpeechEngine
     {
         _hostManager = hostManager ?? throw new ArgumentNullException(nameof(hostManager));
         _remote = remote ?? throw new ArgumentNullException(nameof(remote));
-        ArgumentNullException.ThrowIfNull(settings);
+        _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         _timeout = TimeSpan.FromSeconds(settings.SynthesisTimeoutSeconds);
     }
 
     public SpeechEngineKind Kind => SpeechEngineKind.Cevio;
+
+    public IEngineFillerSettings FillerSettings => _settings;
 
     public async Task PrepareAsync(string speaker, CancellationToken cancellationToken)
     {
@@ -70,7 +80,11 @@ public class CevioEngine : ISpeechEngine
         var talk = new CevioTalk(speaker.Cast, ToCevioSpeed(request.Speed), ToCevioTone(request.Pitch), ResolveComponents(defaults, speaker));
         var gain = (float)Cache.CacheKeyGenerator.NormalizeParameter(request.Volume);
 
-        return await RunComAsync(() => ApplyGain(OutputWave(talk, request.Text), gain), cancellationToken);
+        return await RunComAsync(() =>
+        {
+            var wav = OutputWave(talk, request.Text);
+            return gain == 1.0f ? wav : AudioConversionUtility.ApplyGain(wav, gain);
+        }, cancellationToken);
     }
 
     public async Task<IReadOnlyList<SpeakerInfo>> GetSpeakersAsync(CancellationToken cancellationToken)
@@ -101,47 +115,36 @@ public class CevioEngine : ISpeechEngine
     }
 
     /// <summary>
-    /// <c>--speed</c> (VOICEVOX の speedScale と同じ倍率) を CeVIO の Speed にする。1.0 → 50、2.0 → 75、0.5 → 25。範囲外は 0 / 100。
+    /// <c>--speed</c> (VOICEVOX の speedScale と同じ倍率) を CeVIO の Speed にする。1.0 → 50、2.0 → 75、0.5 → 25。範囲外 (<see cref="ValidateParameters"/> が先に弾く) は 0 / 100。
     /// </summary>
     public static uint ToCevioSpeed(double speed)
         => ToScale(50 + 25 * Math.Log2(Cache.CacheKeyGenerator.NormalizeParameter(speed)));
 
     /// <summary>
-    /// <c>--pitch</c> を CeVIO の Tone にする。0.0 → 50、±<see cref="PitchRange"/> → 100 / 0。範囲外は 0 / 100。
+    /// <c>--pitch</c> を CeVIO の Tone にする。0.0 → 50、±<see cref="PitchRange"/> → 100 / 0。範囲外 (<see cref="ValidateParameters"/> が先に弾く) は 0 / 100。
     /// </summary>
     public static uint ToCevioTone(double pitch)
         => ToScale(50 + Cache.CacheKeyGenerator.NormalizeParameter(pitch) / PitchRange * 50);
 
     /// <summary>
-    /// 16bit PCM の WAV の各サンプルに <paramref name="gain"/> を掛ける。1.0 ならそのまま返す。
+    /// 話速・音高が CeVIO で指定できる範囲か (Speed / Tone の 0〜100 に収まるか)。ロックを待つ前 (<see cref="ArgumentParser"/>) に検証する。
     /// </summary>
-    /// <remarks>
-    /// 1.0 を超えて割れても値が反対側に回り込まないよう、[-1, 1] に収める (<see cref="FillerManager"/> の音量と同じ)。
-    /// </remarks>
-    public static byte[] ApplyGain(byte[] wavData, float gain)
+    /// <returns>範囲外ならオプション名と理由。範囲内なら null</returns>
+    public static (string Option, string Reason)? ValidateParameters(VoiceRequest request)
     {
-        if (gain == 1.0f)
-        {
-            return wavData;
-        }
+        ArgumentNullException.ThrowIfNull(request);
 
-        using var reader = new WaveFileReader(new MemoryStream(wavData));
-        var source = reader.ToSampleProvider();
-        using var output = new MemoryStream();
-        using (var writer = new WaveFileWriter(output, reader.WaveFormat))
+        var speed = Cache.CacheKeyGenerator.NormalizeParameter(request.Speed);
+        if (speed is < MinSpeed or > MaxSpeed)
         {
-            var buffer = new float[reader.WaveFormat.SampleRate];
-            int read;
-            while ((read = source.Read(buffer)) > 0)
-            {
-                for (var i = 0; i < read; i++)
-                {
-                    buffer[i] = Math.Clamp(buffer[i] * gain, -1f, 1f);
-                }
-                writer.WriteSamples(buffer, 0, read);
-            }
+            return ("--speed", $"CeVIO AI では 0.25〜4.0 です: {request.Speed.ToString(CultureInfo.InvariantCulture)}");
         }
-        return output.ToArray();
+        var pitch = Cache.CacheKeyGenerator.NormalizeParameter(request.Pitch);
+        if (pitch is < -PitchRange or > PitchRange)
+        {
+            return ("--pitch", $"CeVIO AI では -0.15〜0.15 です: {request.Pitch.ToString(CultureInfo.InvariantCulture)}");
+        }
+        return null;
     }
 
     /// <summary>

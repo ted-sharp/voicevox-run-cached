@@ -107,11 +107,8 @@ public class TextToSpeechProcessor
         // (合成した文が全部失敗しても、キャッシュから鳴った文があれば一部失敗)
         if (synthesisResult.FailureCount == segments.Count)
         {
-            throw new VoicevoxRunCachedException(
-                errorCode: ErrorCodes.Audio.AudioGenerationFailed,
-                message: $"All {synthesisResult.AttemptedCount} segments failed to synthesize",
-                userMessage: "全てのセグメントの音声合成に失敗しました。",
-                suggestedSolution: "合成エンジンの状態とログを確認してください。");
+            throw synthesisResult.ToAllFailedException(
+                $"All {synthesisResult.AttemptedCount} segments failed to synthesize", "全てのセグメントの音声合成に失敗しました。");
         }
 
         bool hasPartialFailure = synthesisResult.FailureCount > 0;
@@ -232,10 +229,12 @@ public class TextToSpeechProcessor
     private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, VoiceRequest request, bool verbose, CancellationToken cancellationToken)
     {
         var playbackStartTime = _clock.UtcNow;
-        // フィラーも読み上げと同じ話者の声 (--init -s で話者ごとに生成したもの)・同じ音量にする
+        // フィラーも読み上げと同じ話者の声 (--init -s で話者ごとに生成したもの)・同じ音量にする。文と待ち 1 回の回数はエンジンごと
+        var engine = _engines.Get(request.Engine);
         await _audioPlayer.PlayStreamingAsync(
             reader,
-            ct => _fillerManager.GetRandomFillerAudioAsync(request.Engine, request.Speaker, request.Volume, ct),
+            ct => _fillerManager.GetRandomFillerAudioAsync(engine, request.Speaker, request.Volume, ct),
+            engine.FillerSettings.MaxFillersPerWait,
             cancellationToken);
 
         if (verbose)

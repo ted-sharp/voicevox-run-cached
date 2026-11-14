@@ -48,11 +48,8 @@ public class InitCommandHandler
         // 終了コードは通常の読み上げと揃える: 全部失敗は AUDIO エラー (5)、一部失敗は PartialFailureExitCode (8)
         if (result.AttemptedCount > 0 && result.SuccessCount == 0)
         {
-            throw new VoicevoxRunCachedException(
-                errorCode: ErrorCodes.Audio.AudioGenerationFailed,
-                message: $"All {result.AttemptedCount} fillers failed to generate",
-                userMessage: "全てのフィラー音声の生成に失敗しました。",
-                suggestedSolution: "合成エンジンの状態とログを確認してください。");
+            throw result.ToAllFailedException(
+                $"All {result.AttemptedCount} fillers failed to generate", "全てのフィラー音声の生成に失敗しました。");
         }
 
         if (result.FailureCount > 0)

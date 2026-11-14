@@ -6,6 +6,8 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
 - **セグメント単位キャッシュ**: 文の一部だけ変えても変更されていない部分はキャッシュから即再生
 - **ストリーミング再生**: キャッシュ済み部分を再生しつつ未キャッシュ部分をバックグラウンド生成、待機中はフィラー音声で繋ぐ
 - **エンジン自動管理**: VOICEVOX / AIVIS Speech のプロセス起動・常駐・停止を自動化
+- **VOICEPEAK にも対応**: `--engine voicepeak` で VOICEPEAK のコマンドライン版を使う ([VOICEPEAK を使う](#voicepeak-を使う))
+- **CeVIO AI にも対応**: `--engine cevio` で CeVIO AI のキャストを使う ([CeVIO AI を使う](#cevio-ai-を使う))
 
 ## 目次
 
@@ -19,6 +21,8 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
   - [終了コード](#終了コード)
   - [出力先と文字コード](#出力先と文字コード)
 - [設定 (`appsettings.json`)](#設定-appsettingsjson)
+  - [VOICEPEAK を使う](#voicepeak-を使う)
+  - [CeVIO AI を使う](#cevio-ai-を使う)
 - [仕組み](#仕組み)
   - [セグメント単位キャッシュ](#セグメント単位キャッシュ)
   - [フィラー音声](#フィラー音声)
@@ -27,7 +31,6 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
 - [パフォーマンス計測](#パフォーマンス計測)
 - [トラブルシューティング](#トラブルシューティング)
 - [Claude Code Hooks との連携](#claude-code-hooks-との連携)
-- [CeVIO AI を使う](#cevio-ai-を使う)
 - [開発](#開発)
 - [ライセンス](#ライセンス)
 - [関連リンク](#関連リンク)
@@ -37,6 +40,8 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
 - **OS**: Windows x64
 - **VOICEVOX エンジン** (デフォルト `http://127.0.0.1:50021`) — [VOICEVOX 公式](https://voicevox.hiroshiba.jp/) からダウンロード。AIVIS Speech にも対応 (設定で切替)
 - 既定で `AutoStartEngine: true` のためエンジンは自動起動される。外部で起動済みのエンジンにも接続可能
+- **VOICEPEAK** (任意) — `--engine voicepeak` で使う場合のみ。コマンドラインに対応した製品版が必要
+- **CeVIO AI** (任意) — `--engine cevio` で使う場合のみ。使えるのはライセンスのあるキャスト
 
 ## インストール
 
@@ -110,8 +115,8 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 
 | Option | 説明 | デフォルト |
 |---|---|---|
-| `--engine <name>` | 合成エンジン (`voicevox`。大文字小文字は区別しない) | `Synthesis.Engine` (`Voicevox`) |
-| `--speaker, -s <id>` | スピーカー。VOICEVOX は ID (0 以上) | エンジンの `DefaultSpeaker` (VOICEVOX は `VoiceVox.DefaultSpeaker` = 1) |
+| `--engine <name>` | 合成エンジン (`voicevox` / `voicepeak` / `cevio`。大文字小文字は区別しない) | `Synthesis.Engine` (`Voicevox`) |
+| `--speaker, -s <id>` | スピーカー。VOICEVOX は ID (0 以上)、VOICEPEAK はナレーター名、CeVIO AI はキャスト名 (どちらも感情付きも可。[VOICEPEAK を使う](#voicepeak-を使う) / [CeVIO AI を使う](#cevio-ai-を使う)) | エンジンの `DefaultSpeaker` (VOICEVOX は `VoiceVox.DefaultSpeaker` = 1) |
 | `--speed <value>` | 速度。0 より大きい値 (目安 0.5–2.0) | 1.0 |
 | `--pitch <value>` | ピッチ (目安 -0.15–0.15) | 0.0 |
 | `--volume <value>` | 合成する音声の音量。0 以上 (目安 0.0–2.0)。キャッシュと `--out` にも反映される (再生時の音量は `Audio.Volume`) | 1.0 |
@@ -172,7 +177,9 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "ConnectionTimeout": 30,      // 秒。HTTP リクエスト 1 回の上限 (タイムアウトはリトライしない)。話者の初期化 (モデルの読み込み) は完了まで待つ
     "AutoStartEngine": true,
     "StartupTimeoutSeconds": 30,
-    "KeepEngineRunning": true     // false ならアプリ終了時にエンジンも停止 (強制終了時を除く。Hooks の注意を参照)
+    "KeepEngineRunning": true,    // false ならアプリ終了時にエンジンも停止 (強制終了時を除く。Hooks の注意を参照)
+    "FillerTexts": [],            // このエンジンのフィラーの文。空なら Filler.FillerTexts
+    // "MaxFillersPerWait": 1     // 次の文を待つ 1 回に鳴らすフィラーの上限。null = 上限なし (VOICEVOX は省略時も上限なし)、0 = このエンジンでは鳴らさない
   },
   "Cache": {
     "Directory": "./cache/audio/",
@@ -206,11 +213,63 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "MaxFileSizeMb": 10,          // ログファイル単体の最大サイズ (MB)
     "MaxFileCount": 5             // ローテーションで保持するファイル数
   },
-  "Test": { "Message": "..." }    // --test で読み上げる文
+  "Test": { "Message": "..." },   // --test で読み上げる文
+  "Voicepeak": {
+    "ExePath": "",                // 空なら %ProgramFiles%\VOICEPEAK\voicepeak.exe
+    "DefaultSpeaker": "",         // 例: "Otomachi Una" / "Otomachi Una:joy=50"。空なら --engine voicepeak では -s が必須
+    "TimeoutSeconds": 60,         // voicepeak.exe 1 回 (1 文) を待つ上限 (秒、10-600)
+    "FillerTexts": ["えーっと、ちょっと待ってくださいね、", "少々お待ちください、", "..."],  // 1 文 10 秒ほどかかるので長めのフィラー
+    "MaxFillersPerWait": 2        // 次の文を待つ 1 回に鳴らすフィラーの上限。null = 上限なし、0 = 鳴らさない (省略時は 2)
+  }
 }
 ```
 
 **AIVIS Speech に切替えるには**: `EngineType: "AivisSpeech"`, `BaseUrl: "http://127.0.0.1:10101"`, `EngineArguments` のポート、`DefaultSpeaker: 888753760` を変更。
+
+### VOICEPEAK を使う
+
+VOICEPEAK (製品版) のコマンドライン (`voicepeak.exe`) で合成する。`--engine voicepeak` を付けるか、`Synthesis.Engine` を `"Voicepeak"` にする。
+
+```
+VoicevoxRunCached speakers --engine voicepeak                       # ナレーターと感情の一覧
+VoicevoxRunCached "作業が完了しました。" --engine voicepeak -s "Otomachi Una"
+VoicevoxRunCached "作業が完了しました。" --engine voicepeak -s "Otomachi Una:joy=50,sad=20"
+VoicevoxRunCached --init --engine voicepeak -s "Otomachi Una"       # フィラーも VOICEPEAK の声で生成
+```
+
+- 話者は `ナレーター名` か `ナレーター名:感情=値,...` (値は 0〜100)。感情が違えば別のキャッシュになる
+- `--speed` は 0.5〜2.0、`--pitch` は -0.15〜0.15 (VOICEPEAK の -300〜300 に換算)。範囲外はエラー (終了コード 1)。`--volume` は合成した音声に掛ける
+- **1 文の合成に 10 秒ほどかかる** (`voicepeak.exe` を文ごとに起動するため。`speakers` も同じくらいかかる)。キャッシュ済みの文はすぐ鳴るので、Hooks のような決まった文の通知に向く。初めての文の待ち時間はフィラーで埋められる (VOICEPEAK 用の長めのフィラーを待ち 1 回に 2 回まで。[フィラー音声](#フィラー音声))
+- 存在しない話者・感情の名前は、最初の文の合成が失敗した時点で残りの文の合成をやめる (VOICEPEAK が理由を返さないので、`speakers --engine voicepeak` で名前を確認する)
+
+### CeVIO AI を使う
+
+[CeVIO AI](https://cevio.jp/) がインストールされていれば、`--engine cevio` で CeVIO AI のキャストで読み上げられる (外部連携インターフェイス (COM) を使う。ライセンスのあるキャストだけ)。`Synthesis.Engine` を `"Cevio"` にすれば既定のエンジンになる。
+
+```
+VoicevoxRunCached speakers --engine cevio                       # 使えるキャストと感情
+VoicevoxRunCached "こんにちは" --engine cevio -s "花隈千冬"
+VoicevoxRunCached "こんにちは" --engine cevio -s "花隈千冬:嬉しい=70,普通=30"
+VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラー (話者・感情ごと)
+```
+
+- **話者** (`-s`): キャスト名。感情は `キャスト名:感情=値,感情=値` (値は 0〜100 の整数) で指定し、書いていない感情は 0 になる。感情を書かなければキャストの既定値 (多くは `普通=100`)。存在しないキャスト・感情は終了コード 1。`Cevio.DefaultSpeaker` が空なら `--engine cevio` では `-s` が必須
+- **パラメータ**: `--speed` は VOICEVOX と同じ倍率 (2.0 で約 2 倍速) で 0.25〜4.0、`--pitch` は -0.15〜0.15 (CeVIO の音の高さの端で、約 ±5 半音)。範囲外はエラー (終了コード 1)。`--volume` は VOICEVOX と同じく波形に掛ける倍率 (0.5 で −6dB、0 で無音)。CeVIO の声質・抑揚は既定値のまま
+- **起動**: CeVIO AI が起動していなければ自動で起動する (`Cevio.AutoStartHost`。起動に 5 秒ほどかかる)。自分で起動した CeVIO AI は既定で読み上げの後も残す (`Cevio.KeepHostRunning: false` なら終わるときに閉じる。外部で起動済みだった CeVIO AI は閉じない)。CeVIO AI は常にウィンドウを表示する
+- **キャッシュ**: VOICEVOX と同じく文ごとに保存する。キーにはエンジン・キャスト・感情が入るので、VOICEVOX のキャッシュとは混ざらない。CeVIO の辞書で読みを直したときやキャストを更新したときは `--refresh` で作り直す
+- **失敗したとき**: 合成の前に CeVIO AI が無い・起動に失敗したときは終了コード 3 (応答しないまま `SynthesisTimeoutSeconds` を過ぎたときは 6)。読み上げの途中で CeVIO AI を閉じると (応答しないときも)、残りの文の合成をやめ、鳴らせた文があれば 8、無ければ 5 で終わる
+
+```jsonc
+"Cevio": {
+  "DefaultSpeaker": "",          // -s を省略したときのキャスト (感情も書ける)
+  "AutoStartHost": true,         // 起動していなければ起動する
+  "HostPath": "",                // CeVIO AI.exe。空なら %ProgramFiles%\CeVIO\CeVIO AI\CeVIO AI.exe
+  "StartupTimeoutSeconds": 60,
+  "KeepHostRunning": true,       // 自分で起動した CeVIO AI を残す
+  "SynthesisTimeoutSeconds": 30, // 1 文の合成などを待つ上限 (秒)
+  "FillerTexts": []              // CeVIO 用のフィラー。空なら Filler.FillerTexts (MaxFillersPerWait も書ける。省略時は上限なし)
+}
+```
 
 ## 仕組み
 
@@ -242,6 +301,8 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 フィラーは `--init` で事前生成したキャッシュからしか再生されない。有効にする前に一度 `--init` を実行しておくこと (`--init` は `Filler.Enabled` に関係なく生成する。未生成だとフィラーは鳴らず、Warning ログが 1 回出るだけ)。`--clear` はフィラーのキャッシュも消すので、その後は `--init` をやり直す。
 
 フィラーは読み上げと同じ話者の声で再生する (途中で声が変わらないように)。`--init` が生成するのは既定のエンジン・`DefaultSpeaker` の分なので、`--speaker 3` のように別の話者 (や `--engine` で別のエンジン) で読み上げるなら `--init -s 3` (`--init --engine <name> -s <話者>`) でその話者の分も生成しておく。生成していない話者ではフィラーは鳴らない。フィラーの音量は読み上げの `--volume` に合わせる (話速・音高は既定のまま)。フィラーの読み込みや再生に失敗しても本編の読み上げは止めず、その回はフィラーを使わない (再生がタイムアウトしたときは、再生デバイスの異常として本編と同じく止める)。
+
+フィラーの文と回数はエンジンごとに変えられる。各エンジンのセクションの `FillerTexts` (空なら `Filler.FillerTexts`) と `MaxFillersPerWait` (次の文を待つ 1 回に鳴らす上限。`null` なら届くまで繰り返す、`0` ならそのエンジンでは鳴らさない。省略したときは VOICEVOX が上限なし、VOICEPEAK が 2 なので、VOICEPEAK で上限をなくすには `null` を書く)。VOICEPEAK は 1 文の合成に 10 秒ほどかかるので、既定で長めの文を待ち 1 回に 2 回までにしている。文を変えたら `--init` でその文の分を生成し直す。
 
 ### 同時実行
 
@@ -315,35 +376,6 @@ Claude Code に応答ごとの一言を書かせてキャラクターの声で�
 - エンジンに接続するのは合成が必要なときだけ。決まった文言の通知は 2 回目以降キャッシュから再生されるので、エンジンが止まっていても起動を待たずにすぐ鳴る
 - キャッシュに無い文を合成するとき、既定 (`AutoStartEngine: true`) ではエンジンが停止していても自動起動されるが、起動を待つ分だけ通知が遅れる。遅延を避けたい場合はエンジンを事前に起動しておく (`KeepEngineRunning: true` (既定) なら一度起動したエンジンは常駐する)
 - `KeepEngineRunning: false` でも、自分が起動したエンジンを止めるのはプロセスが終了処理まで進んだとき (エラー終了・1 回目の Ctrl+C を含む) だけ。Hooks の `timeout` で強制終了されたときや Ctrl+C を 2 回押したときはエンジンが動いたまま残り、以後の実行はそれを外部で起動済みのエンジンとみなして止めない。残ったエンジンは手動で終了する
-
-## CeVIO AI を使う
-
-[CeVIO AI](https://cevio.jp/) がインストールされていれば、`--engine cevio` で CeVIO AI のキャストで読み上げられる (外部連携インターフェイス (COM) を使う。ライセンスのあるキャストだけ)。
-
-```bash
-VoicevoxRunCached speakers --engine cevio                       # 使えるキャストと感情
-VoicevoxRunCached "こんにちは" --engine cevio -s "花隈千冬"
-VoicevoxRunCached "こんにちは" --engine cevio -s "花隈千冬:嬉しい=70,普通=30"
-VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラー (話者・感情ごと)
-```
-
-- **話者** (`-s`): キャスト名。感情は `キャスト名:感情=値,感情=値` (値は 0〜100 の整数) で指定し、書いていない感情は 0 になる。感情を書かなければキャストの既定値 (多くは `普通=100`)。存在しないキャスト・感情は終了コード 1
-- **既定のエンジンにする**: `Synthesis.Engine` を `Cevio` にし、`Cevio.DefaultSpeaker` にキャスト名を書く (`-s` を省略したときの話者。空のときは `--engine cevio` に `-s` が必要)
-- **パラメータ**: `--speed` は VOICEVOX と同じ倍率 (2.0 で約 2 倍速。CeVIO の話速の範囲 (約 0.2〜3 倍) を超える値は端に丸める)。`--pitch` は ±0.15 が CeVIO の音の高さの端 (約 ±5 半音)。`--volume` は VOICEVOX と同じく波形に掛ける倍率 (0.5 で −6dB、0 で無音)。CeVIO の声質・抑揚は既定値のまま
-- **起動**: CeVIO AI が起動していなければ自動で起動する (`Cevio.AutoStartHost`。起動に 5 秒ほどかかる)。自分で起動した CeVIO AI は既定で読み上げの後も残す (`Cevio.KeepHostRunning: false` なら終わるときに閉じる。外部で起動済みだった CeVIO AI は閉じない)。CeVIO AI は常にウィンドウを表示する
-- **キャッシュ**: VOICEVOX と同じく文ごとに保存する。キーにはエンジン・キャスト・感情が入るので、VOICEVOX のキャッシュとは混ざらない。CeVIO の辞書で読みを直したときやキャストを更新したときは `--refresh` で作り直す
-- CeVIO AI が無い・起動に失敗した・閉じられたときは終了コード 3。読み上げの途中で CeVIO AI を閉じると残りの文の合成を中止する (CeVIO AI が `SynthesisTimeoutSeconds` 以内に応答しないときも同じ)
-
-```jsonc
-"Cevio": {
-  "DefaultSpeaker": "",          // -s を省略したときのキャスト (感情も書ける)
-  "AutoStartHost": true,         // 起動していなければ起動する
-  "HostPath": "",                // CeVIO AI.exe。空なら %ProgramFiles%\CeVIO\CeVIO AI\CeVIO AI.exe
-  "StartupTimeoutSeconds": 60,
-  "KeepHostRunning": true,       // 自分で起動した CeVIO AI を残す
-  "SynthesisTimeoutSeconds": 30  // 1 文の合成などを待つ上限
-}
-```
 
 ## 開発
 

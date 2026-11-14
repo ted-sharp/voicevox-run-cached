@@ -96,6 +96,27 @@ public class ApplicationBootstrapTests
     }
 
     [Test]
+    [Arguments("""{ "Voicepeak": { } }""", 2)]
+    [Arguments("""{ "Voicepeak": { "MaxFillersPerWait": null } }""", null)]
+    [Arguments("""{ "Voicepeak": { "MaxFillersPerWait": 0 } }""", 0)]
+    public async Task MaxFillersPerWait_IsLoaded(string json, int? expected)
+    {
+        // VOICEPEAK は省略すると 2 (古い appsettings.json でもフィラーが鳴り続けないように)。上限をなくすには null を書く (README の説明)
+        var dir = CreateConfigDirectory(json);
+        try
+        {
+            var settings = ApplicationBootstrap.LoadSettings(["text"], dir);
+
+            await Assert.That(settings.Voicepeak.MaxFillersPerWait).IsEqualTo(expected);
+            await Assert.That(settings.VoiceVox.MaxFillersPerWait).IsNull();
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
     public async Task MissingAppSettings_ThrowsConfigurationError()
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_config_" + Guid.NewGuid().ToString("N"));

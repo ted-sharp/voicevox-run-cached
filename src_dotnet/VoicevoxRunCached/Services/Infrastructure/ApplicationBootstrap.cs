@@ -106,6 +106,7 @@ public static class ApplicationBootstrap
         configuration.GetSection("Lock").Bind(settings.Lock);
         configuration.GetSection("Logging").Bind(settings.Logging);
         configuration.GetSection("Test").Bind(settings.Test);
+        configuration.GetSection("Voicepeak").Bind(settings.Voicepeak);
         configuration.GetSection("Cevio").Bind(settings.Cevio);
 
         // 相対パス + UseExecutableBaseDirectory=true の場合、検証前に絶対パスへ解決しておく

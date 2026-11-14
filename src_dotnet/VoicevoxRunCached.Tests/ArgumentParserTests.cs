@@ -728,9 +728,12 @@ public class ArgumentParserTests
     [Test]
     [Arguments("text --engine cevio")]
     [Arguments("text --engine cevio -s 花隈千冬:嬉しい=101")]
+    [Arguments("text --engine cevio -s 花隈千冬 --speed 5")]
+    [Arguments("text --pitch 0.2 -s 花隈千冬 --engine cevio")]
     public async Task Parse_CevioWithoutValidSpeaker_ThrowsInvalidArguments(string args)
     {
-        // Cevio.DefaultSpeaker が空なら -s が必須 (VOICEVOX の ID のように決まった既定が無い)
+        // Cevio.DefaultSpeaker が空なら -s が必須 (VOICEVOX の ID のように決まった既定が無い)。
+        // CeVIO で指定できない話速・音高も、ロックを待つ前に引数エラーにする
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
             Task.FromResult(ArgumentParser.Parse(args.Split(' '), DefaultSettings())));
 
