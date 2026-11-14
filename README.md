@@ -77,8 +77,6 @@ task publish:zip    # 配布用 (バージョン付き ZIP)
 
 出力は .NET ランタイムを含む単一の `VoicevoxRunCached.exe` (約 79MB) と `appsettings.json` で、実行する PC に .NET を入れる必要はない (リリース版の ZIP も同じ)。一緒に出る `VoicevoxRunCached.pdb` はデバッグ用で、実行には要らない。
 
-[Task](https://taskfile.dev) が無い場合は `src_dotnet/_publish.cmd` / `_publish_zip.cmd` でも同じ出力になる。
-
 ## 使い方
 
 ```bash

@@ -56,8 +56,6 @@ task publish:zip
 # → src_dotnet/publish/VoicevoxRunCached-vX.Y.Z-win-x64.zip
 ```
 
-Task が無い環境では `src_dotnet/_publish_zip.cmd` でも同じものができる。
-
 ZIP を任意のフォルダに展開して確認する:
 
 - ファイル名のバージョンが `X.Y.Z` であること

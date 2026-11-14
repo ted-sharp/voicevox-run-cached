@@ -246,5 +246,5 @@ Options:
 ## Code Standards
 
 - .NET 11 / C# 15 (primary constructors, collection expressions 等)。Nullable 有効
-- バージョンは `src_dotnet/Directory.Build.props` の `<Version>` 1 か所 (AssemblyVersion / FileVersion は書かない。`task publish:zip` と `_publish_zip.cmd` もここから読む)
+- バージョンは `src_dotnet/Directory.Build.props` の `<Version>` 1 か所 (AssemblyVersion / FileVersion は書かない。`task publish:zip` もここから読む)
 - ドメインエラーは `VoicevoxRunCachedException` に `ErrorCode` を付けて投げる。framework 例外は無理に隠さない
