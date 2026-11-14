@@ -6,7 +6,7 @@ namespace VoicevoxRunCached.Services.Synthesis;
 
 /// <summary>
 /// エンジンかキャッシュに触れるコマンド (読み上げ・<c>--init</c>・<c>speakers</c>・<c>--clear</c>) を
-/// <see cref="InterProcessLock.SpeechLockPath"/> でプロセス間に直列化する入口。
+/// <see cref="LockFilePath"/> (既定 <see cref="InterProcessLock.SpeechLockPath"/>) でプロセス間に直列化する入口。
 /// </summary>
 /// <remarks>
 /// <para>ロックの中で処理を実行し、ロックを解放する<b>前に</b>全エンジンの <see cref="ISpeechEngine.StopIfNotKept"/> を呼ぶ。
@@ -29,6 +29,12 @@ public class SpeechLock
     }
 
     /// <summary>
+    /// ロックファイル。既定は <see cref="InterProcessLock.SpeechLockPath"/> (ほかのプロセスと共有する)。
+    /// テストで差し替え、実際の読み上げ (Hooks) やほかのテストとロックを取り合わないようにする。
+    /// </summary>
+    public string LockFilePath { get; init; } = InterProcessLock.SpeechLockPath;
+
+    /// <summary>
     /// ロックを取得して <paramref name="action"/> を実行する。後から来た方は先の処理が終わるまで待つ。
     /// </summary>
     /// <param name="action">ロックの中で行う処理</param>
@@ -40,7 +46,7 @@ public class SpeechLock
         ArgumentNullException.ThrowIfNull(action);
 
         var maxWait = ResolveMaxWait(maxWaitSeconds);
-        using var speechLock = await InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, _logger, maxWait, cancellationToken);
+        using var speechLock = await InterProcessLock.AcquireAsync(LockFilePath, _logger, maxWait, cancellationToken);
         try
         {
             return await action();

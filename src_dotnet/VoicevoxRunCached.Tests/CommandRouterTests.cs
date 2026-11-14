@@ -14,6 +14,7 @@ public class CommandRouterTests
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_router_" + Guid.NewGuid().ToString("N"));
         using var stoppedEngine = new StoppedEngine();
+        using var lockFile = new TestLockFile();
         var settings = new AppSettings
         {
             // 振り分けを誤ってエンジンに接続しても、手元で動いているエンジンには届かないようにする
@@ -24,7 +25,7 @@ public class CommandRouterTests
         };
         try
         {
-            using var provider = new AppServiceProvider { Settings = settings, Logger = NullLogger.Instance };
+            using var provider = new AppServiceProvider { Settings = settings, Logger = NullLogger.Instance, SpeechLockPath = lockFile.Path };
             await test(provider.GetService<CommandRouter>(), settings.Cache.Directory);
         }
         finally

@@ -15,6 +15,7 @@ public class CacheCommandHandlerTests
         // 回帰: --clear がプロセス間ロックを取らず、読み上げのキャッシュ保存 (meta.json → .opus) と並行して走っていた。
         // 間に消すと meta.json の無い .opus が残って期限切れの掃除で消えず、書き込み中のファイルに当たると --clear が失敗する
         var dir = Path.Combine(Path.GetTempPath(), "vrc_clear_" + Guid.NewGuid().ToString("N"));
+        using var lockFile = new TestLockFile();
         try
         {
             var cacheSettings = new CacheSettings { Directory = Path.Combine(dir, "audio"), UseExecutableBaseDirectory = false };
@@ -23,11 +24,11 @@ public class CacheCommandHandlerTests
             var handler = new CacheCommandHandler(
                 new AudioCacheManager(cacheSettings, NullLogger.Instance, SystemClock.Instance),
                 new FillerManager(fillerSettings, cacheSettings, NullLogger.Instance),
-                new SpeechLock(TestEngines.Create(engineManager), new LockSettings(), NullLogger.Instance),
+                lockFile.CreateSpeechLock(TestEngines.Create(engineManager)),
                 NullLogger.Instance);
 
             Task<int> clear;
-            using (await InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, NullLogger.Instance))
+            using (await InterProcessLock.AcquireAsync(lockFile.Path, NullLogger.Instance))
             {
                 clear = handler.HandleClearCacheAsync();
                 await Task.Delay(300);

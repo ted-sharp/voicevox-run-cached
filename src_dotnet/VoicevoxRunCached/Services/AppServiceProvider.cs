@@ -31,7 +31,7 @@ namespace VoicevoxRunCached.Services;
 [Singleton(typeof(VoicepeakEngine))]
 [Singleton(typeof(SpeechEngineProvider))]
 [Singleton(typeof(TextSegmentProcessor))]
-[Singleton(typeof(SpeechLock))]
+[Singleton(typeof(SpeechLock), Factory = nameof(CreateSpeechLock))]
 // 音声再生サブシステム (IDisposable はプロバイダの Dispose で破棄される)
 [Singleton(typeof(AudioDeviceManager))]
 [Singleton(typeof(AudioFormatDetector))]
@@ -67,4 +67,12 @@ public partial class AppServiceProvider
     public LockSettings Lock => Settings.Lock;
     public VoicepeakSettings Voicepeak => Settings.Voicepeak;
     public CevioSettings Cevio => Settings.Cevio;
+
+    /// <summary>
+    /// <see cref="SpeechLock"/> のロックファイル。テストで差し替える (既定はほかのプロセスと共有するもの)。
+    /// </summary>
+    public string SpeechLockPath { get; init; } = InterProcessLock.SpeechLockPath;
+
+    private SpeechLock CreateSpeechLock(SpeechEngineProvider engines, LockSettings settings, ILogger logger)
+        => new(engines, settings, logger) { LockFilePath = SpeechLockPath };
 }

@@ -16,12 +16,13 @@ public class SpeakerCommandHandlerTests
     {
         // 回帰: speakers がロックを取らず、読み上げと同時にエンジンを二重に起動しうる・
         // KeepEngineRunning=false で自分が起動したエンジンを読み上げの途中で止めうる状態だった
+        using var lockFile = new TestLockFile();
         using var engine = new FakeEngineServer();
 
         Task<int> speakers;
-        using (await InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, NullLogger.Instance))
+        using (await InterProcessLock.AcquireAsync(lockFile.Path, NullLogger.Instance))
         {
-            speakers = RunSpeakersAsync(engine, engine.CreateSettings());
+            speakers = RunSpeakersAsync(lockFile, engine, engine.CreateSettings());
             await Task.Delay(300);
             await Assert.That(speakers.IsCompleted).IsFalse();
         }
@@ -35,9 +36,11 @@ public class SpeakerCommandHandlerTests
         // 読み上げ・--init と同じく、KeepEngineRunning=false で自分が起動したエンジンは speakers から戻った時点 (Dispose 前) で止まっていること
         using var engineProcess = new FakeEngineProcess();
         using var engine = new FakeEngineServer(versionAvailable: () => engineProcess.HasStarted);
+        using var lockFile = new TestLockFile();
         var stoppedBeforeDispose = false;
 
         var exitCode = await RunSpeakersAsync(
+            lockFile,
             engine,
             engineProcess.CreateSettings(engine.BaseUrl),
             afterCommand: async () => stoppedBeforeDispose = await engineProcess.HasStoppedWithinAsync(TimeSpan.FromSeconds(3)));
@@ -46,15 +49,17 @@ public class SpeakerCommandHandlerTests
         await Assert.That(stoppedBeforeDispose).IsTrue();
     }
 
+    /// <param name="lockFile">speakers が取るロック</param>
     /// <param name="engine">API の呼び出し先</param>
     /// <param name="voiceVoxSettings">エンジン管理の設定</param>
     /// <param name="afterCommand">speakers から戻った後、エンジン管理を破棄する前に呼ぶ</param>
-    private static async Task<int> RunSpeakersAsync(FakeEngineServer engine, VoiceVoxSettings voiceVoxSettings, Func<Task>? afterCommand = null)
+    private static async Task<int> RunSpeakersAsync(
+        TestLockFile lockFile, FakeEngineServer engine, VoiceVoxSettings voiceVoxSettings, Func<Task>? afterCommand = null)
     {
         using var engineManager = new VoiceVoxEngineManager(voiceVoxSettings, NullLogger.Instance, SystemClock.Instance);
         using var apiClient = engine.CreateApiClient();
         var handler = new SpeakerCommandHandler(
-            TestEngines.Create(engineManager, apiClient), new SpeechLock(TestEngines.Create(engineManager), new LockSettings(), NullLogger.Instance), NullLogger.Instance);
+            TestEngines.Create(engineManager, apiClient), lockFile.CreateSpeechLock(TestEngines.Create(engineManager)), NullLogger.Instance);
 
         var exitCode = await handler.HandleSpeakersAsync(SpeechEngineKind.Voicevox);
         if (afterCommand != null)

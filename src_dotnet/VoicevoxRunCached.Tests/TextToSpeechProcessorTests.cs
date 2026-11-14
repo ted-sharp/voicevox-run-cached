@@ -179,6 +179,7 @@ public class TextToSpeechProcessorTests
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_tts_" + Guid.NewGuid().ToString("N"));
         var cacheDir = Path.Combine(dir, "audio");
+        using var lockFile = new TestLockFile();
         var settings = new AppSettings
         {
             VoiceVox = voiceVox,
@@ -189,7 +190,7 @@ public class TextToSpeechProcessorTests
 
         try
         {
-            using var provider = new AppServiceProvider { Settings = settings, Logger = NullLogger.Instance };
+            using var provider = new AppServiceProvider { Settings = settings, Logger = NullLogger.Instance, SpeechLockPath = lockFile.Path };
 
             // ArgumentParser の既定値 (DefaultSpeaker, speed 1.0, pitch 0.0, volume 1.0) と同じキーで保存する
             var cachedRequest = new VoiceRequest(CachedText, "1");

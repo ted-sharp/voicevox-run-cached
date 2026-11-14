@@ -26,11 +26,12 @@ public class SpeechLockTests
     [Test]
     public async Task RunAsync_GivesUpWithoutRunningWhenLockIsHeld()
     {
+        using var lockFile = new TestLockFile();
         using var engineManager = new VoiceVoxEngineManager(new VoiceVoxSettings(), NullLogger.Instance, SystemClock.Instance);
-        var speechLock = new SpeechLock(TestEngines.Create(engineManager), new LockSettings { MaxWaitSeconds = 0 }, NullLogger.Instance);
+        var speechLock = lockFile.CreateSpeechLock(TestEngines.Create(engineManager), new LockSettings { MaxWaitSeconds = 0 });
         var ran = false;
 
-        using (await InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, NullLogger.Instance))
+        using (await InterProcessLock.AcquireAsync(lockFile.Path, NullLogger.Instance))
         {
             var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => speechLock.RunAsync(() =>
             {

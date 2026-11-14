@@ -80,6 +80,7 @@ public class InitCommandHandlerTests
         FakeEngineServer engine, string speaker = FakeEngineServer.Speaker, VoiceVoxSettings? voiceVoxSettings = null, Func<Task>? afterInit = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
+        using var lockFile = new TestLockFile();
         try
         {
             voiceVoxSettings ??= engine.CreateSettings();
@@ -88,7 +89,7 @@ public class InitCommandHandlerTests
             using var apiClient = engine.CreateApiClient();
             var fillerManager = new FillerManager(fillerSettings, new CacheSettings(), NullLogger.Instance);
             var handler = new InitCommandHandler(
-                TestEngines.Create(engineManager, apiClient), fillerManager, new SpeechLock(TestEngines.Create(engineManager), new LockSettings(), NullLogger.Instance), NullLogger.Instance);
+                TestEngines.Create(engineManager, apiClient), fillerManager, lockFile.CreateSpeechLock(TestEngines.Create(engineManager)), NullLogger.Instance);
 
             var exitCode = await handler.HandleInitAsync(SpeechEngineKind.Voicevox, speaker);
             if (afterInit != null)

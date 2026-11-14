@@ -5,6 +5,8 @@ using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services;
 using VoicevoxRunCached.Services.Audio;
+using VoicevoxRunCached.Services.Infrastructure;
+using VoicevoxRunCached.Services.Synthesis;
 
 namespace VoicevoxRunCached.Tests;
 
@@ -24,13 +26,24 @@ public class AppServiceProviderTests
             Cache = new CacheSettings { Directory = Path.Combine(dir, "audio"), UseExecutableBaseDirectory = false },
             Filler = new FillerSettings { Directory = Path.Combine(dir, "filler"), UseExecutableBaseDirectory = false },
         };
-        return (new AppServiceProvider { Settings = settings, Logger = NullLogger.Instance }, dir);
+        // 本物のロックファイルを使わない (TestLockFile と同じ理由)。dir は作られないことがあるので、その外に置く
+        return (new AppServiceProvider { Settings = settings, Logger = NullLogger.Instance, SpeechLockPath = dir + ".lock" }, dir);
     }
 
     private static void DeleteDirectory(string dir)
     {
         if (Directory.Exists(dir))
             Directory.Delete(dir, recursive: true);
+        File.Delete(dir + ".lock");
+    }
+
+    [Test]
+    public async Task SpeechLock_UsesSharedLockFileByDefault()
+    {
+        // Hooks が同時に発火しても直列になるよう、既定ではほかのプロセスと同じロックファイルを使う (差し替えるのはテストだけ)
+        using var provider = new AppServiceProvider { Settings = new AppSettings(), Logger = NullLogger.Instance };
+
+        await Assert.That(provider.GetService<SpeechLock>().LockFilePath).IsEqualTo(InterProcessLock.SpeechLockPath);
     }
 
     [Test]

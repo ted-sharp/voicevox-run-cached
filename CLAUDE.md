@@ -49,6 +49,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - `SpeechLock` はロックを**解放する前に** `VoiceVoxEngineManager.StopEngineIfNotKept` を呼ぶ (`KeepEngineRunning: false` で自分が起動したエンジンだけ止める)。解放後 (Dispose) に止めると、ロックを取った後続が動いているエンジンで合成を始めて途中で失敗する — 各テストクラスの `EngineStartedByUs_IsStoppedBeforeReleasingLock`
 - `--clear` もロックの中で消す (保存途中に消すと meta.json の無い `.opus` が残り、書き込み中のファイルに当たると失敗する) — `CacheCommandHandlerTests`
 - 待つ上限: `Lock.MaxWaitSeconds` (未設定 = 上限なし、0 = 待たない)。読み上げ・`--test` は `--max-wait <秒>` で上書きできる (`SpeechLock.ResolveMaxWait`)。超えたら `LOCK_001` (終了コード 9) で実行しない。`CommandRouter` はスタックトレースなしの Warning にする — `InterProcessLockTests` / `SpeechLockTests`
+- テストは本物のロックファイルを使わない (実際の読み上げやほかのテストと取り合ってタイムアウトする)。`SpeechLock` は `TestLockFile.CreateSpeechLock`、DI 経由は `AppServiceProvider.SpeechLockPath` で一意なファイルに差し替える。既定が共有のファイルであることは `AppServiceProviderTests.SpeechLock_UsesSharedLockFileByDefault`
 - 起動時の設定検証 (`DirectoryValidation.BeWritableDirectory`) はロックより前に走るので、書き込み確認のファイル名は毎回一意にし (固定名だと同時起動で共有違反)、`FileOptions.DeleteOnClose` で OS に消させる
 
 ### 合成エンジンの切り替え (`ISpeechEngine` / `SpeechEngineProvider`)
