@@ -17,6 +17,9 @@ internal sealed class FakeEngineServer : IDisposable
     /// <summary>/speakers に載せる話者 (スタイル) の ID。</summary>
     public const int SpeakerId = 1;
 
+    /// <summary><see cref="SpeakerId"/> を話者 (<c>--speaker</c>) の表記にしたもの。</summary>
+    public const string Speaker = "1";
+
     // /audio_query が返す JSON の最小形
     private const string AudioQueryJson =
         """{"accent_phrases":[],"speedScale":1.0,"pitchScale":0.0,"intonationScale":1.0,"volumeScale":1.0,"outputSamplingRate":24000,"kana":"ア"}""";

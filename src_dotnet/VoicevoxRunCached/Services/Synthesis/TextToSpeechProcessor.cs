@@ -18,34 +18,31 @@ public class TextToSpeechProcessor
     private readonly AudioCacheManager _cacheManager;
     private readonly AudioExportService _audioExportService;
     private readonly AudioPlayer _audioPlayer;
-    private readonly VoiceVoxEngineManager _engineManager;
+    private readonly SpeechEngineProvider _engines;
     private readonly FillerManager _fillerManager;
     private readonly ILogger _logger;
     private readonly TextSegmentProcessor _textProcessor;
-    private readonly VoiceVoxApiClient _apiClient;
     private readonly SegmentProducer _producer;
     private readonly SpeechLock _speechLock;
     private readonly IClock _clock;
 
     public TextToSpeechProcessor(
-        VoiceVoxEngineManager engineManager,
+        SpeechEngineProvider engines,
         TextSegmentProcessor textProcessor,
         AudioExportService audioExportService,
         AudioPlayer audioPlayer,
         AudioCacheManager cacheManager,
-        VoiceVoxApiClient apiClient,
         FillerManager fillerManager,
         SegmentProducer producer,
         SpeechLock speechLock,
         IClock clock,
         ILogger logger)
     {
-        _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
+        _engines = engines ?? throw new ArgumentNullException(nameof(engines));
         _textProcessor = textProcessor ?? throw new ArgumentNullException(nameof(textProcessor));
         _audioExportService = audioExportService ?? throw new ArgumentNullException(nameof(audioExportService));
         _audioPlayer = audioPlayer ?? throw new ArgumentNullException(nameof(audioPlayer));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
-        _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
         _fillerManager = fillerManager ?? throw new ArgumentNullException(nameof(fillerManager));
         _producer = producer ?? throw new ArgumentNullException(nameof(producer));
         _speechLock = speechLock ?? throw new ArgumentNullException(nameof(speechLock));
@@ -55,7 +52,7 @@ public class TextToSpeechProcessor
 
     /// <remarks>
     /// 処理全体 (キャッシュ参照 → 合成 → 再生 → <c>--out</c>) を <see cref="SpeechLock"/> で
-    /// プロセス間に直列化する。Hooks が同時に発火しても音声が重ならず、VOICEVOX API の直列実行と
+    /// プロセス間に直列化する。Hooks が同時に発火しても音声が重ならず、合成エンジンの直列実行と
     /// エンジンの起動もプロセスをまたいで 1 つずつになる。後から来た方は先の読み上げが終わるまで待つ
     /// (上限は <c>--max-wait</c> / <c>Lock.MaxWaitSeconds</c>)。
     /// </remarks>
@@ -110,11 +107,8 @@ public class TextToSpeechProcessor
         // (合成した文が全部失敗しても、キャッシュから鳴った文があれば一部失敗)
         if (synthesisResult.FailureCount == segments.Count)
         {
-            throw new VoicevoxRunCachedException(
-                errorCode: ErrorCodes.Audio.AudioGenerationFailed,
-                message: $"All {synthesisResult.AttemptedCount} segments failed to synthesize",
-                userMessage: "全てのセグメントの音声合成に失敗しました。",
-                suggestedSolution: "VOICEVOXエンジンの状態とログを確認してください。");
+            throw synthesisResult.ToAllFailedException(
+                $"All {synthesisResult.AttemptedCount} segments failed to synthesize", "全てのセグメントの音声合成に失敗しました。");
         }
 
         bool hasPartialFailure = synthesisResult.FailureCount > 0;
@@ -145,7 +139,7 @@ public class TextToSpeechProcessor
     {
         ConsoleHelper.WriteLine("Processing segments...");
 
-        var segments = await _textProcessor.ProcessTextAsync(request.Text, request.SpeakerId, cancellationToken);
+        var segments = await _textProcessor.ProcessTextAsync(request.Text, cancellationToken);
         if (segments.Count == 0)
         {
             _logger.LogWarning("処理可能なセグメントがありません");
@@ -179,9 +173,10 @@ public class TextToSpeechProcessor
         // エンジンの準備は producer が最初に合成が必要になったときに 1 回だけ呼ぶ。全部キャッシュから読めればエンジンに一切接続しない
         // (起動待ちで通知が遅れない・エンジン停止中でも鳴る)。先頭がキャッシュ済みなら、エンジンの起動を待つ間にそこから鳴り始める。
         // 準備の失敗は producer が投げずに返す (投げると鳴っているキャッシュ済みの文が途中で止められる)。--cache-only は合成しない (読めないキャッシュは失敗として数える)
+        // 準備の中身 (起動確認・話者の確認と初期化) は ISpeechEngine.PrepareAsync
         Func<CancellationToken, Task>? prepareSynthesis = options.CacheOnly
             ? null
-            : ct => PrepareSynthesisAsync(request.SpeakerId, ct);
+            : ct => _engines.Get(request.Engine).PrepareAsync(request.Speaker, ct);
 
         var channel = Channel.CreateUnbounded<TextSegment>(new UnboundedChannelOptions
         {
@@ -200,19 +195,6 @@ public class TextToSpeechProcessor
 
         await WhenAllOrCancelOnFaultAsync(producerTask, playbackTask, sharedCts);
         return await producerTask;
-    }
-
-    /// <summary>
-    /// 合成の前準備: エンジンの起動確認 (停止中で AutoStartEngine なら起動を待つ)・話者の存在確認・話者の初期化。
-    /// </summary>
-    private async Task PrepareSynthesisAsync(int speakerId, CancellationToken cancellationToken)
-    {
-        await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
-
-        // 存在しない speaker だとエンジンは /initialize_speaker で 500 を返し、リトライの分だけ待たされたうえ原因の分からないエンジンエラーになる。
-        // /speakers の照会はローカルで数 ms なので、合成の前に確認して入力ミス (InvalidArguments) として即エラーにする。
-        EnsureSpeakerExists(await _apiClient.GetSpeakersAsync(cancellationToken), speakerId);
-        await _apiClient.InitializeSpeakerAsync(speakerId, cancellationToken);
     }
 
     /// <summary>
@@ -244,30 +226,15 @@ public class TextToSpeechProcessor
         }
     }
 
-    /// <summary>
-    /// speaker ID (= スタイル ID) がエンジンの話者一覧に存在しなければ <see cref="ErrorCodes.General.InvalidArguments"/> で失敗させる。
-    /// </summary>
-    public static void EnsureSpeakerExists(IEnumerable<Speaker> speakers, int speakerId)
-    {
-        if (speakers.Any(s => s.Styles.Any(style => style.Id == speakerId)))
-        {
-            return;
-        }
-
-        throw new VoicevoxRunCachedException(
-            errorCode: ErrorCodes.General.InvalidArguments,
-            message: $"Speaker {speakerId} does not exist in the engine",
-            userMessage: $"speaker ID {speakerId} はエンジンに存在しません。",
-            suggestedSolution: "`VoicevoxRunCached speakers` で利用可能な ID を確認してください。");
-    }
-
     private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, VoiceRequest request, bool verbose, CancellationToken cancellationToken)
     {
         var playbackStartTime = _clock.UtcNow;
-        // フィラーも読み上げと同じ話者の声 (--init -s で話者ごとに生成したもの)・同じ音量にする
+        // フィラーも読み上げと同じ話者の声 (--init -s で話者ごとに生成したもの)・同じ音量にする。文と待ち 1 回の回数はエンジンごと
+        var engine = _engines.Get(request.Engine);
         await _audioPlayer.PlayStreamingAsync(
             reader,
-            ct => _fillerManager.GetRandomFillerAudioAsync(request.SpeakerId, request.Volume, ct),
+            ct => _fillerManager.GetRandomFillerAudioAsync(engine, request.Speaker, request.Volume, ct),
+            engine.FillerSettings.MaxFillersPerWait,
             cancellationToken);
 
         if (verbose)

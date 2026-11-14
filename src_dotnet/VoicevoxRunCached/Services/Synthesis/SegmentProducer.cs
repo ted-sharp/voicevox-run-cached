@@ -1,5 +1,6 @@
 ﻿using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Synthesis;
@@ -8,13 +9,13 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// セグメントを順次合成して <see cref="Channel{T}"/> に流す producer。
 /// </summary>
 /// <remarks>
-/// VOICEVOX API の直列性は <see cref="ProduceAsync"/> 内のループで 1 件ずつ await することで担保している。
+/// 合成エンジン (<see cref="ISpeechEngine"/>) の呼び出しの直列性は <see cref="ProduceAsync"/> 内のループで 1 件ずつ await することで担保している。
 /// 順序契約 (フィラー誤発火を避けるため厳守):
 ///   1. 全セグメントの write 完了 (または例外) → writer.TryComplete() で再生側を即座に解放
 ///   2. その後に pending cache save を WhenAll で待つ
 ///   3. 新規保存があれば、最後に 1 回だけキャッシュ eviction (期限切れ + 容量上限) を行う
 /// 例外パスでも 2. を必ず実行することで、producer 終了 = 全 cache save 完了を上位に保証する。
-/// エンジンに届かない失敗 (<see cref="VoiceVoxApiClient.IsEngineUnavailable"/>) が起きたら、残りの未キャッシュ分は API を呼ばずに失敗として数える
+/// エンジンに届かない失敗 (<see cref="ISpeechEngine.IsEngineUnavailable"/>) が起きたら、残りの未キャッシュ分は API を呼ばずに失敗として数える
 /// (1 件ごとにタイムアウト (ConnectionTimeout) を待つと、その間プロセス間ロックを持ったまま後続の読み上げも待たせるため)。
 /// キャッシュ済みのセグメントは WAV にデコードして流す (<see cref="AudioCacheManager.DecodeOrDelete"/>)。デコードは再生と並行させるため
 /// ここで行い、読めなければ削除済みなので未キャッシュとして合成し直す。
@@ -24,20 +25,20 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// </remarks>
 public class SegmentProducer
 {
-    private readonly VoiceVoxApiClient _apiClient;
+    private readonly SpeechEngineProvider _engines;
     private readonly AudioCacheManager _cacheManager;
     private readonly ILogger _logger;
 
-    public SegmentProducer(VoiceVoxApiClient apiClient, AudioCacheManager cacheManager, ILogger logger)
+    public SegmentProducer(SpeechEngineProvider engines, AudioCacheManager cacheManager, ILogger logger)
     {
-        _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
+        _engines = engines ?? throw new ArgumentNullException(nameof(engines));
         _cacheManager = cacheManager ?? throw new ArgumentNullException(nameof(cacheManager));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <param name="segments">流すセグメント。キャッシュ済みのものは AudioData に Ogg Opus を持つ (WAV に置き換えて流す)</param>
     /// <param name="writer">再生側への channel</param>
-    /// <param name="originalRequest">話者・パラメータ (キャッシュキーの元)</param>
+    /// <param name="originalRequest">エンジン・話者・パラメータ (キャッシュキーの元)</param>
     /// <param name="saveToCache">合成した音声をキャッシュに保存するか (<c>--no-cache</c> なら false)</param>
     /// <param name="prepareSynthesis">
     /// 最初に合成が必要になったときに 1 回だけ呼ぶ準備 (エンジンの起動確認・話者の確認と初期化)。失敗したら以降は合成せず
@@ -53,6 +54,7 @@ public class SegmentProducer
         Func<CancellationToken, Task>? prepareSynthesis,
         CancellationToken cancellationToken)
     {
+        var engine = _engines.Get(originalRequest.Engine);
         var stats = new SegmentStats();
         var pendingCacheSaves = new List<Task>();
         // 合成した結果 (失敗なら null)。同じ文の 2 回目以降は合成し直さない
@@ -62,6 +64,7 @@ public class SegmentProducer
         var engineUnavailable = false;
         var synthesisPrepared = false;
         Exception? preparationError = null;
+        Exception? firstError = null;
 
         try
         {
@@ -138,8 +141,9 @@ public class SegmentProducer
                     continue;
                 }
 
-                var synth = await SynthesizeOneAsync(segment, originalRequest, stats, cancellationToken);
+                var synth = await SynthesizeOneAsync(engine, segment, originalRequest, stats, cancellationToken);
                 synthesizedByText[segment.Text] = synth.WavData;
+                firstError ??= synth.Error;
 
                 // 合成失敗 (AudioData == null) でも channel には流す。再生側で skip ログを出す
                 await writer.WriteAsync(segment, cancellationToken);
@@ -155,7 +159,7 @@ public class SegmentProducer
                     var remaining = segments.Skip(i + 1).Count(s => !IsReady(s) && !synthesizedByText.ContainsKey(s.Text));
                     if (remaining > 0)
                     {
-                        _logger.LogWarning("エンジンに接続できない・応答しないため、残り {Count} セグメントの合成を中止します", remaining);
+                        _logger.LogWarning("合成エンジンを使えない (接続できない・応答しない等) ため、残り {Count} セグメントの合成を中止します", remaining);
                     }
                 }
             }
@@ -184,7 +188,7 @@ public class SegmentProducer
             }
         }
 
-        return new SynthesisResult(stats.Attempted, stats.Success, stats.Failure, preparationError);
+        return new SynthesisResult(stats.Attempted, stats.Success, stats.Failure, preparationError, firstError);
     }
 
     /// <summary>
@@ -193,6 +197,7 @@ public class SegmentProducer
     /// 例外は <see cref="OperationCanceledException"/> 以外を握り、失敗カウントを増やして null を返す。
     /// </summary>
     private async Task<SegmentSynthesis> SynthesizeOneAsync(
+        ISpeechEngine engine,
         TextSegment segment,
         VoiceRequest originalRequest,
         SegmentStats stats,
@@ -204,8 +209,7 @@ public class SegmentProducer
 
         try
         {
-            var audioQuery = await _apiClient.GenerateAudioQueryAsync(segmentRequest, cancellationToken);
-            var wavData = await _apiClient.SynthesizeAudioAsync(audioQuery, originalRequest.SpeakerId, cancellationToken);
+            var wavData = await engine.SynthesizeAsync(segmentRequest, cancellationToken);
 
             // IsCached はキャッシュヒット判定に絞り、合成成功は AudioData != null で表す。
             // 再生側 (AudioPlayer) は AudioData を直接見ているのでフラグ更新は不要。
@@ -222,7 +226,7 @@ public class SegmentProducer
             _logger.LogError(ex, "Failed to synthesize segment: {Text}", segment.Text);
             stats.Failure++;
             // segment.AudioData は null のまま — 再生側で skip される
-            return new SegmentSynthesis(null, null, VoiceVoxApiClient.IsEngineUnavailable(ex));
+            return new SegmentSynthesis(null, null, ex, engine.IsEngineUnavailable(ex));
         }
     }
 
@@ -273,7 +277,7 @@ public class SegmentProducer
         }
     }
 
-    private readonly record struct SegmentSynthesis(VoiceRequest? Request, byte[]? WavData, bool EngineUnavailable = false);
+    private readonly record struct SegmentSynthesis(VoiceRequest? Request, byte[]? WavData, Exception? Error = null, bool EngineUnavailable = false);
 
     private sealed class SegmentStats
     {
@@ -289,4 +293,23 @@ public class SegmentProducer
 /// <param name="PreparationError">
 /// 合成の準備 (エンジンの起動確認・話者の確認) の失敗。呼び出し元が再生を終えてから投げる。準備しなかった・成功したなら null
 /// </param>
-public readonly record struct SynthesisResult(int AttemptedCount, int SuccessCount, int FailureCount, Exception? PreparationError = null);
+/// <param name="FirstError">最初に失敗した合成の例外 (<see cref="ToAllFailedException"/> が理由として示す)。失敗が無ければ null</param>
+public readonly record struct SynthesisResult(
+    int AttemptedCount, int SuccessCount, int FailureCount, Exception? PreparationError = null, Exception? FirstError = null)
+{
+    private const string DefaultSolution = "合成エンジンの状態とログを確認してください。";
+
+    /// <summary>
+    /// 全部失敗したときのエラー (<see cref="ErrorCodes.Audio.AudioGenerationFailed"/>)。最初の失敗の理由と解決策を添える
+    /// (VOICEPEAK の存在しない話者のように準備では見つけられない失敗は、理由がログにしか出ないと何を直せばよいか分からないため)。
+    /// </summary>
+    public VoicevoxRunCachedException ToAllFailedException(string message, string userMessage) => FirstError switch
+    {
+        VoicevoxRunCachedException cause => new VoicevoxRunCachedException(ErrorCodes.Audio.AudioGenerationFailed,
+            message, $"{userMessage} {cause.UserMessage}", cause, cause.SuggestedSolution ?? DefaultSolution),
+        { } cause => new VoicevoxRunCachedException(ErrorCodes.Audio.AudioGenerationFailed,
+            message, $"{userMessage} {cause.Message}", cause, DefaultSolution),
+        null => new VoicevoxRunCachedException(ErrorCodes.Audio.AudioGenerationFailed,
+            message, userMessage, suggestedSolution: DefaultSolution),
+    };
+}

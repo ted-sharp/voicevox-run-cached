@@ -54,7 +54,7 @@ public class CommandRouter
             {
                 "speakers" => await HandleSpeakersCommandAsync(subArgs, cancellationToken),
                 "devices" => HandleDevicesCommand(subArgs),
-                "--init" => await _initHandler.HandleInitAsync(ArgumentParser.ParseInitSpeaker(subArgs, _settings), cancellationToken),
+                "--init" => await HandleInitCommandAsync(subArgs, cancellationToken),
                 "--clear" => await HandleClearCommandAsync(subArgs, cancellationToken),
                 "--test" => await HandleTestCommandAsync(subArgs, cancellationToken),
                 // "--" (ArgumentParser.TextSeparator) もここに来る。続く引数はコマンド名と同じでも本文として読む
@@ -100,9 +100,12 @@ public class CommandRouter
 
     // 引数の検証はロックを待つ前に行う (打ち間違いで先の読み上げが終わるまで待たされないように)
     private Task<int> HandleSpeakersCommandAsync(string[] args, CancellationToken cancellationToken)
+        => _speakerHandler.HandleSpeakersAsync(ArgumentParser.ParseSpeakersOptions(args, _settings), cancellationToken);
+
+    private Task<int> HandleInitCommandAsync(string[] args, CancellationToken cancellationToken)
     {
-        ArgumentParser.EnsureNoCommandArguments(args);
-        return _speakerHandler.HandleSpeakersAsync(cancellationToken);
+        var (engine, speaker) = ArgumentParser.ParseInitOptions(args, _settings);
+        return _initHandler.HandleInitAsync(engine, speaker, cancellationToken);
     }
 
     private Task<int> HandleClearCommandAsync(string[] args, CancellationToken cancellationToken)

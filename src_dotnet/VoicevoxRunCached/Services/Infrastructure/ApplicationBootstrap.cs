@@ -98,6 +98,7 @@ public static class ApplicationBootstrap
     private static AppSettings BuildAppSettings(IConfiguration configuration)
     {
         var settings = new AppSettings();
+        configuration.GetSection("Synthesis").Bind(settings.Synthesis);
         configuration.GetSection("VoiceVox").Bind(settings.VoiceVox);
         configuration.GetSection("Cache").Bind(settings.Cache);
         configuration.GetSection("Audio").Bind(settings.Audio);
@@ -105,6 +106,8 @@ public static class ApplicationBootstrap
         configuration.GetSection("Lock").Bind(settings.Lock);
         configuration.GetSection("Logging").Bind(settings.Logging);
         configuration.GetSection("Test").Bind(settings.Test);
+        configuration.GetSection("Voicepeak").Bind(settings.Voicepeak);
+        configuration.GetSection("Cevio").Bind(settings.Cevio);
 
         // 相対パス + UseExecutableBaseDirectory=true の場合、検証前に絶対パスへ解決しておく
         // (検証はパスが書き込み可能か実際に試すため、相対パスのままだと cwd 依存になる)

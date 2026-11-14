@@ -16,7 +16,7 @@ public class SpeechLockTests
     public async Task ResolveMaxWait_CommandLineOverridesSettings(int? commandLine, int? setting, int? expectedSeconds)
     {
         using var engineManager = new VoiceVoxEngineManager(new VoiceVoxSettings(), NullLogger.Instance, SystemClock.Instance);
-        var speechLock = new SpeechLock(engineManager, new LockSettings { MaxWaitSeconds = setting }, NullLogger.Instance);
+        var speechLock = new SpeechLock(TestEngines.Create(engineManager), new LockSettings { MaxWaitSeconds = setting }, NullLogger.Instance);
 
         var resolved = speechLock.ResolveMaxWait(commandLine);
 
@@ -27,7 +27,7 @@ public class SpeechLockTests
     public async Task RunAsync_GivesUpWithoutRunningWhenLockIsHeld()
     {
         using var engineManager = new VoiceVoxEngineManager(new VoiceVoxSettings(), NullLogger.Instance, SystemClock.Instance);
-        var speechLock = new SpeechLock(engineManager, new LockSettings { MaxWaitSeconds = 0 }, NullLogger.Instance);
+        var speechLock = new SpeechLock(TestEngines.Create(engineManager), new LockSettings { MaxWaitSeconds = 0 }, NullLogger.Instance);
         var ran = false;
 
         using (await InterProcessLock.AcquireAsync(InterProcessLock.SpeechLockPath, NullLogger.Instance))

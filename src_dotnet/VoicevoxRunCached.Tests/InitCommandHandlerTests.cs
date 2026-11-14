@@ -49,7 +49,7 @@ public class InitCommandHandlerTests
         // 存在しない話者だと /initialize_speaker が 500 (原因の分からないエンジンエラー) になり、リトライの分だけ待たされるので、先に /speakers で弾く
         using var engine = new FakeEngineServer();
 
-        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => RunInitAsync(engine, speakerId: 999));
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => RunInitAsync(engine, speaker: "999"));
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
     }
@@ -73,11 +73,11 @@ public class InitCommandHandlerTests
     }
 
     /// <param name="engine">API の呼び出し先</param>
-    /// <param name="speakerId">フィラーを生成する話者</param>
+    /// <param name="speaker">フィラーを生成する話者</param>
     /// <param name="voiceVoxSettings">エンジン管理の設定。null なら <paramref name="engine"/> に向けた自動起動なしの設定</param>
     /// <param name="afterInit">--init から戻った後、エンジン管理を破棄する前に呼ぶ</param>
     private static async Task<int> RunInitAsync(
-        FakeEngineServer engine, int speakerId = 1, VoiceVoxSettings? voiceVoxSettings = null, Func<Task>? afterInit = null)
+        FakeEngineServer engine, string speaker = FakeEngineServer.Speaker, VoiceVoxSettings? voiceVoxSettings = null, Func<Task>? afterInit = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
         try
@@ -88,9 +88,9 @@ public class InitCommandHandlerTests
             using var apiClient = engine.CreateApiClient();
             var fillerManager = new FillerManager(fillerSettings, new CacheSettings(), NullLogger.Instance);
             var handler = new InitCommandHandler(
-                engineManager, apiClient, fillerManager, new SpeechLock(engineManager, new LockSettings(), NullLogger.Instance), NullLogger.Instance);
+                TestEngines.Create(engineManager, apiClient), fillerManager, new SpeechLock(TestEngines.Create(engineManager), new LockSettings(), NullLogger.Instance), NullLogger.Instance);
 
-            var exitCode = await handler.HandleInitAsync(speakerId);
+            var exitCode = await handler.HandleInitAsync(SpeechEngineKind.Voicevox, speaker);
             if (afterInit != null)
             {
                 await afterInit();

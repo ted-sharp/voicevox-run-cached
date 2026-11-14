@@ -193,17 +193,4 @@ public class TextSegmentProcessorTests
 
         await Assert.That(String.Join("|", result.Select(s => s.Text))).IsEqualTo("あ、いうえおかきくけ|こ");
     }
-
-    [Test]
-    public async Task ProcessText_AssignsSpeakerIdToAllSegments()
-    {
-        var processor = CreateProcessor();
-
-        var result = await processor.ProcessTextAsync("文1。文2。", speakerId: 42);
-
-        foreach (var segment in result)
-        {
-            await Assert.That(segment.SpeakerId).IsEqualTo(42);
-        }
-    }
 }

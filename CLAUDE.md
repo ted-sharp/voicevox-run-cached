@@ -38,7 +38,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 
 1. `Program.cs` → `ApplicationBootstrap` (設定の読み込み・検証、Serilog) → `CommandRouter.ExecuteCommandAsync` の switch → 各ハンドラ
 2. 読み上げは `TextToSpeechProcessor`: `SpeechLock` の中で、`TextSegmentProcessor` で文に分割 → `AudioCacheManager` でキャッシュ (Opus) を引く
-3. `SegmentProducer` (producer) と `AudioPlayer.PlayStreamingAsync` (consumer) を `Channel<TextSegment>` で並走させる。producer はキャッシュ済みを WAV にデコードして流し、未キャッシュ分は `VoiceVoxApiClient` で 1 件ずつ合成して流す
+3. `SegmentProducer` (producer) と `AudioPlayer.PlayStreamingAsync` (consumer) を `Channel<TextSegment>` で並走させる。producer はキャッシュ済みを WAV にデコードして流し、未キャッシュ分は合成エンジン (`ISpeechEngine`。VOICEVOX は `VoicevoxEngine` → `VoiceVoxApiClient`) で 1 件ずつ合成して流す
 4. `--out` 指定時は `AudioExportService` が WAV / Opus で保存
 
 ## 守ること
@@ -51,11 +51,28 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - 待つ上限: `Lock.MaxWaitSeconds` (未設定 = 上限なし、0 = 待たない)。読み上げ・`--test` は `--max-wait <秒>` で上書きできる (`SpeechLock.ResolveMaxWait`)。超えたら `LOCK_001` (終了コード 9) で実行しない。`CommandRouter` はスタックトレースなしの Warning にする — `InterProcessLockTests` / `SpeechLockTests`
 - 起動時の設定検証 (`DirectoryValidation.BeWritableDirectory`) はロックより前に走るので、書き込み確認のファイル名は毎回一意にし (固定名だと同時起動で共有違反)、`FileOptions.DeleteOnClose` で OS に消させる
 
+### 合成エンジンの切り替え (`ISpeechEngine` / `SpeechEngineProvider`)
+- 合成エンジンは `ISpeechEngine` (準備 `PrepareAsync`・1 文の合成 `SynthesizeAsync` (WAV)・`GetSpeakersAsync`・`IsEngineUnavailable`・`StopIfNotKept`・フィラー設定 `FillerSettings`) の裏に置き、読み上げ・`--init`・`speakers`・`SpeechLock` はこれだけを使う。`SpeechEngineProvider.Get(SpeechEngineKind)` で取り出す
+- 使うエンジンは `Synthesis.Engine` (既定 `Voicevox`) か `--engine <名前>` (大文字小文字を区別しない。数字は不可)。読み上げ・`--test`・`--init`・`speakers` が取る
+- 話者 (`VoiceRequest.Speaker`) は文字列。`--speaker` は `SpeechEngineProvider.NormalizeSpeaker` でエンジンごとに検証・正規化する (キャッシュキーに入るので `01` → `1` のように同じ話者を同じ文字列に)。省略時は `SpeechEngineProvider.DefaultSpeaker` (各エンジンのセクションの `DefaultSpeaker`。これも正規化する。空なら `--speaker` 必須の `InvalidArguments`)。`--engine` と `--speaker` の順は問わない (エンジンが決まってから検証する) — `ArgumentParserTests`
+- 話速・音高の範囲がエンジンで違うときは `SpeechEngineProvider.ValidateParameters` で、ロックを待つ前に `InvalidArguments` にする (VOICEVOX は共通の検証だけ)
+- `SpeechLock` はロックの解放前に**全エンジン**の `StopIfNotKept` を呼ぶ
+- エンジンを足すときは `SpeechEngineKind` に値を、`SpeechEngineProvider` (コンストラクタ・`All`・`Get`・`DefaultSpeaker`・`NormalizeSpeaker`・`ValidateParameters`) と `AppServiceProvider` に実装を足す。エンジンの設定クラスは `IEngineFillerSettings` (`FillerTexts`・`MaxFillersPerWait`) を実装し、バリデーターで `Include(new EngineFillerSettingsValidator())` する。キャッシュキーは `CacheKeyGenerator.SpeakerKey` が `{エンジン名の小文字}:{話者}` にするので変更不要
+
+### VOICEPEAK (`VoicepeakEngine`)
+- `voicepeak.exe` (製品版のコマンドライン) を 1 文ごとに起動し、一時 WAV (`%TEMP%\vrc_voicepeak_*.wav`。読んだら消す) に出させる。1 回 10 秒ほどかかる (`--list-narrator` / `--list-emotion` も同じ)。1 回に渡せる本文は 140 文字まで (分割の上限 100 より大きい)
+- 話者は `ナレーター名[:感情=値,...]`。`NormalizeSpeaker` が感情を名前順にし、値 0 を除く (値は 0〜100。voicepeak.exe は 101 も黙って受け付けるのでこちらで検証する) — `VoicepeakEngineTests.NormalizeSpeaker_*`
+- 存在しない話者・感情は約 10 秒後に `bad exception` (終了コード 1・WAV なし) で、区別できない。`PrepareAsync` は exe の有無だけを見て (話者の確認に 10 秒かけない)、合成の失敗はすべて `IsEngineUnavailable` を true にして残りを合成しない (話者違いで全部の文が 10 秒ずつ失敗し、ロックを握り続けないように) — `VoicepeakEngineTests.NoOutputFile_FailsAndStopsRemainingSynthesis`
+- 引数は `ArgumentList` に `--say=本文` のように `=` 付きで渡す (`-` で始まる本文や負の音高をオプションと取り違えさせない)
+- `--speed` ×100 (0.5〜2.0 → 50〜200)、`--pitch` ×2000 (-0.15〜0.15 → -300〜300)。音量は CLI に無いので `AudioConversionUtility.ApplyGain` で WAV に掛ける (フィラーと共通)。出力は 48kHz mono 16bit で、fmt の前に JUNK チャンクがある (NAudio で読める) — `VoicepeakEngineTests.ApplyGain_ReadsWavWithJunkChunk`
+- タイムアウト (`Voicepeak.TimeoutSeconds`) でプロセスツリーを止めて `ApiTimeout`。exe が無い・起動できないは `EngineNotAvailable` (終了コード 3)
+- 常駐しないので `StopIfNotKept` は何もしない。標準入出力はリダイレクトし (標準入力は閉じる)、終了を待つので Hooks のパイプを引き継いでも残らない
+
 ### エンジン (`VoiceVoxEngineManager`)
 - 起動済みのプロセスを確認してから起動する。VOICEVOX / AIVIS Speech 両対応。`EnginePath` が空なら一般的なインストール場所から探す。VOICEVOX 0.26 以降のインストーラー版はエンジンが `%APPDATA%\voicevox\vvpp-engines\{名前}+{既定エンジンの UUID}\run.exe` (VVPP) にあり `vv-engine` が無いので、これを最初に探す (`FindVoicevoxVvppEngine`。フォルダ名の前半は変わりうるので UUID で探す) — `VoiceVoxEngineManagerTests.VvppEngine_*`。エンジン (`vv-engine\run.exe` / `AivisSpeech-Engine\run.exe`) を先に、エディタ (`{製品名}.exe`) は最後の候補にする (エディタを起動しても自前のエンジンでヘルスチェックが通り、気づけない) — `VoiceVoxEngineManagerTests.EngineRelativePaths_FindEngineBeforeEditor`
 - 外部で起動済みだったエンジンには触れない。`KeepEngineRunning: true` なら常駐させる
 - `UseShellExecute = true` + `WindowStyle = Hidden` で起動する (`false` だと Hooks の stdout / stderr のパイプを常駐エンジンが引き継ぎ、Hooks がタイムアウトまで待たされる) — `VoiceVoxEngineManagerTests.StartEngine_DoesNotInheritHandles`
-- 読み上げでエンジンに接続するのは**合成が必要になったときだけ**。準備 (起動確認・`EnsureSpeakerExists`・`/initialize_speaker`) は `TextToSpeechProcessor.PrepareSynthesisAsync` で、`SegmentProducer` が最初に合成するときに 1 回だけ呼ぶ。全部キャッシュから読めれば (`--cache-only` を含む) エンジン停止中でも鳴り、起動待ちで通知が遅れない。先頭がキャッシュ済みなら起動を待つ間にそこから鳴る (その間フィラーも鳴りうる) — `TextToSpeechProcessorTests` / `SegmentProducerTests`
+- 読み上げでエンジンに接続するのは**合成が必要になったときだけ**。準備 (`ISpeechEngine.PrepareAsync`。VOICEVOX は起動確認・`EnsureSpeakerExists`・`/initialize_speaker`) は、`SegmentProducer` が最初に合成するときに 1 回だけ呼ぶ。全部キャッシュから読めれば (`--cache-only` を含む) エンジン停止中でも鳴り、起動待ちで通知が遅れない。先頭がキャッシュ済みなら起動を待つ間にそこから鳴る (その間フィラーも鳴りうる) — `TextToSpeechProcessorTests` / `SegmentProducerTests`
 - 準備の失敗 (エンジン無し・話者無し) は文ごとの失敗にせず、終了コード 3 / 1 にする。ただし producer は投げずに `SynthesisResult.PreparationError` で返し、以降は合成せずキャッシュ済みの文だけ流す。`TextToSpeechProcessor` が再生を終えてから投げる (producer が投げると `WhenAllOrCancelOnFaultAsync` が鳴っている文を途中で止める) — `SegmentProducerTests.PrepareFailure_IsReturnedAndCachedSegmentsStillFlow`
 
 ### VOICEVOX API (`VoiceVoxApiClient`)
@@ -66,13 +83,26 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - エラー変換は `ExecuteApiAsync` の 1 つの catch (`MapToApiException`) に集約。`MapToErrorCode`: HTTP ステータスがあればステータス別、無ければ (接続拒否・途中切断) `EngineNotAvailable`
 - リトライ (`RetryPolicyService`、自前の指数バックオフ。Polly は使わない): 500/502/503/504/429 と I/O・ソケットエラー。タイムアウトとステータスの無い `HttpRequestException` はリトライしない (1 件で約 93 秒ロックを握るため) — `RetryPolicyServiceTests`
 
+### CeVIO AI (`CevioEngine` / `CevioHostManager` / `CevioRemoteService`)
+- COM (`CeVIO.Talk.RemoteService2` の `ServiceControl2V40` / `Talker2V40`) に触れるのは `CevioRemoteService` だけ。遅延バインディング (`Type.GetTypeFromProgID` + `dynamic`) で、CeVIO AI が無くてもビルド・起動できる。COM サーバーは .NET Framework の in-proc (mscoree) だが .NET 11 の 64bit プロセスに読み込める。ThreadingModel が Both なので STA は不要。呼び出しは同期なので `CevioEngine.RunComAsync` (`Task.Run` + `WaitAsync`) で包む。テストは `ICevioRemoteService` を `FakeCevioRemoteService` で置き換える
+- ホストの起動に `ServiceControl2V40.StartHost` を使わない (起動した CeVIO AI が Hooks のパイプを引き継ぎ、常駐中ずっと閉じない。実機で確認済み)。`CevioHostManager` が `CeVIO AI.exe` を `UseShellExecute = true` で起動し、`IsHostStarted` を待つ — `CevioHostManagerTests.StartHost_DoesNotInheritHandles`。自分で起動したホストだけを `KeepHostRunning: false` のとき `CloseHost` で閉じる。CeVIO AI は `WindowStyle` を無視して常にウィンドウを出す
+- CeVIO AI は 1 つしか動かない。起動中 (まだ `IsHostStarted` が false) の CeVIO AI があると、こちらが起動したプロセスはそちらに任せてすぐ終わる (約 0.7 秒・終了コード 0)。起動したプロセスが終わっても同じ実行ファイル名のプロセスがあれば失敗にせず起動を待ち、自分が起動したものとして扱わない (閉じない)。無ければ起動の失敗としてタイムアウトを待たずに `EngineNotAvailable`。待っている間も毎回確かめ、待っていた CeVIO AI (閉じかけだった等) が終わったらすぐ `EngineNotAvailable` (ロックを持ったままタイムアウトまで待たない) — `CevioHostManagerTests.HostHandedToStartingInstance_WaitsAndIsNotClosed` / `HostExitsDuringStartup_FailsWithoutWaitingForTimeout` / `StartingInstanceExits_FailsWithoutWaitingForTimeout`
+- `CloseHost` も `SynthesisTimeoutSeconds` で待つのをやめる (固まった CeVIO AI で戻らないと、ロックを持ったままプロセスが終わらない) — `CevioHostManagerTests.CloseHostNoResponse_GivesUpWithinTimeout`
+- 存在しないキャストを `Talker.Cast` に代入すると CeVIO AI が「ライセンスされていないキャスト」のダイアログを出す (COM は例外にならない)。`PrepareAsync` で `AvailableCasts` と照合してから代入し、無ければ `InvalidArguments` — `CevioEngineTests.Prepare_UnknownCast_ThrowsInvalidArgumentsWithoutSelectingIt`
+- 話者は `キャスト名` か `キャスト名:感情=値,...` (0〜100)。`CevioEngine.NormalizeSpeaker` が感情を名前順に並べてキャッシュキーをそろえる。感情を書けば書いていない感情は 0、書かなければ `PrepareAsync` で読んだキャストの既定値。Talker は使い回すので、合成のたびにキャスト・話速・音高・全感情を設定し直す — `CevioEngineTests`
+- 換算 (`ToCevioSpeed` / `ToCevioTone`。実測にもとづく): Speed = 50 + 25·log2(speed) (25 で約 2 倍速)、Tone = 50 + pitch / 0.15 × 50 (0〜100 で約 ±5 半音)。0〜100 を超える値 (`--speed` 0.25〜4.0・`--pitch` ±0.15 の外) は端に丸めず、`CevioEngine.ValidateParameters` でロックを待つ前に `InvalidArguments` にする — `CevioEngineTests.ValidateParameters_*`。音量は CeVIO の Volume を 50 に固定し、合成した WAV に `--volume` を掛ける (`AudioConversionUtility.ApplyGain`。VOICEVOX の volumeScale と同じ振幅の倍率。CeVIO の Volume は ±7dB しかなく 0 でも無音にならない)
+- `OutputWaveToFile` は失敗を false で返す (理由は無い)。ホストが閉じていれば `EngineNotAvailable` (残りの合成を止める)、動いていれば文ごとの `AudioGenerationFailed`。COM の例外 (CeVIO AI が落ちた等) は `RunComAsync` が `EngineNotAvailable` にする (準備・`speakers` で「予期しないエラー」(終了コード 1) にせず 3、合成では残りを止める) — `CevioEngineTests.ComError_IsEngineNotAvailable`。出力は WAV 48kHz mono 16bit
+- CeVIO AI が閉じられた後に Talker を呼ぶと**戻らなくなる** (実機で確認。プロセス間ロックを持ったまま止まり、以後の読み上げがすべて待たされる)。合成の前に `IsHostStarted` (閉じた後もすぐ false を返す) を確かめ、COM の呼び出しは `SynthesisTimeoutSeconds` (既定 30 秒) で打ち切って `ApiTimeout` (`IsEngineUnavailable`) にする。Ctrl+C も呼び出しの完了を待たずに返す — `CevioEngineTests.Synthesize_NoResponse_*` / `Synthesize_HostClosedBeforeSynthesis_DoesNotCallCevio`
+- 設定セクション `Cevio` (`DefaultSpeaker`・`AutoStartHost`・`HostPath`・`StartupTimeoutSeconds`・`KeepHostRunning`・`SynthesisTimeoutSeconds`・`FillerTexts`・`MaxFillersPerWait`)。`MaxFillersPerWait` の省略時は上限なし (VOICEVOX と同じく合成が速いため)。`DefaultSpeaker` は空を許し、`--engine cevio` で `-s` が無ければ `InvalidArguments` (VOICEPEAK と同じく `ArgumentParser` が案内する)
+
 ### 合成・再生パイプライン (`SegmentProducer` / `AudioPlayer`)
 - キャッシュ由来の音声は producer が `AudioCacheManager.DecodeOrDelete` で WAV にデコードしてから流す。デコードは 1 文 100ms 程度かかるので `Task.Run` で再生と並行させる (読み込み時にまとめると、全文キャッシュ済みでも鳴り始めが遅れる)。読めなければ削除済みなので未キャッシュとして合成し直す。`--cache-only` (`prepareSynthesis = null`) なら失敗として数える — `SegmentProducerTests` / `AudioCacheManagerIntegrationTests` / `TextToSpeechProcessorTests.CorruptedCache_IsResynthesizedAndRewritten`
 - 1 回の入力に同じ文が複数あれば、2 回目以降は合成もデコードもせず 1 回目の結果 (失敗なら失敗) を使い、保存も 1 回だけ (同じキーの保存が並行すると共有違反。読めなかったキャッシュをもう一度デコードすると、作り直しの保存中に同じキーを消す) — `SegmentProducerTests`
-- エンジンに届かない失敗 (`VoiceVoxApiClient.IsEngineUnavailable` = `EngineNotAvailable` / `ApiTimeout`。500 は文によるので除く) の後は、残りの未キャッシュ分を API を呼ばずに失敗として数え、channel に流さない (キャッシュ済みは流す)。1 件ごとにタイムアウトを待つとロックを握ったまま後続を待たせる。`--init` のフィラー生成も同じ — `SegmentProducerTests` / `FillerManagerTests`
+- エンジンに届かない失敗 (`ISpeechEngine.IsEngineUnavailable`。VOICEVOX は `VoiceVoxApiClient.IsEngineUnavailable` = `EngineNotAvailable` / `ApiTimeout`。500 は文によるので除く) の後は、残りの未キャッシュ分を API を呼ばずに失敗として数え、channel に流さない (キャッシュ済みは流す)。1 件ごとにタイムアウトを待つとロックを握ったまま後続を待たせる。`--init` のフィラー生成も同じ — `SegmentProducerTests` / `FillerManagerTests`
 - 片側の例外は `WhenAllOrCancelOnFaultAsync` が linked CTS をキャンセルしてもう一方も止める (`Task.WhenAll` だけだと再生が落ちても残りを合成し続ける) — `WhenAllOrCancelOnFaultTests`
 - キャッシュ保存は channel に書いた後に fire-and-forget し、producer の `finally` で `Task.WhenAll` で待つ。`writer.TryComplete()` は `WhenAll` より**前** (逆だと最後の再生の後に `FillerStartDelayMs` を超えてフィラーが誤発火する) — `ChannelProducerOrderingTests`
-- フィラー: 次のセグメントが `FillerStartDelayMs` 以内に来なければ `FillerManager.GetRandomFillerAudioAsync(speakerId, volume)` の相槌を挟む。読み上げと同じ話者の声 (話者ごとに `--init -s <id>` で生成)。音量は再生時に `--volume` を掛ける (話速・音高は既定のまま)。`--init` は `Filler.Enabled` に関係なく生成し、`Enabled` は再生にだけ効く。未生成の話者では鳴らさず、Warning は 1 実行 1 回
+- フィラー: 次のセグメントが `FillerStartDelayMs` 以内に来なければ `FillerManager.GetRandomFillerAudioAsync(engine, speaker, volume)` の相槌を挟む。読み上げと同じエンジン・話者の声 (話者ごとに `--init [--engine <名前>] -s <話者>` で生成)。音量は再生時に `--volume` を掛ける (話速・音高は既定のまま)。`--init` は `Filler.Enabled` に関係なく生成し、`Enabled` は再生にだけ効く。未生成の話者では鳴らさず、Warning は 1 実行 1 回
+- フィラーの文と回数はエンジンごと (エンジンの速さが違うため。VOICEPEAK は 1 文 10 秒ほど)。文はエンジンのセクションの `FillerTexts` (空なら `Filler.FillerTexts`) で、`--init` と再生の両方がこれを使う。次の文を待つ 1 回に鳴らす数の上限は `MaxFillersPerWait` (null = 上限なし、0 = 鳴らさない。省略時の既定はエンジンごとで VOICEPEAK は 2 (Voicepeak セクションの無い古い appsettings.json でも鳴り続けないように)。上限なしは JSON で null を書く — `ApplicationBootstrapTests.MaxFillersPerWait_IsLoaded`) を `AudioPlayer.PlayStreamingAsync` に渡し、`FillerWaitBudget` が数える (セグメントが届いたら数え直す) — `FillerWaitBudgetTests` / `FillerManagerTests.EngineFillerTexts_*`
 - フィラーの失敗は本編を止めない (`AudioPlayer.TryPlayFillerAsync` が Warning にし、その読み上げではフィラーを使わない)。ただし再生タイムアウト (`TimeoutException`) は投げ直す (共有 WavePlayer を途中で `Stop()` しており、遅れて届く `PlaybackStopped` で本編が切れうる)
 
 ### 音声形式
@@ -81,15 +111,16 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - デコード (`OpusCodec.DecodeToWav`) は **48kHz 固定** (Concentus 2.2.2 は 24kHz エンコード→24kHz デコードでほぼ無音になる) — `OpusCodecTests`
 
 ### キャッシュ (`AudioCacheManager` / `DiskCacheStore` / `CacheEvictionPolicy`)
-- キーは `CacheKeyGenerator.Compute` = `SHA256("{text}|{speakerId}|{speed:F2}|{pitch:F2}|{volume:F2}")` (InvariantCulture) の 16 進小文字。**生成ロジックの変更禁止** (既存キャッシュが全て無効になる)。`{key}.opus` と `{key}.meta.json` (CreatedAt, Text, SpeakerId, Speed, Pitch, Volume) のペアで保存
-- キーに Speed/Pitch/Volume が入るので、ユーザー指定値を `VoiceRequest` に乗せて `ProcessTextSegmentsAsync(segments, request)` に渡す (既定値で引くと永遠にミスする)
+- キーは `CacheKeyGenerator.Compute` = `SHA256("{text}|{speaker}|{speed:F2}|{pitch:F2}|{volume:F2}")` (InvariantCulture) の 16 進小文字。`{speaker}` は `CacheKeyGenerator.SpeakerKey` で、VOICEVOX は話者 ID のまま (エンジン対応前と同じキー)、ほかのエンジンは `{エンジン名の小文字}:{話者}`。**生成ロジックの変更禁止** (既存キャッシュが全て無効になる) — `AudioCacheManagerTests.ComputeCacheKey_Voicevox_MatchesKeyBeforeEngineSupport`。`{key}.opus` と `{key}.meta.json` (CreatedAt, Text, Engine, SpeakerId, Speed, Pitch, Volume) のペアで保存
+- meta.json の `SpeakerId` は話者の文字列 (`CacheMetadata.Speaker`)。エンジン対応前の meta.json は数値で書いているので、数値も文字列として読む (読めないと無効なメタデータとして既存キャッシュが全部消える) — `DiskCacheStoreTests.LoadAsync_MetadataWithNumericSpeakerId_Hits`
+- キーにエンジン・話者・Speed/Pitch/Volume が入るので、ユーザー指定値を `VoiceRequest` に乗せて `ProcessTextSegmentsAsync(segments, request)` に渡す (既定値で引くと永遠にミスする)
 - 期限 (`ExpirationDays`)・容量 (`MaxSizeGB`) の古さは**最終利用日時 = meta.json の更新日時** (LRU)。`SaveAsync` が CreatedAt (IClock) に設定し、`LoadAsync` がヒットのたびに更新する。meta.json の中身は判定に使わない。期限切れは読み込み時にも削除する
 - `RunMaintenanceAsync` (旧 `.mp3`・`.opus.tmp`・期限切れ・容量超過の削除) は、新規保存のあった実行の最後に `SegmentProducer` が 1 回だけ呼ぶ (保存ごとに全走査しない)
 - `SaveAsync` は **meta.json を先に**書き、`.opus` は `{key}.opus.tmp` に書いてから `File.Move` で置く (途中で落ちても残るのは meta.json か `.tmp` だけ。`.opus` が途中までだと以後ずっとヒットして再生に失敗する)。フィラー (`InitializeFillerCacheAsync`) も同じ
 - `.opus.tmp` は `--clear` (`DeleteAll` / `ClearFillerCacheAsync`) が消す。キャッシュ側は maintenance の `DeleteTemporaryFiles` でも消す (ロックの中・全保存の後なので書き込み中のものは無い)。フィラー側は次の生成で上書きされるので対象外
 - 削除の失敗: 読み込み時・eviction (`Delete`) は best-effort で Warning。`--clear` は削除が目的なので `CacheErrorMapper` で `CacheException` にする。`--init` の旧 `.mp3` フィラー削除は best-effort
 - `--refresh` = キャッシュを読まずに合成して上書き。`--no-cache` = 読みも書きもしない (`NoCache || Refresh` で参照を飛ばし、`saveToCache: !NoCache`)
-- `IsMetadataValid` は Text 非空・SpeakerId >= 0 (speaker 0 は実在)・CreatedAt 設定済みのみ (パラメータ一致はキーが保証する)
+- `IsMetadataValid` は Text 非空・Speaker 非空 (VOICEVOX の `"0"` は実在)・CreatedAt 設定済みのみ (パラメータ一致はキーが保証する)
 - v2 以前の `.mp3` は読まず、maintenance (`DeleteLegacyFiles`) と `--clear` (`DeleteAll`) で消す
 - 保存先は既定で実行ファイルと同じディレクトリ (`UseExecutableBaseDirectory: true`)
 
@@ -101,15 +132,15 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 
 ### CLI 引数 (`ArgumentParser`)
 - 数値でない値・負の speaker/volume・0 以下の speed は `InvalidArguments` (黙って既定値で続けない)。範囲判定は F2 に丸めた後の値
-- 値の位置に `--xxx` が来たら値の指定漏れ。不明なオプション・余分な引数も `InvalidArguments` (`UnexpectedArgument`。全コマンド共通。`speakers` / `--clear` は `EnsureNoCommandArguments`、`devices` は `ParseDevicesOptions` で、ロックを待つ前に検証する) — `ArgumentParserTests` / `CommandRouterTests`
+- 値の位置に `--xxx` が来たら値の指定漏れ。不明なオプション・余分な引数も `InvalidArguments` (`UnexpectedArgument`。全コマンド共通。`speakers` は `ParseSpeakersOptions`、`--init` は `ParseInitOptions`、`--clear` は `EnsureNoCommandArguments`、`devices` は `ParseDevicesOptions` で、ロックを待つ前に検証する) — `ArgumentParserTests` / `CommandRouterTests`
 - コマンド名 (`speakers` / `devices` / `--init` / `--clear` / `--test`) はオプションと同じく大文字小文字を区別する (`Speakers` は本文) — `CommandRouterTests.CommandName_IsCaseSensitive`
 - `--log-level` / `--log-format` / `--Section:Key=値` は設定側が扱うので `TrySkipConfigurationArgs` で値ごと読み飛ばす (値が無ければエラー)
 - オプションを足すときは `ApplyOptions` に追加する。値を取らないフラグは `FlagArgs` にも (無いと設定の読み込みで直後の引数が値として消費される) — `CommandLineConfigurationTests`
 - 本文は `PreprocessArgs` にかけない (`-sample` が `-s ample` に割られる)。本文の位置にオプションの形 (`IsOptionLike`: `--` の直後が英字で空白を含まない、または `-s` / `-o`) があれば `InvalidArguments` (`--- 完了 ---` は読む)。先頭が `--` (`TextSeparator`) なら次を本文にする (`ConfigurationManager` も区切りと本文を設定から外す)
-- speaker の存在確認 (`EnsureSpeakerExists`) は合成の準備でだけ行う (VOICEVOX は存在しない話者で 500 を返し、リトライの分待たされて原因が分からない)。`InvalidArguments` は `CommandRouter` でスタックトレースなしの Warning
+- speaker の存在確認 (VOICEVOX は `VoicevoxEngine.EnsureSpeakerExists`) は合成の準備 (`PrepareAsync`) でだけ行う (VOICEVOX は存在しない話者で 500 を返し、リトライの分待たされて原因が分からない)。`InvalidArguments` は `CommandRouter` でスタックトレースなしの Warning
 
 ### 終了コード・キャンセル
-- `ErrorCodes.GetExitCode` がエラーコードの prefix から決める: ENGINE=3, CACHE=4, AUDIO=5, API=6, CONFIG=7, LOCK=9, その他=1。一部セグメントの失敗は `PartialFailureExitCode` (8)、全部失敗は `AudioGenerationFailed` (5)。キャッシュから鳴った文は `SynthesisResult` に数えないので、「全部」は失敗数 = セグメント数で判定する — `TextToSpeechProcessorTests.CorruptedCache_CacheOnly_*`。`--init` も同じ。README の「終了コード」表と揃える
+- `ErrorCodes.GetExitCode` がエラーコードの prefix から決める: ENGINE=3, CACHE=4, AUDIO=5, API=6, CONFIG=7, LOCK=9, その他=1。一部セグメントの失敗は `PartialFailureExitCode` (8)、全部失敗は `AudioGenerationFailed` (5)。キャッシュから鳴った文は `SynthesisResult` に数えないので、「全部」は失敗数 = セグメント数で判定する — `TextToSpeechProcessorTests.CorruptedCache_CacheOnly_*`。`--init` も同じ。全部失敗のエラーには最初の失敗の理由と解決策を添える (`SynthesisResult.ToAllFailedException`。VOICEPEAK の存在しない話者は準備で見つけられず、理由がログにしか出ないため) — `SynthesisResultTests`。README の「終了コード」表と揃える
 - **終了コード 2 は使わない** (Hooks では 2 がブロッキングエラーで、Stop フックの失敗が Claude の停止を止める) — `ErrorCodesTests`
 - Ctrl+C は 130 (`CancelledExitCode`)。`CommandRouter` と `Program` の両方で返す。`CancellationManager` は 1 回目だけ握って `CancelAsync` し、2 回目以降は既定の強制終了に任せる
 - `catch (Exception)` の前には `catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }` を置く (握ると別のエラー扱いになったり、キャッシュを破損扱いで消したりする)
@@ -125,7 +156,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - **`DEBUG` / `if DEBUG` のような prefix・条件付きログは付けない**
 
 ### 設定 (`appsettings.json` → `AppSettings`)
-- セクション: `VoiceVox` / `Cache` / `Audio` / `Filler` / `Lock` / `Logging` / `Test`。セクションを足したら、`ApplicationBootstrap.BuildAppSettings` (**セクションごとに Bind する**) と `ArgumentParser.ConfigurationSections` (`--Section:Key=値` を読み飛ばす対象) にも追加する — `ApplicationBootstrapTests.LockMaxWaitSeconds_IsLoaded` / `ArgumentParserTests.ConfigurationOverride_AcceptsEverySection`
+- セクション: `Synthesis` / `VoiceVox` / `Cache` / `Audio` / `Filler` / `Lock` / `Logging` / `Test` / `Voicepeak` / `Cevio`。セクションを足したら、`ApplicationBootstrap.BuildAppSettings` (**セクションごとに Bind する**) と `ArgumentParser.ConfigurationSections` (`--Section:Key=値` を読み飛ばす対象) にも追加する — `ApplicationBootstrapTests.LockMaxWaitSeconds_IsLoaded` / `ArgumentParserTests.ConfigurationOverride_AcceptsEverySection`
 - `Validators.cs` (FluentValidation) で検証。読み込み・バインドの失敗 (構文エラー・型の不一致・ファイル無し) も `ConfigurationException` (終了コード 7)。`Test` は `--test` のときだけ検証
 - `Cache.Directory` と `Filler.Directory` が同じならエラー (容量超過の eviction がフィラーも消す。`--init` は `Enabled` に関係なく生成するので常に検証)
 - 検証の前に、キャッシュ・フィラーの相対パスを (`UseExecutableBaseDirectory: true` なら実行ファイル基準の) 絶対パスにし、`VoiceVox.BaseUrl` の末尾 `/` を取る (`//version` になるため)
@@ -152,8 +183,9 @@ src_dotnet/
 │       ├── CommandRouter.cs / ArgumentParser.cs / AppServiceProvider.cs (Jab)
 │       ├── Audio/          # AudioPlayer, AudioDeviceManager, AudioFormatDetector, OpusCodec, WavePlayerManager, AudioConversionUtility
 │       ├── Cache/          # AudioCacheManager, CacheKeyGenerator (変更禁止), DiskCacheStore, CacheEvictionPolicy, CacheErrorMapper
-│       ├── Synthesis/      # TextToSpeechProcessor, SegmentProducer, SpeechLock, VoiceVoxApiClient, VoiceVoxEngineManager,
-│       │                   # TextSegmentProcessor, FillerManager, AudioExportService
+│       ├── Synthesis/      # TextToSpeechProcessor, SegmentProducer, SpeechLock, ISpeechEngine, SpeechEngineProvider,
+│       │                   # VoicevoxEngine, VoicepeakEngine, VoiceVoxApiClient, VoiceVoxEngineManager, TextSegmentProcessor, FillerManager, AudioExportService
+│       │                   # CevioEngine, CevioHostManager, CevioRemoteService (COM)
 │       ├── Commands/       # SpeakerCommandHandler, DeviceCommandHandler, InitCommandHandler, CacheCommandHandler
 │       └── Infrastructure/ # ApplicationBootstrap, ConfigurationManager, LoggingManager, RetryPolicyService, CancellationManager,
 │                           # InterProcessLock, ConsoleHelper, ErrorHandlingUtility, ProgressSpinner, IClock, AssemblyVersion
@@ -186,14 +218,15 @@ DI は Jab (Source Generator)。`Services/AppServiceProvider.cs` の `[Singleton
 ```bash
 VoicevoxRunCached <text> [options]
 VoicevoxRunCached -- <text> [options]       # <text> がコマンド名・オプションと同じ文字列でも本文として読む
-VoicevoxRunCached speakers
+VoicevoxRunCached speakers [--engine <name>]
 VoicevoxRunCached devices [--full] [--json]
-VoicevoxRunCached --init [--speaker <id>]   # フィラーを生成する話者 (default: VoiceVox.DefaultSpeaker)
+VoicevoxRunCached --init [--engine <name>] [--speaker <id>]   # フィラーを生成する話者 (default: エンジンの DefaultSpeaker)
 VoicevoxRunCached --clear
 VoicevoxRunCached --test [options]
 
 Options:
---speaker, -s <id>    Speaker ID (default: VoiceVox.DefaultSpeaker)
+--engine <name>       合成エンジン: voicevox | voicepeak | cevio (default: Synthesis.Engine)
+--speaker, -s <id>    Speaker (default: エンジンのセクションの DefaultSpeaker。VOICEVOX は VoiceVox.DefaultSpeaker)
 --speed <value>       Speech speed (default: 1.0)
 --pitch <value>       Speech pitch (default: 0.0)
 --volume <value>      Speech volume (default: 1.0。フィラーの音量にも掛かる)

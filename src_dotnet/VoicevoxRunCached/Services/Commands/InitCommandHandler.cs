@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 
 namespace VoicevoxRunCached.Services.Commands;
@@ -8,54 +9,47 @@ namespace VoicevoxRunCached.Services.Commands;
 /// </summary>
 public class InitCommandHandler
 {
-    private readonly VoiceVoxApiClient _apiClient;
-    private readonly VoiceVoxEngineManager _engineManager;
+    private readonly SpeechEngineProvider _engines;
     private readonly FillerManager _fillerManager;
     private readonly SpeechLock _speechLock;
     private readonly ILogger _logger;
 
     public InitCommandHandler(
-        VoiceVoxEngineManager engineManager,
-        VoiceVoxApiClient apiClient,
+        SpeechEngineProvider engines,
         FillerManager fillerManager,
         SpeechLock speechLock,
         ILogger logger)
     {
-        _engineManager = engineManager ?? throw new ArgumentNullException(nameof(engineManager));
-        _apiClient = apiClient ?? throw new ArgumentNullException(nameof(apiClient));
+        _engines = engines ?? throw new ArgumentNullException(nameof(engines));
         _fillerManager = fillerManager ?? throw new ArgumentNullException(nameof(fillerManager));
         _speechLock = speechLock ?? throw new ArgumentNullException(nameof(speechLock));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <param name="speakerId">フィラーを生成する話者。フィラーは読み上げと同じ話者の声で再生されるので、話者ごとに生成する</param>
+    /// <param name="engine">フィラーを生成するエンジン</param>
+    /// <param name="speaker">フィラーを生成する話者。フィラーは読み上げと同じ話者の声で再生されるので、話者ごとに生成する</param>
     /// <param name="cancellationToken">キャンセル</param>
     /// <remarks>
     /// 読み上げと同じ <see cref="SpeechLock"/> で直列化する。読み上げ中に実行しても
-    /// API 呼び出しが並列にならず (VOICEVOX は直列前提)、エンジンの自動起動も二重にならない。
+    /// エンジンの呼び出しが並列にならず、エンジンの自動起動も二重にならない。
     /// </remarks>
-    public Task<int> HandleInitAsync(int speakerId, CancellationToken cancellationToken = default)
-        => _speechLock.RunAsync(() => InitializeLockedAsync(speakerId, cancellationToken), cancellationToken);
+    public Task<int> HandleInitAsync(SpeechEngineKind engine, string speaker, CancellationToken cancellationToken = default)
+        => _speechLock.RunAsync(() => InitializeLockedAsync(_engines.Get(engine), speaker, cancellationToken), cancellationToken);
 
-    private async Task<int> InitializeLockedAsync(int speakerId, CancellationToken cancellationToken)
+    private async Task<int> InitializeLockedAsync(ISpeechEngine engine, string speaker, CancellationToken cancellationToken)
     {
-        await _engineManager.EnsureRunningOrThrowAsync(cancellationToken);
+        // 起動確認・話者の存在確認 (存在しなければ入力ミスとして即エラー)・話者の初期化
+        await engine.PrepareAsync(speaker, cancellationToken);
 
-        // 存在しない話者だと /initialize_speaker が 500 (原因の分からないエンジンエラー) になり、リトライの分だけ待たされるので、先に確認して入力ミスとして即エラーにする
-        TextToSpeechProcessor.EnsureSpeakerExists(await _apiClient.GetSpeakersAsync(cancellationToken), speakerId);
-
-        _logger.LogInformation("フィラーキャッシュの初期化を開始します - 話者: {SpeakerId}", speakerId);
-        ConsoleHelper.WriteLine($"Initializing filler cache (speaker {speakerId})...");
-        var result = await _fillerManager.InitializeFillerCacheAsync(_apiClient, speakerId, cancellationToken);
+        _logger.LogInformation("フィラーキャッシュの初期化を開始します - エンジン: {Engine}, 話者: {Speaker}", engine.Kind, speaker);
+        ConsoleHelper.WriteLine($"Initializing filler cache ({engine.Kind.ToString().ToLowerInvariant()} speaker {speaker})...");
+        var result = await _fillerManager.InitializeFillerCacheAsync(engine, speaker, cancellationToken);
 
         // 終了コードは通常の読み上げと揃える: 全部失敗は AUDIO エラー (5)、一部失敗は PartialFailureExitCode (8)
         if (result.AttemptedCount > 0 && result.SuccessCount == 0)
         {
-            throw new VoicevoxRunCachedException(
-                errorCode: ErrorCodes.Audio.AudioGenerationFailed,
-                message: $"All {result.AttemptedCount} fillers failed to generate",
-                userMessage: "全てのフィラー音声の生成に失敗しました。",
-                suggestedSolution: "VOICEVOXエンジンの状態とログを確認してください。");
+            throw result.ToAllFailedException(
+                $"All {result.AttemptedCount} fillers failed to generate", "全てのフィラー音声の生成に失敗しました。");
         }
 
         if (result.FailureCount > 0)

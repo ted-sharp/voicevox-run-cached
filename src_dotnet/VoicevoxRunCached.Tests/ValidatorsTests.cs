@@ -458,4 +458,41 @@ public class ValidatorsTests
         var result = validator.Validate(new LoggingSettings());
         await Assert.That(result.IsValid).IsTrue();
     }
+
+    // CevioSettings ----------------------------------------------------------
+
+    [Test]
+    [Arguments("")]
+    [Arguments("花隈千冬")]
+    [Arguments("花隈千冬:嬉しい=50,普通=50")]
+    public async Task CevioSettings_ValidDefaultSpeaker_Passes(string defaultSpeaker)
+    {
+        var result = new CevioSettingsValidator().Validate(new CevioSettings { DefaultSpeaker = defaultSpeaker });
+        await Assert.That(result.IsValid).IsTrue();
+    }
+
+    [Test]
+    [Arguments(" ")]
+    [Arguments("花隈千冬:嬉しい")]
+    [Arguments("花隈千冬:嬉しい=101")]
+    public async Task CevioSettings_InvalidDefaultSpeaker_Fails(string defaultSpeaker)
+    {
+        var result = new CevioSettingsValidator().Validate(new CevioSettings { DefaultSpeaker = defaultSpeaker });
+        await Assert.That(result.IsValid).IsFalse();
+    }
+
+    [Test]
+    public async Task CevioSettings_MissingHostPath_Fails()
+    {
+        var result = new CevioSettingsValidator().Validate(new CevioSettings { HostPath = Path.Combine(Path.GetTempPath(), $"vrc_missing_{Guid.NewGuid():N}.exe") });
+        await Assert.That(result.IsValid).IsFalse();
+    }
+
+    [Test]
+    public async Task CevioSettings_EmptyFillerText_Fails()
+    {
+        // エンジンごとのフィラー設定 (EngineFillerSettingsValidator) を CeVIO でも検証する
+        var result = new CevioSettingsValidator().Validate(new CevioSettings { FillerTexts = ["えーっと、", " "] });
+        await Assert.That(result.IsValid).IsFalse();
+    }
 }

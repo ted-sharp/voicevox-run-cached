@@ -16,6 +16,7 @@ namespace VoicevoxRunCached.Services;
 [Singleton(typeof(AudioSettings), Instance = nameof(Audio))]
 [Singleton(typeof(FillerSettings), Instance = nameof(Filler))]
 [Singleton(typeof(LockSettings), Instance = nameof(Lock))]
+[Singleton(typeof(VoicepeakSettings), Instance = nameof(Voicepeak))]
 // ロガー
 [Singleton(typeof(ILogger), Instance = nameof(Logger))]
 // 時刻プロバイダ (テストで mock 可能にするため抽象化)
@@ -25,6 +26,10 @@ namespace VoicevoxRunCached.Services;
 [Singleton(typeof(VoiceVoxApiClient))]
 [Singleton(typeof(AudioCacheManager))]
 [Singleton(typeof(VoiceVoxEngineManager))]
+// 合成エンジン (SpeechEngineProvider が種類から取り出す)
+[Singleton(typeof(VoicevoxEngine))]
+[Singleton(typeof(VoicepeakEngine))]
+[Singleton(typeof(SpeechEngineProvider))]
 [Singleton(typeof(TextSegmentProcessor))]
 [Singleton(typeof(SpeechLock))]
 // 音声再生サブシステム (IDisposable はプロバイダの Dispose で破棄される)
@@ -44,6 +49,11 @@ namespace VoicevoxRunCached.Services;
 [Singleton(typeof(CacheCommandHandler))]
 // ルーター
 [Singleton(typeof(CommandRouter))]
+// CeVIO AI (--engine cevio)
+[Singleton(typeof(CevioSettings), Instance = nameof(Cevio))]
+[Singleton(typeof(ICevioRemoteService), typeof(CevioRemoteService))]
+[Singleton(typeof(CevioHostManager))]
+[Singleton(typeof(CevioEngine))]
 public partial class AppServiceProvider
 {
     public required AppSettings Settings { get; init; }
@@ -55,4 +65,6 @@ public partial class AppServiceProvider
     public AudioSettings Audio => Settings.Audio;
     public FillerSettings Filler => Settings.Filler;
     public LockSettings Lock => Settings.Lock;
+    public VoicepeakSettings Voicepeak => Settings.Voicepeak;
+    public CevioSettings Cevio => Settings.Cevio;
 }

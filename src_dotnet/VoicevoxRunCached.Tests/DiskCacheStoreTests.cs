@@ -27,7 +27,7 @@ public class DiskCacheStoreTests
         var (store, dir) = CreateStore();
         try
         {
-            var request = new VoiceRequest("テスト", 1, 1.0, 0.0, 1.0);
+            var request = new VoiceRequest("テスト", "1", 1.0, 0.0, 1.0);
             var key = "abc123";
             var data = new byte[] { 0x01, 0x02, 0x03 };
 
@@ -45,7 +45,7 @@ public class DiskCacheStoreTests
         var (store, dir) = CreateStore();
         try
         {
-            var request = new VoiceRequest("テスト読み戻し", 1);
+            var request = new VoiceRequest("テスト読み戻し", "1");
             var key = "key-roundtrip";
             var data = new byte[] { 0xAA, 0xBB, 0xCC, 0xDD };
 
@@ -66,7 +66,7 @@ public class DiskCacheStoreTests
         var (store, dir) = CreateStore();
         try
         {
-            var request = new VoiceRequest("上書き", 1);
+            var request = new VoiceRequest("上書き", "1");
             var key = "key-overwrite";
             await store.SaveAsync(request, [0x01], key);
 
@@ -87,7 +87,7 @@ public class DiskCacheStoreTests
         var (store, dir) = CreateStore();
         try
         {
-            var request = new VoiceRequest("上書き失敗", 1);
+            var request = new VoiceRequest("上書き失敗", "1");
             var key = "key-write-fails";
             var audioPath = Path.Combine(dir, key + DiskCacheStore.AudioExtension);
             await store.SaveAsync(request, [0x01, 0x02], key);
@@ -110,7 +110,7 @@ public class DiskCacheStoreTests
         var (store, dir) = CreateStore();
         try
         {
-            var request = new VoiceRequest("新規保存失敗", 1);
+            var request = new VoiceRequest("新規保存失敗", "1");
             var key = "key-new-write-fails";
             var audioPath = Path.Combine(dir, key + DiskCacheStore.AudioExtension);
             Directory.CreateDirectory(audioPath + DiskCacheStore.TemporarySuffix);
@@ -142,7 +142,7 @@ public class DiskCacheStoreTests
         var (store, dir) = CreateStore(expirationDays: 1);
         try
         {
-            var request = new VoiceRequest("古いキャッシュ", 1);
+            var request = new VoiceRequest("古いキャッシュ", "1");
             var key = "expired-key";
             var data = new byte[] { 0x01 };
 
@@ -174,7 +174,7 @@ public class DiskCacheStoreTests
         {
             var key = "frequently-used";
             var metaPath = Path.Combine(dir, $"{key}.meta.json");
-            await store.SaveAsync(new VoiceRequest("作業が完了しました。", 1), [0x01], key);
+            await store.SaveAsync(new VoiceRequest("作業が完了しました。", "1"), [0x01], key);
             var createdAt = clock.UtcNow;
 
             clock.UtcNow = createdAt.AddDays(20);
@@ -194,7 +194,7 @@ public class DiskCacheStoreTests
         var (store, dir) = CreateStore();
         try
         {
-            var request = new VoiceRequest("削除", 1);
+            var request = new VoiceRequest("削除", "1");
             var key = "to-delete";
             await store.SaveAsync(request, new byte[] { 0x01 }, key);
 
@@ -212,38 +212,70 @@ public class DiskCacheStoreTests
         await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
         {
             Text = "",
-            SpeakerId = 1,
+            Speaker = "1",
             CreatedAt = DateTime.UtcNow
         })).IsFalse();
 
         await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
         {
             Text = "ok",
-            SpeakerId = -1,
+            Speaker = "",
             CreatedAt = DateTime.UtcNow
         })).IsFalse();
 
-        // speaker 0 は VOICEVOX に実在する ID なので有効
+        // speaker "0" は VOICEVOX に実在する ID なので有効
         await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
         {
             Text = "ok",
-            SpeakerId = 0,
+            Speaker = "0",
             CreatedAt = DateTime.UtcNow,
         })).IsTrue();
 
         await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
         {
             Text = "ok",
-            SpeakerId = 1,
+            Speaker = "1",
             CreatedAt = default,
         })).IsFalse();
 
         await Assert.That(DiskCacheStore.IsMetadataValid(new CacheMetadata
         {
             Text = "ok",
-            SpeakerId = 1,
+            Speaker = "1",
             CreatedAt = DateTime.UtcNow,
         })).IsTrue();
+    }
+
+    [Test]
+    public async Task LoadAsync_MetadataWithNumericSpeakerId_Hits()
+    {
+        // 回帰防止: エンジン対応前の meta.json は SpeakerId を数値で書いている。読めないと無効なメタデータとして既存のキャッシュが全部消える
+        var (store, dir) = CreateStore();
+        try
+        {
+            const string key = "before-engines";
+            await File.WriteAllBytesAsync(Path.Combine(dir, $"{key}.opus"), [0x01, 0x02]);
+            await File.WriteAllTextAsync(Path.Combine(dir, $"{key}.meta.json"),
+                $$"""{"CreatedAt":"{{DateTime.UtcNow:O}}","Text":"旧","SpeakerId":0,"Speed":1.0,"Pitch":0.0,"Volume":1.0}""");
+
+            await Assert.That(await store.LoadAsync(key)).IsNotNull();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
+    public async Task SaveAsync_WritesEngineAndSpeaker()
+    {
+        var (store, dir) = CreateStore();
+        try
+        {
+            await store.SaveAsync(new VoiceRequest("文", "3"), [0x01], "meta");
+
+            var json = await File.ReadAllTextAsync(Path.Combine(dir, "meta.meta.json"));
+            await Assert.That(json).Contains("\"Engine\": \"Voicevox\"");
+            await Assert.That(json).Contains("\"SpeakerId\": \"3\"");
+        }
+        finally { Directory.Delete(dir, true); }
     }
 
     [Test]
@@ -295,7 +327,7 @@ public class DiskCacheStoreTests
         try
         {
             var key = "key-cancel";
-            await store.SaveAsync(new VoiceRequest("キャンセル", 1), [0x01, 0x02], key);
+            await store.SaveAsync(new VoiceRequest("キャンセル", "1"), [0x01, 0x02], key);
             using var cts = new CancellationTokenSource();
             await cts.CancelAsync();
 

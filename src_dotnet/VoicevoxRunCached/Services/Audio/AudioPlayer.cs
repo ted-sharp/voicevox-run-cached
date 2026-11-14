@@ -55,6 +55,9 @@ public class AudioPlayer : IDisposable
     /// </summary>
     /// <param name="reader">再生するセグメントの channel</param>
     /// <param name="getFillerAudio">フィラー音声 (Ogg Opus か WAV。<see cref="AudioFormatDetector.CreateWaveStream"/> で読む) を返す。無効・未生成なら null を返す。null ならフィラーを挟まない</param>
+    /// <param name="maxFillersPerWait">
+    /// 次のセグメントを待つ 1 回のあいだに鳴らすフィラーの上限 (エンジンの <c>MaxFillersPerWait</c>)。null なら上限なし、0 なら鳴らさない
+    /// </param>
     /// <param name="cancellationToken">キャンセル</param>
     /// <remarks>
     /// 呼び出し元 (producer) が <see cref="ChannelWriter{T}.Complete"/> するまでループする。
@@ -63,12 +66,14 @@ public class AudioPlayer : IDisposable
     public async Task PlayStreamingAsync(
         ChannelReader<TextSegment> reader,
         Func<CancellationToken, Task<byte[]?>>? getFillerAudio = null,
+        int? maxFillersPerWait = null,
         CancellationToken cancellationToken = default)
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
-        _logger.LogDebug("PlayStreamingAsync 開始 - フィラー: {HasFiller}", getFillerAudio != null);
+        _logger.LogDebug("PlayStreamingAsync 開始 - フィラー: {HasFiller}, 待ち 1 回の上限: {MaxFillersPerWait}",
+            getFillerAudio != null, maxFillersPerWait);
 
         await _deviceManager.EnsureDeviceReadyAsync();
 
@@ -80,6 +85,7 @@ public class AudioPlayer : IDisposable
             int playedCount = 0;
             // フィラーの取得・再生に失敗したら、この再生の間は null にしてフィラーを使わない
             var fillerSource = getFillerAudio;
+            var fillerBudget = new FillerWaitBudget(maxFillersPerWait);
 
             while (true)
             {
@@ -88,6 +94,7 @@ public class AudioPlayer : IDisposable
                 if (reader.TryRead(out var segment))
                 {
                     playedCount++;
+                    fillerBudget.OnSegmentArrived();
 
                     if (segment.AudioData == null || segment.AudioData.Length == 0)
                     {
@@ -104,18 +111,29 @@ public class AudioPlayer : IDisposable
                     continue;
                 }
 
+                // フィラーを使わない・この待ちで上限まで鳴らした: 次のセグメントが届くまでそのまま待つ
+                if (fillerSource == null || !fillerBudget.CanPlay)
+                {
+                    if (!await reader.WaitToReadAsync(cancellationToken))
+                    {
+                        break;
+                    }
+                    continue;
+                }
+
                 // 次のセグメントが未到着 — フィラー閾値内に届かなければフィラーを挿入する
                 var waitOutcome = await WaitForNextSegmentOrFillerTimeoutAsync(reader, cancellationToken);
                 if (waitOutcome == NextSegmentWait.NoMore)
                 {
                     break;
                 }
-                if (waitOutcome == NextSegmentWait.FillerTimeout && fillerSource != null)
+                if (waitOutcome == NextSegmentWait.FillerTimeout)
                 {
                     var filler = await TryPlayFillerAsync(wavePlayer, fillerSource, isFirstPlayback, cancellationToken);
                     if (filler == FillerOutcome.Played)
                     {
                         isFirstPlayback = false;
+                        fillerBudget.OnFillerPlayed();
                     }
                     else if (filler == FillerOutcome.Failed)
                     {
