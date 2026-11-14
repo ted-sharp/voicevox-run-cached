@@ -176,7 +176,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "StartupTimeoutSeconds": 30,
     "KeepEngineRunning": true,    // false ならアプリ終了時にエンジンも停止 (強制終了時を除く。Hooks の注意を参照)
     "FillerTexts": [],            // このエンジンのフィラーの文。空なら Filler.FillerTexts
-    // "MaxFillersPerWait": 1     // 次の文を待つ 1 回に鳴らすフィラーの上限。未設定 = 上限なし、0 = このエンジンでは鳴らさない
+    // "MaxFillersPerWait": 1     // 次の文を待つ 1 回に鳴らすフィラーの上限。null = 上限なし (VOICEVOX は省略時も上限なし)、0 = このエンジンでは鳴らさない
   },
   "Cache": {
     "Directory": "./cache/audio/",
@@ -216,7 +216,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "DefaultSpeaker": "",         // 例: "Otomachi Una" / "Otomachi Una:joy=50"。空なら --engine voicepeak では -s が必須
     "TimeoutSeconds": 60,         // voicepeak.exe 1 回 (1 文) を待つ上限 (秒、10-600)
     "FillerTexts": ["えーっと、ちょっと待ってくださいね、", "少々お待ちください、", "..."],  // 1 文 10 秒ほどかかるので長めのフィラー
-    "MaxFillersPerWait": 2        // 次の文を待つ 1 回に鳴らすフィラーの上限
+    "MaxFillersPerWait": 2        // 次の文を待つ 1 回に鳴らすフィラーの上限。null = 上限なし、0 = 鳴らさない (省略時は 2)
   }
 }
 ```
@@ -270,7 +270,7 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 
 フィラーは読み上げと同じ話者の声で再生する (途中で声が変わらないように)。`--init` が生成するのは既定のエンジン・`DefaultSpeaker` の分なので、`--speaker 3` のように別の話者 (や `--engine` で別のエンジン) で読み上げるなら `--init -s 3` (`--init --engine <name> -s <話者>`) でその話者の分も生成しておく。生成していない話者ではフィラーは鳴らない。フィラーの音量は読み上げの `--volume` に合わせる (話速・音高は既定のまま)。フィラーの読み込みや再生に失敗しても本編の読み上げは止めず、その回はフィラーを使わない (再生がタイムアウトしたときは、再生デバイスの異常として本編と同じく止める)。
 
-フィラーの文と回数はエンジンごとに変えられる。各エンジンのセクションの `FillerTexts` (空なら `Filler.FillerTexts`) と `MaxFillersPerWait` (次の文を待つ 1 回に鳴らす上限。未設定なら届くまで繰り返す、0 ならそのエンジンでは鳴らさない)。VOICEPEAK は 1 文の合成に 10 秒ほどかかるので、既定で長めの文を待ち 1 回に 2 回までにしている。文を変えたら `--init` でその文の分を生成し直す。
+フィラーの文と回数はエンジンごとに変えられる。各エンジンのセクションの `FillerTexts` (空なら `Filler.FillerTexts`) と `MaxFillersPerWait` (次の文を待つ 1 回に鳴らす上限。`null` なら届くまで繰り返す、`0` ならそのエンジンでは鳴らさない。省略したときは VOICEVOX が上限なし、VOICEPEAK が 2 なので、VOICEPEAK で上限をなくすには `null` を書く)。VOICEPEAK は 1 文の合成に 10 秒ほどかかるので、既定で長めの文を待ち 1 回に 2 回までにしている。文を変えたら `--init` でその文の分を生成し直す。
 
 ### 同時実行
 

@@ -30,6 +30,7 @@ public interface IEngineFillerSettings
 
     /// <summary>
     /// 次の文を待つ 1 回のあいだに鳴らすフィラーの上限。null なら上限なし (届くまで繰り返す)、0 ならこのエンジンでは鳴らさない。
+    /// 省略したときの既定はエンジンごと (VOICEVOX は null、VOICEPEAK は 2)。上限をなくすには appsettings.json に null を書く。
     /// </summary>
     int? MaxFillersPerWait { get; }
 }

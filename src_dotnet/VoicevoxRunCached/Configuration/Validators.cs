@@ -270,6 +270,6 @@ public class EngineFillerSettingsValidator : AbstractValidator<IEngineFillerSett
 
         RuleFor(x => x.MaxFillersPerWait)
             .GreaterThanOrEqualTo(0).When(x => x.MaxFillersPerWait.HasValue)
-            .WithMessage("MaxFillersPerWaitは0以上である必要があります (未設定なら上限なし)");
+            .WithMessage("MaxFillersPerWaitは0以上である必要があります (null なら上限なし)");
     }
 }

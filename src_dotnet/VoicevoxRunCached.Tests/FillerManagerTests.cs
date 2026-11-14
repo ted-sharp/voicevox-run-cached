@@ -12,9 +12,9 @@ namespace VoicevoxRunCached.Tests;
 public class FillerManagerTests
 {
     /// <summary>
-    /// フィラーの文を持たない VOICEVOX (共通の <see cref="FillerSettings.FillerTexts"/> を使う)。
+    /// フィラーの文を持たない VOICEVOX (共通の <see cref="FillerSettings.FillerTexts"/> を使う)。合成した文を記録するので、参照のたびに作る (テスト間で共有しない)。
     /// </summary>
-    private static readonly StubSpeechEngine Voicevox = new(SpeechEngineKind.Voicevox);
+    private static StubSpeechEngine Voicevox => new(SpeechEngineKind.Voicevox);
 
     [Test]
     public async Task GetRandomFillerAudio_WhenDisabled_ReturnsNull()
@@ -344,7 +344,7 @@ public class FillerManagerTests
     }
 
     [Test]
-    public async Task EngineWithoutFillerTexts_UsesCommonTexts()
+    public async Task EngineFillerTexts_Empty_UsesCommonTexts()
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
         try
