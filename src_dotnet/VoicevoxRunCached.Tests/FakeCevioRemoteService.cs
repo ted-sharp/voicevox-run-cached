@@ -35,26 +35,44 @@ internal sealed class FakeCevioRemoteService : ICevioRemoteService
     /// </summary>
     public ManualResetEventSlim? BlockOutput { get; set; }
 
+    /// <summary>
+    /// 設定すると、<see cref="CloseHost"/> はこれがセットされるまで戻らない (固まった CeVIO AI を閉じようとしたときを再現する)。
+    /// </summary>
+    public ManualResetEventSlim? BlockClose { get; set; }
+
+    /// <summary>
+    /// 設定すると、キャスト・感情の取得と合成がこの例外を投げる (CeVIO AI が落ちたときの COM の例外を再現する)。
+    /// </summary>
+    public Exception? ComError { get; set; }
+
     public List<string> ComponentRequests { get; } = [];
     public List<CevioTalk> Talks { get; } = [];
     public int CloseHostCount { get; private set; }
 
     public bool IsHostStarted => HostStarted();
 
-    public void CloseHost() => CloseHostCount++;
+    public void CloseHost()
+    {
+        CloseHostCount++;
+        BlockClose?.Wait();
+    }
 
-    public IReadOnlyList<string> GetCasts() => Casts.Keys.ToList();
+    public IReadOnlyList<string> GetCasts() => ComError is { } error ? throw error : Casts.Keys.ToList();
 
     public IReadOnlyList<CevioComponent> GetComponents(string cast)
     {
         ComponentRequests.Add(cast);
-        return Casts[cast];
+        return ComError is { } error ? throw error : Casts[cast];
     }
 
     public bool OutputWaveToFile(CevioTalk talk, string text, string path)
     {
         Talks.Add(talk);
         BlockOutput?.Wait();
+        if (ComError is { } error)
+        {
+            throw error;
+        }
         if (!OutputResult)
         {
             return false;

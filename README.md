@@ -266,7 +266,7 @@ VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラ�
   "HostPath": "",                // CeVIO AI.exe。空なら %ProgramFiles%\CeVIO\CeVIO AI\CeVIO AI.exe
   "StartupTimeoutSeconds": 60,
   "KeepHostRunning": true,       // 自分で起動した CeVIO AI を残す
-  "SynthesisTimeoutSeconds": 30, // 1 文の合成などを待つ上限 (秒)
+  "SynthesisTimeoutSeconds": 30, // 1 文の合成・閉じるなどを待つ上限 (秒)
   "FillerTexts": []              // CeVIO 用のフィラー。空なら Filler.FillerTexts (MaxFillersPerWait も書ける。省略時は上限なし)
 }
 ```

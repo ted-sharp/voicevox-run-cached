@@ -113,6 +113,53 @@ public class CevioHostManagerTests
     }
 
     [Test]
+    public async Task StartingInstanceExits_FailsWithoutWaitingForTimeout()
+    {
+        // 待っていた CeVIO AI (閉じかけだった等) も終わったら、起動のタイムアウト (60 秒) までロックを持ったまま待たない
+        var checks = 0;
+        var remote = new FakeCevioRemoteService { HostStarted = () => false };
+        var manager = new CevioHostManager(
+            new CevioSettings { HostPath = Ping, StartupTimeoutSeconds = 60, KeepHostRunning = false }, remote, NullLogger.Instance, SystemClock.Instance)
+        {
+            // 1 回目は起動中のプロセスがあり、2 回目にはもう無い
+            IsAnotherInstanceRunning = (_, _) => Interlocked.Increment(ref checks) == 1,
+        };
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => manager.EnsureRunningOrThrowAsync(CancellationToken.None));
+        manager.StopHostIfNotKept();
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Engine.EngineNotAvailable);
+        await Assert.That(ex.UserMessage).Contains("起動を待っていた");
+        await Assert.That(stopwatch.Elapsed).IsLessThan(TimeSpan.FromSeconds(30));
+        await Assert.That(remote.CloseHostCount).IsEqualTo(0);
+    }
+
+    [Test]
+    public async Task CloseHostNoResponse_GivesUpWithinTimeout()
+    {
+        // 固まった CeVIO AI を閉じる呼び出しが戻らなくても、ロックを持ったまま止まらない
+        using var block = new ManualResetEventSlim();
+        var calls = 0;
+        var remote = new FakeCevioRemoteService { HostStarted = () => Interlocked.Increment(ref calls) > 1, BlockClose = block };
+        var manager = Create(remote, new CevioSettings { KeepHostRunning = false, HostPath = Ping, SynthesisTimeoutSeconds = 1 });
+        try
+        {
+            await manager.EnsureRunningOrThrowAsync(CancellationToken.None);
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+            manager.StopHostIfNotKept();
+
+            await Assert.That(remote.CloseHostCount).IsEqualTo(1);
+            await Assert.That(stopwatch.Elapsed).IsLessThan(TimeSpan.FromSeconds(10));
+        }
+        finally
+        {
+            block.Set();
+        }
+    }
+
+    [Test]
     [Arguments("", @"C:\Program Files", @"C:\Program Files\CeVIO\CeVIO AI\CeVIO AI.exe")]
     [Arguments(@"D:\CeVIO\CeVIO AI.exe", @"C:\Program Files", @"D:\CeVIO\CeVIO AI.exe")]
     public async Task ResolveHostPath_DefaultsToProgramFiles(string configured, string programFiles, string expected)

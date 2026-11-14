@@ -81,19 +81,26 @@ public class CevioHostManager
                 _logger.LogInformation("CeVIO AI が起動しました");
                 return;
             }
-            if (!waitingForOtherInstance && process is { HasExited: true })
+            if (process is { HasExited: true })
             {
                 // CeVIO AI は 1 つしか動かない。起動中 (まだ IsHostStarted が false) の CeVIO AI があると、
                 // 起動したプロセスはそちらに任せてすぐ (約 0.7 秒・終了コード 0) 終わる。そのときは起動を待ち、閉じる対象にしない
                 _startedByUs = false;
                 if (!IsAnotherInstanceRunning(hostPath, process.Id))
                 {
-                    // 起動に失敗して終わった (ライセンス等)。タイムアウトまで待たない
-                    throw NotAvailable($"CeVIO AI exited during startup (exit code {process.ExitCode})", "CeVIO AI の起動に失敗しました。",
-                        "CeVIO AI を手動で起動して、エラーが出ないか確認してください。");
+                    // 起動に失敗して終わった (ライセンス等)。待っていた CeVIO AI が終わったとき (閉じかけだった等) も同じ。
+                    // どちらもタイムアウトまで (ロックを持ったまま) 待たない
+                    throw waitingForOtherInstance
+                        ? NotAvailable("The starting CeVIO AI exited", "起動を待っていた CeVIO AI が終了しました。",
+                            "CeVIO AI を手動で起動して、エラーが出ないか確認してください。")
+                        : NotAvailable($"CeVIO AI exited during startup (exit code {process.ExitCode})", "CeVIO AI の起動に失敗しました。",
+                            "CeVIO AI を手動で起動して、エラーが出ないか確認してください。");
                 }
-                _logger.LogInformation("起動中の CeVIO AI を待ちます");
-                waitingForOtherInstance = true;
+                if (!waitingForOtherInstance)
+                {
+                    _logger.LogInformation("起動中の CeVIO AI を待ちます");
+                    waitingForOtherInstance = true;
+                }
             }
             await Task.Delay(AudioConstants.EngineStartupPollIntervalMs, cancellationToken);
         }
@@ -107,6 +114,8 @@ public class CevioHostManager
     /// </summary>
     /// <remarks>
     /// <see cref="SpeechLock"/> がプロセス間ロックを解放する前に (<see cref="ISpeechEngine.StopIfNotKept"/> から) 呼ぶ。
+    /// 固まった CeVIO AI では閉じる呼び出しが戻らないおそれがあるので、<see cref="CevioSettings.SynthesisTimeoutSeconds"/> で待つのをやめる
+    /// (戻らないとロックを持ったままプロセスが終わらない)。
     /// </remarks>
     public void StopHostIfNotKept()
     {
@@ -118,7 +127,10 @@ public class CevioHostManager
         _startedByUs = false;
         try
         {
-            _remote.CloseHost();
+            if (!Task.Run(_remote.CloseHost).Wait(TimeSpan.FromSeconds(_settings.SynthesisTimeoutSeconds)))
+            {
+                _logger.LogWarning("CeVIO AI が {TimeoutSeconds} 秒以内に閉じませんでした", _settings.SynthesisTimeoutSeconds);
+            }
         }
         catch (Exception ex)
         {

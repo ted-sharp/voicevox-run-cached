@@ -1,4 +1,5 @@
-﻿using NAudio.Wave;
+﻿using System.Runtime.InteropServices;
+using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
@@ -300,6 +301,26 @@ public class CevioEngineTests
         {
             block.Set();
         }
+    }
+
+    [Test]
+    public async Task ComError_IsEngineNotAvailable()
+    {
+        // CeVIO AI が落ちたときなどの COM の例外は「予期しないエラー」(終了コード 1) にせず、CeVIO AI を使えない (3) にする。
+        // 合成では残りの文を止める
+        var remote = new FakeCevioRemoteService();
+        var engine = TestEngines.Cevio(remote);
+        await engine.PrepareAsync(Cast, CancellationToken.None);
+        remote.ComError = new COMException("RPC サーバーを利用できません。", unchecked((int)0x800706BA));
+
+        var prepare = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => engine.PrepareAsync(Cast, CancellationToken.None));
+        var speakers = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => engine.GetSpeakersAsync(CancellationToken.None));
+        var synthesis = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => engine.SynthesizeAsync(Request(Cast), CancellationToken.None));
+
+        await Assert.That(prepare!.ErrorCode).IsEqualTo(ErrorCodes.Engine.EngineNotAvailable);
+        await Assert.That(speakers!.ErrorCode).IsEqualTo(ErrorCodes.Engine.EngineNotAvailable);
+        await Assert.That(synthesis!.ErrorCode).IsEqualTo(ErrorCodes.Engine.EngineNotAvailable);
+        await Assert.That(engine.IsEngineUnavailable(synthesis)).IsTrue();
     }
 
     [Test]

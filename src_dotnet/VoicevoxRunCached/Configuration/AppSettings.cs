@@ -211,7 +211,7 @@ public class CevioSettings : IEngineFillerSettings
     public bool KeepHostRunning { get; set; } = true;
 
     /// <summary>
-    /// CeVIO AI の呼び出し (1 文の合成・キャスト一覧) を待つ上限 (秒)。CeVIO AI が途中で閉じられると呼び出しが戻らなくなるため。
+    /// CeVIO AI の呼び出し (1 文の合成・キャスト一覧・閉じる) を待つ上限 (秒)。CeVIO AI が途中で閉じられると呼び出しが戻らなくなるため。
     /// </summary>
     public int SynthesisTimeoutSeconds { get; set; } = 30;
 

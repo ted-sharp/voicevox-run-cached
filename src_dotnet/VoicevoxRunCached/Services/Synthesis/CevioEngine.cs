@@ -96,10 +96,11 @@ public class CevioEngine : ISpeechEngine
     }
 
     /// <remarks>
-    /// COM の例外・タイムアウトは CeVIO AI との通信の失敗 (途中で閉じられた等) で、文によらないので含める。
+    /// タイムアウトと COM の例外 (<see cref="RunComAsync"/> が <see cref="ErrorCodes.Engine.EngineNotAvailable"/> にする) は
+    /// CeVIO AI との通信の失敗 (途中で閉じられた等) で、文によらないので含める。
     /// </remarks>
     public bool IsEngineUnavailable(Exception ex)
-        => ex is VoicevoxRunCachedException { ErrorCode: ErrorCodes.Engine.EngineNotAvailable or ErrorCodes.Api.ApiTimeout } or COMException;
+        => ex is VoicevoxRunCachedException { ErrorCode: ErrorCodes.Engine.EngineNotAvailable or ErrorCodes.Api.ApiTimeout };
 
     public void StopIfNotKept() => _hostManager.StopHostIfNotKept();
 
@@ -277,6 +278,16 @@ public class CevioEngine : ISpeechEngine
                 userMessage: $"CeVIO AI が {_timeout.TotalSeconds} 秒以内に応答しませんでした。",
                 innerException: ex,
                 suggestedSolution: "CeVIO AI が閉じられていないか確認してください。長い文で時間がかかるなら appsettings.json の Cevio.SynthesisTimeoutSeconds を延ばしてください。");
+        }
+        catch (COMException ex)
+        {
+            // CeVIO AI が落ちた等で通信できない。文によらないので、CeVIO AI を使えない (終了コード 3) として残りの文も止める
+            throw new VoicevoxRunCachedException(
+                errorCode: ErrorCodes.Engine.EngineNotAvailable,
+                message: $"CeVIO AI COM call failed: {ex.Message}",
+                userMessage: $"CeVIO AI と通信できませんでした ({ex.Message})。",
+                innerException: ex,
+                suggestedSolution: "CeVIO AI が起動しているか確認して、もう一度実行してください。");
         }
     }
 
