@@ -104,7 +104,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - `PrepareAsync` は exe の有無だけを見る。合成の失敗はすべて `IsEngineUnavailable` を true にして残りを合成しない — `VoicepeakEngineTests.NoOutputFile_FailsAndStopsRemainingSynthesis`
 - 引数は `ArgumentList` に `--say=本文` のように `=` 付きで渡す
 - `--speed` ×100、`--pitch` ×2000。音量は `AudioConversionUtility.ApplyGain` で WAV に掛ける — `VoicepeakEngineTests.ApplyGain_ReadsWavWithJunkChunk`
-- タイムアウト (`Voicepeak.TimeoutSeconds`) でプロセスツリーを止めて `ApiTimeout`。exe が無い・起動できないは `EngineNotAvailable`
+- タイムアウト (`Voicepeak.TimeoutSeconds`) でプロセスツリーを止めて (終了を待ってから一時 WAV を消す) `ApiTimeout`。exe が無い・起動できないは `EngineNotAvailable`
 - 標準入出力はリダイレクトし (標準入力は閉じる)、終了を待つ。`StopIfNotKept` は何もしない
 
 ### CeVIO AI (`CevioEngine` / `CevioHostManager` / `CevioRemoteService`)

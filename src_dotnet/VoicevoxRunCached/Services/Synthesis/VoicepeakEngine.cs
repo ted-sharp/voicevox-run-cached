@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Globalization;
 using Microsoft.Extensions.Logging;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Cache;
@@ -319,11 +320,16 @@ public class VoicepeakEngine : ISpeechEngine
         return new ProcessResult(process.ExitCode, output);
     }
 
+    /// <remarks>
+    /// 止めた後、終わるまで待つ (上限 <see cref="AudioConstants.EngineStopWaitTimeoutMs"/>)。<see cref="Process.Kill(bool)"/> は終了を待たずに戻るので、
+    /// すぐ戻ると、呼び出し元が一時 WAV を消すときに終わりかけのプロセスがまだ開いていて消せず、%TEMP% に残る。
+    /// </remarks>
     private void KillQuietly(Process process)
     {
         try
         {
             process.Kill(entireProcessTree: true);
+            process.WaitForExit(AudioConstants.EngineStopWaitTimeoutMs);
         }
         catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
         {

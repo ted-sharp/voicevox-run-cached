@@ -94,7 +94,7 @@ public static class AudioConstants
     public const short WarmupAmplitude = 32;
 
     /// <summary>
-    /// VOICEVOX エンジンプロセス停止時の待機時間（ミリ秒）
+    /// 合成エンジンのプロセス (VOICEVOX エンジン・voicepeak.exe) を止めたとき、終了を待つ上限（ミリ秒）
     /// </summary>
     public const int EngineStopWaitTimeoutMs = 5000;
 
