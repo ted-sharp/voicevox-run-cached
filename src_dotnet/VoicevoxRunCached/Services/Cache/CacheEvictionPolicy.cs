@@ -108,7 +108,10 @@ public class CacheEvictionPolicy
                     if (totalBytes <= maxBytes)
                         break;
 
-                    _disk.Delete(Path.GetFileNameWithoutExtension(entry.Name));
+                    // 消せなかった (ほかのプロセスが開いている等) ものは合計に数えたまま、次に古いものを消す
+                    // (引いてしまうと、上限を超えたまま掃除を終える)
+                    if (!_disk.Delete(Path.GetFileNameWithoutExtension(entry.Name)))
+                        continue;
                     totalBytes -= entry.Length;
                     deleted++;
                 }

@@ -57,6 +57,7 @@ public class FillerManager
         // 無効のままでも生成する
         Directory.CreateDirectory(_settings.Directory);
         DeleteLegacyFiles();
+        DeleteTemporaryFiles();
         var fillerTexts = FillerTextsFor(engine);
         _logger.LogInformation("フィラーキャッシュの初期化を開始します - テキスト数: {Count}", fillerTexts.Length);
 
@@ -103,7 +104,7 @@ public class FillerManager
 
                 // 一時ファイルに書いてから置き換える。書き込みの途中で落ちて不完全な .opus が残ると、--init は生成済みとみなして
                 // 作り直さず、再生のたびにデコードに失敗してフィラーが使われなくなるため。
-                // 残った .tmp は同じフィラーを次に生成するときに上書きされ、--clear (ClearFillerCacheAsync) でも消える
+                // 残った .tmp は次の --init (DeleteTemporaryFiles) と --clear (ClearFillerCacheAsync) が消す
                 var tempPath = fillerCachePath + DiskCacheStore.TemporarySuffix;
                 await File.WriteAllBytesAsync(tempPath, OpusCodec.EncodeWav(audioData, _opusBitrateKbps), cancellationToken);
                 File.Move(tempPath, fillerCachePath, overwrite: true);
@@ -275,6 +276,34 @@ public class FillerManager
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 _logger.LogWarning(ex, "旧形式フィラーの削除に失敗: {Path}", file);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 生成の途中で落ちて残った一時ファイル (<c>{キー}.opus.tmp</c>) を削除する。
+    /// </summary>
+    /// <remarks>
+    /// 文を変えると同じ名前で生成し直されないので、ここで消さないと <c>--clear</c> まで残る。
+    /// <c>--init</c> は読み上げと同じロックの中で動くので、残っているものは書き込み中ではない。
+    /// 対象はキーの形のものだけ (<see cref="DeleteUnusedFillers"/> と同じく、フォルダを共用していてもほかのファイルは消さない)。
+    /// best-effort で、失敗は Warning に留める。
+    /// </remarks>
+    private void DeleteTemporaryFiles()
+    {
+        foreach (var file in Directory.GetFiles(_settings.Directory, $"*{DiskCacheStore.AudioExtension}{DiskCacheStore.TemporarySuffix}"))
+        {
+            if (!IsFillerFileName(Path.GetFileNameWithoutExtension(file)))
+            {
+                continue;
+            }
+            try
+            {
+                File.Delete(file);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "フィラーの一時ファイルの削除に失敗: {Path}", file);
             }
         }
     }

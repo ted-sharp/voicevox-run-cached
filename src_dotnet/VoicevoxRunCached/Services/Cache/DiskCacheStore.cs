@@ -149,9 +149,10 @@ public class DiskCacheStore
     }
 
     /// <summary>
-    /// 音声と meta.json のペアを削除。
+    /// 音声と meta.json のペアを削除。失敗は Warning に留める (best-effort)。
     /// </summary>
-    public void Delete(string cacheKey)
+    /// <returns>削除できた (どちらも残っていない) か。容量の掃除 (<see cref="CacheEvictionPolicy.CleanupByMaxSize"/>) が合計の計算に使う</returns>
+    public bool Delete(string cacheKey)
     {
         try
         {
@@ -163,10 +164,12 @@ public class DiskCacheStore
                 File.Delete(metaPath);
 
             _logger.LogDebug("キャッシュファイルを削除しました: {CacheKey}", cacheKey);
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "キャッシュファイルの削除に失敗: {CacheKey}", cacheKey);
+            return false;
         }
     }
 

@@ -110,6 +110,35 @@ public class CacheEvictionPolicyTests
     }
 
     [Test]
+    public async Task CleanupByMaxSize_UndeletableEntry_DeletesNextOldest()
+    {
+        // 回帰: 消せなかったファイルの分も合計から引いていたため、上限を超えたまま掃除を終えていた。
+        // 上限 2500B に 1000B × 3 件。一番古い "locked" は消せないので、次に古い "old" を消して上限に収める
+        var clock = new MutableClock(DateTime.UtcNow);
+        var (policy, disk, dir) = Create(maxSizeGb: 2500.0 / (1024 * 1024 * 1024), clock: clock);
+        try
+        {
+            var start = clock.UtcNow;
+            await disk.SaveAsync(new VoiceRequest("locked", "1"), new byte[1000], "locked");
+            clock.UtcNow = start.AddDays(1);
+            await disk.SaveAsync(new VoiceRequest("old", "1"), new byte[1000], "old");
+            clock.UtcNow = start.AddDays(2);
+            await disk.SaveAsync(new VoiceRequest("new", "1"), new byte[1000], "new");
+
+            // FileShare.None で開いたままにすると Windows では File.Delete が共有違反 (IOException) になる
+            using (new FileStream(Path.Combine(dir, "locked.opus"), FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                policy.CleanupByMaxSize();
+            }
+
+            await Assert.That(File.Exists(Path.Combine(dir, "locked.opus"))).IsTrue();
+            await Assert.That(File.Exists(Path.Combine(dir, "old.opus"))).IsFalse();
+            await Assert.That(File.Exists(Path.Combine(dir, "new.opus"))).IsTrue();
+        }
+        finally { Directory.Delete(dir, true); }
+    }
+
+    [Test]
     public async Task CleanupByMaxSize_KeepsRecentlyUsedEntry()
     {
         // 回帰: 作成日時の古い順に消していたため、よく使う定型文ほど先に消えていた。

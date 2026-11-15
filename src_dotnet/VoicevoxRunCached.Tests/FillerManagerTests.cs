@@ -499,6 +499,37 @@ public class FillerManagerTests
         }
     }
 
+    [Test]
+    public async Task Init_DeletesLeftoverTemporaryFiles()
+    {
+        // 回帰: 生成の途中で落ちて残った .opus.tmp は、同じフィラーを生成し直すか --clear するまで残り、
+        // 文を変えた後は消えなかった。--init がキーの形のものだけ消す
+        var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
+        var clock = new MutableClock(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var leftover = Path.Combine(dir, new string('a', 64) + ".opus.tmp");
+            await File.WriteAllBytesAsync(leftover, [1]);
+            var otherFile = Path.Combine(dir, "exported.opus.tmp");
+            await File.WriteAllBytesAsync(otherFile, [1]);
+            var engine = new StubSpeechEngine(SpeechEngineKind.Voicevox);
+
+            await CreateManager(dir, ["文"], clock).InitializeFillerCacheAsync(engine, "1");
+
+            await Assert.That(File.Exists(leftover)).IsFalse();
+            await Assert.That(File.Exists(otherFile)).IsTrue();
+            await Assert.That(Directory.GetFiles(dir, "*.opus")).HasSingleItem();
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
+        }
+    }
+
     private static FillerManager CreateManager(string dir, string[] fillerTexts, IClock clock)
         => new(new FillerSettings { Enabled = true, Directory = dir, FillerTexts = fillerTexts }, new CacheSettings(), clock, NullLogger.Instance);
 

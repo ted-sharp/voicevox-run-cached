@@ -142,7 +142,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - `RunMaintenance` は新規保存のあった実行の最後に `SegmentProducer` が 1 回だけ呼ぶ
 - `SaveAsync` は meta.json を先に、`.opus` は `.opus.tmp` に書いてから `File.Move` で置く。フィラーも同じ
 - `.opus.tmp` は `--clear` と maintenance の `DeleteTemporaryFiles` が消す
-- 削除の失敗: 読み込み時・eviction は best-effort で Warning、`--clear` は `CacheException`
+- 削除の失敗: 読み込み時・eviction は best-effort で Warning、`--clear` は `CacheException`。容量の掃除は消せなかった分を合計から引かず、次に古いものを消す — `CacheEvictionPolicyTests.CleanupByMaxSize_UndeletableEntry_DeletesNextOldest`
 - `--refresh` = 読まずに合成して上書き。`--no-cache` = 読みも書きもしない
 - `IsMetadataValid` は Text 非空・Speaker 非空 (`"0"` は実在)・CreatedAt 設定済みのみ
 - v2 以前の `.mp3` は読まず、maintenance (`DeleteLegacyFiles`) と `--clear` (`DeleteAll`) で消す
@@ -151,6 +151,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 ### フィラーの掃除 (`FillerManager`)
 - 最終利用日時 = フィラーのファイルの更新日時。読み上げのたびに `TextToSpeechProcessor` が合成・再生の**前**に `FillerManager.MarkUsed` でその話者の今の文の分を更新する (`Filler.Enabled: false` なら更新しない) — `TextToSpeechProcessorTests.NoPlay_UpdatesFillerLastUsed`。`--init` は生成済みの分も更新する
 - `--init` の最後に、最終利用から `Cache.ExpirationDays` を過ぎたフィラーを消す (best-effort)。対象はキーの形 (16 進 64 文字) の `.opus` だけ — `FillerManagerTests.Init_DeletesFillersOfOldTexts` / `Init_KeepsCurrentAndRecentlyUsedFillers` / `Init_DoesNotDeleteNonFillerFiles`
+- `--init` は生成の前に、キーの形の `.opus.tmp` を消す (best-effort) — `FillerManagerTests.Init_DeletesLeftoverTemporaryFiles`
 - 記録を始めた印 (`FillerManager.UsageTrackingMarkerFileName`) が無ければ、消さずに全部の日時を今にして印を作る — `FillerManagerTests.Init_FirstCleanup_KeepsFillersCreatedBeforeTracking`
 
 ### `--out` (`AudioExportService`)

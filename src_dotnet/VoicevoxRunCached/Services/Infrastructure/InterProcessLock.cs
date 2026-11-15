@@ -12,6 +12,8 @@ namespace VoicevoxRunCached.Services.Infrastructure;
 /// 解放は返したハンドルの Dispose。プロセスが強制終了されても OS がハンドルを閉じるので、
 /// Hooks のタイムアウトで kill されたときも後続が永久に待つことはない。</para>
 /// <para>名前付き Mutex を使わないのは、取得したスレッドでしか解放できず、await を挟むと別スレッドからの解放で例外になるため。</para>
+/// <para>待ち行列は持たず、待っている側は <see cref="RetryIntervalMs"/> ごとに開き直すだけなので、待っているプロセスが 2 つ以上あるとき
+/// 次に取るのは来た順とは限らない (README に書いてある)。先着順にするには番号札のファイルなどが要り、複雑さに見合わないので入れていない。</para>
 /// <para>ロックファイル自体は削除しない (削除中に他プロセスが開こうとするとアクセス拒否になり、排他の判定が難しくなる)。</para>
 /// </remarks>
 public static class InterProcessLock
