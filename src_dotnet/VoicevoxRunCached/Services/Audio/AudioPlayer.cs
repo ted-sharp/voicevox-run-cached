@@ -211,7 +211,7 @@ public class AudioPlayer : IDisposable
     /// デバイス自体の故障なら、続く本編セグメントの再生で例外として表に出る。
     /// ただし再生のタイムアウト (<see cref="TimeoutException"/>) は握らずに投げる。<see cref="PlayWaveAsync"/> は
     /// 再生の途中で共有 WavePlayer を Stop() しており、そのまま本編を再生すると、遅れて届く停止イベントで本編が途中で切れうるため
-    /// (デバイスの異常として、フィラーを握るようにする前と同じく表に出す)。
+    /// (デバイスの異常として表に出す)。
     /// </remarks>
     private async Task<FillerOutcome> TryPlayFillerAsync(
         IWavePlayer wavePlayer,

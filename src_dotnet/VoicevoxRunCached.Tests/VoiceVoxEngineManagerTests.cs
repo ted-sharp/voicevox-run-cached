@@ -93,8 +93,8 @@ public class VoiceVoxEngineManagerTests
     {
         // 起動中のエンジン (エディタが起動したもの等) があると、起動したプロセスはポートを取れずに終わる。
         // 同じ名前のプロセスがあれば失敗にせず、その起動を待ち続ける
-        // 起動したプロセスが終わった後も、次の確認 (2 回目) まで待ち続けたらキャンセルして止める。
-        // 固定の時間 (以前は 3 秒) で止めると、負荷が高いときに cmd.exe の起動と終了が間に合わず、確認の前に止まって失敗していた
+        // 起動したプロセスが終わった後も次の確認 (2 回目) まで待ち続けたら、キャンセルして止める
+        // (決まった時間で止めると、負荷が高いときは cmd.exe の起動と終了が間に合わず、確認の前に止まってしまう)
         string? checkedPath = null;
         var checks = 0;
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
