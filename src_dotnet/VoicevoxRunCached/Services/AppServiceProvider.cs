@@ -8,6 +8,10 @@ namespace VoicevoxRunCached.Services;
 /// Jab (Source Generator) によるコンパイル時 DI コンテナ。
 /// 依存の登録漏れは JAB0002、循環依存は JAB0008 としてビルドエラーになる。
 /// </summary>
+/// <remarks>
+/// 登録するクラスのコンストラクタで <c>ILogger</c> / <c>IClock</c> などを省略可能 (<c>= null</c> + 既定値) にしない。
+/// Jab は既定値付きの引数を、登録が無くても黙って既定値で生成するので、JAB0002 で登録漏れに気づけない。
+/// </remarks>
 [ServiceProvider]
 // 設定 (外部から渡すインスタンス)
 [Singleton(typeof(AppSettings), Instance = nameof(Settings))]

@@ -8,6 +8,9 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// <summary>
 /// テキストを文単位のセグメントに分割するクラス。
 /// </summary>
+/// <remarks>
+/// キャッシュはセグメント単位なので、文に分けておくと、テキストの一部を変えても変わっていない文はキャッシュから鳴る。
+/// </remarks>
 public partial class TextSegmentProcessor
 {
     private static readonly char[] SentenceEndings = ['。', '！', '？', '!', '?'];

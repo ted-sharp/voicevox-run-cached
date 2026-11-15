@@ -60,7 +60,9 @@ public class VoicepeakEngine : ISpeechEngine
                     suggestedSolution: "話者名と感情名を `VoicevoxRunCached speakers --engine voicepeak` で確認してください。");
             }
 
+            // 出力は WAV 48kHz mono 16bit で、fmt チャンクの前に JUNK チャンクがある (NAudio の WaveFileReader で読める)
             var wavData = await File.ReadAllBytesAsync(outPath, cancellationToken);
+            // 音量は CLI に無いので WAV に掛ける
             var gain = CacheKeyGenerator.NormalizeParameter(request.Volume);
             return gain == 1.0 ? wavData : AudioConversionUtility.ApplyGain(wavData, (float)gain);
         }
@@ -135,6 +137,7 @@ public class VoicepeakEngine : ISpeechEngine
                 error = $"感情は 名前=値 で指定します (例: {narrator}:joy=50): '{part.Trim()}'";
                 return null;
             }
+            // voicepeak.exe は 101 のような範囲外の値も黙って受け付ける (実機で確認) ので、ここで検証する
             if (value is < 0 or > 100)
             {
                 error = $"感情の値は 0〜100 です: {name}={value}";

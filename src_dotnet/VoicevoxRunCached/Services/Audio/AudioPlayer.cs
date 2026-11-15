@@ -291,6 +291,7 @@ public class AudioPlayer : IDisposable
 
             reader = _formatDetector.CreateWaveStream(audioData);
 
+            // セグメントごとに Init し直すので、サンプルレートの違う音声 (合成 24kHz・キャッシュ 48kHz) が混在してよい
             wavePlayer.Init(reader);
             await Task.Delay(leadingDelayMs, cancellationToken);
 

@@ -279,6 +279,7 @@ public class DiskCacheStore
     /// <summary>
     /// メタデータの整合性検証 (Text と Speaker が非空、CreatedAt が default でない)。
     /// VOICEVOX は speaker 0 (四国めたん あまあま等) を持つため "0" も有効。
+    /// 話者・パラメータが要求と一致するかは見ない (キーに含まれるので、キーが一致すれば一致している)。
     /// </summary>
     /// <remarks>
     /// Speed/Pitch/Volume 未反映だった旧版のキャッシュは全て MP3 なので、Opus 移行で読まれなくなった (検証不要)。

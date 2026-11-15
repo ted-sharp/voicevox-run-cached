@@ -9,6 +9,13 @@ using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Synthesis;
 
+/// <summary>
+/// VOICEVOX (互換エンジンを含む) の REST API クライアント。
+/// </summary>
+/// <remarks>
+/// 呼び出しは直列の前提で、クライアント自身にロックは無い (直列なのは <see cref="SegmentProducer.ProduceAsync"/> のループで 1 件ずつ await するため)。
+/// 並列に呼ぶようにするなら、エンジンが同時の呼び出しに耐えるかを実機で確かめ、このクラスの中に lock を入れる。
+/// </remarks>
 public class VoiceVoxApiClient : IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new()

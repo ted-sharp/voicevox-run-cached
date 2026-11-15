@@ -59,6 +59,7 @@ public class VoicepeakSettings : IEngineFillerSettings
 
     /// <remarks>
     /// 既定は 2。1 文の合成に 10 秒ほどかかり、上限が無いとその間ずっとフィラーが続くため。
+    /// 既定値をコードに持つのは、Voicepeak セクションの無い古い appsettings.json でもフィラーが鳴り続けないようにするため。
     /// </remarks>
     public int? MaxFillersPerWait { get; set; } = 2;
 }
@@ -131,7 +132,7 @@ public class CacheSettings
 
     /// <summary>
     /// Opus のビットレート (kbps, VBR)。キャッシュ・フィラー (<c>--init</c>)・<c>--out .opus</c> の保存に使う。
-    /// キャッシュキーには含まれないため、変更しても既存キャッシュはそのまま使われる。
+    /// キャッシュキーには含まれないため、変更しても既存キャッシュはそのまま使われる (新しいビットレートで作り直すなら <c>--clear</c>)。
     /// </summary>
     public int OpusBitrateKbps { get; set; } = AudioConstants.OpusBitrateKbps;
 }
@@ -217,5 +218,8 @@ public class CevioSettings : IEngineFillerSettings
 
     public string[] FillerTexts { get; set; } = [];
 
+    /// <remarks>
+    /// 省略時は上限なし。VOICEVOX と同じく 1 文の合成が速く、フィラーが続くことはほとんど無いため。
+    /// </remarks>
     public int? MaxFillersPerWait { get; set; }
 }
