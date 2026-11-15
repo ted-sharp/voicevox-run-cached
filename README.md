@@ -73,9 +73,12 @@ task publish        # ビルドのみ (src_dotnet/publish/VoicevoxRunCached/)
 task publish:zip    # 配布用 (バージョン付き ZIP)
 ```
 
-`task install` は場所を `INSTALL_DIR` で変えられる (`task install INSTALL_DIR='C:\Tools\VoicevoxRunCached'`。`task uninstall` にも同じものを渡す)。もう一度実行すると exe だけを入れ替え、編集済みの `appsettings.json` と `cache\` / `logs\` は残す (新しい版で設定項目が変わったときは、`src_dotnet/publish/VoicevoxRunCached/appsettings.json` と見比べる)。PATH は変更しないので、入っていなければ追加するコマンドが表示される。`task uninstall` は exe と `appsettings.json` を消し、`cache\` / `logs\` は残す。
+- 入れる場所は `INSTALL_DIR` で変えられる (`task install INSTALL_DIR='C:\Tools\VoicevoxRunCached'`。`task uninstall` にも同じものを渡す)
+- もう一度実行すると exe だけを入れ替え、編集済みの `appsettings.json` と `cache\` / `logs\` は残す。新しい版で設定項目が変わったときは、`src_dotnet/publish/VoicevoxRunCached/appsettings.json` と見比べる
+- PATH は変更しない。入っていなければ、追加するコマンドが表示される
+- `task uninstall` は exe と `appsettings.json` を消し、`cache\` / `logs\` は残す
 
-出力は .NET ランタイムを含む単一の `VoicevoxRunCached.exe` (約 79MB) と `appsettings.json` で、実行する PC に .NET を入れる必要はない (リリース版の ZIP も同じ)。一緒に出る `VoicevoxRunCached.pdb` はデバッグ用で、実行には要らない。
+出力は .NET ランタイムを含む単一の `VoicevoxRunCached.exe` (約 100MB) と `appsettings.json` で、実行する PC に .NET を入れる必要はない (リリース版の ZIP も同じ)。一緒に出る `VoicevoxRunCached.pdb` はデバッグ用で、実行には要らない。
 
 ## 使い方
 
@@ -124,14 +127,24 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 | `--out, -o <path>` | ファイル保存 (`.wav` / `.opus` を拡張子で判定。それ以外はエラー)。書き込めない場所 (読み取り専用やほかのアプリが開いているファイルも) なら合成・再生の前にエラー (終了コード 5) | — |
 | `--no-play` | 再生しない (`--out` と併用推奨) | false |
 | `--verbose` | 再生時間と総実行時間を表示 | false |
-| `--max-wait <seconds>` | 先に動いている読み上げなどを待つ上限 (秒、0 以上。0 なら待たない)。超えたら読み上げずに終了コード 9 (`--test` でも使える) | `Lock.MaxWaitSeconds` (未設定なら上限なし) |
+| `--max-wait <seconds>` | 先に動いている読み上げなどを待つ上限 (秒、0 以上。[同時実行](#同時実行)) | `Lock.MaxWaitSeconds` (未設定なら上限なし) |
 | `--log-level <level>` | `trace`/`debug`/`info`/`warn`/`error`/`crit`/`none` (`none` はログを一切出さない) | info |
 | `--log-format <fmt>` | `simple` / `json` (`json` は 1 イベント 1 行の JSON。ファイル出力も同じ書式) | simple |
 | `--help, -h` | ヘルプ表示 (引数のどこにあっても表示し、読み上げ・コマンドは実行しない) | — |
 
-`--speed` / `--pitch` / `--volume` は小数第 2 位に丸めて使われる (キャッシュキーも丸めた値で作る)。「目安」は VOICEVOX エディタの調整範囲で、本ツールが検証するのは数値であること・speed が 0 より大きいこと・volume と speaker が 0 以上であることだけ。不正な値はエラーで終了する。
+**値の扱い**
 
-不明なオプション (`--speeed` などの打ち間違い) と余分な引数もエラーで終了する (終了コード 1。既定値のまま読み上げない。`speakers` / `devices` / `--init` / `--clear` も同じ)。本文に空白を含めるときは全体を引用符で囲む。コマンド名は大文字小文字を区別する (`Speakers` は本文として読む)。本文が `speakers` / `devices` / `--init` のようにコマンドやオプションと同じ文字列のときは、`VoicevoxRunCached -- speakers` のように前に `--` を置く。本文の位置にオプションの形をした引数 (`--refresh` のように `--` の直後が英字で空白を含まないもの、`-s` / `-o`) があるときは本文の書き忘れとしてエラーにするので、その形の文を読み上げるときも前に `--` を置く (`--- 完了 ---` のような文はそのまま読む)。
+- `--speed` / `--pitch` / `--volume` は小数第 2 位に丸めて使われる (キャッシュキーも丸めた値で作る)
+- 「目安」は VOICEVOX エディタの調整範囲。本ツールが検証するのは、数値であること・speed が 0 より大きいこと・volume と speaker が 0 以上であることだけ。不正な値はエラーで終了する
+
+**引数の書き方**
+
+- 不明なオプション (`--speeed` などの打ち間違い) と余分な引数はエラーで終了する (終了コード 1。既定値のまま読み上げない)。`speakers` / `devices` / `--init` / `--clear` も同じ
+- 本文に空白を含めるときは全体を引用符で囲む
+- コマンド名は大文字小文字を区別する (`Speakers` は本文として読む)
+- 本文の前に `--` を置くと、次のような文もそのまま読み上げる
+  - コマンドやオプションと同じ文字列 (`VoicevoxRunCached -- speakers`)
+  - オプションの形をした文 (`--refresh` のように `--` の直後が英字で空白を含まないもの、`-s` / `-o`)。本文の位置にあると本文の書き忘れとしてエラーにする。`--- 完了 ---` のような文は `--` なしで読む
 
 ### 終了コード
 
@@ -159,7 +172,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 
 ## 設定 (`appsettings.json`)
 
-各セクションは `Configuration/AppSettings.cs` の型にバインドされ、FluentValidation で検証される。下記コメントが各設定の役割を兼ねている。
+各項目の意味は下のコメントのとおり (詳しい説明がある項目は、その節を挙げている)。値が不正なら起動時に設定エラー (終了コード 7) になる。
 
 ```jsonc
 {
@@ -171,18 +184,18 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "BaseUrl": "http://127.0.0.1:50021",  // localhost より 127.0.0.1 推奨 (DNS 解決遅延回避)
     "EngineArguments": "--host 127.0.0.1 --port 50021",
     "DefaultSpeaker": 1,
-    "EnginePath": "",             // 空なら一般的なインストール場所から自動検出 (VOICEVOX 0.26 以降は %APPDATA%\voicevox\vvpp-engines\VOICEVOX_Engine+…\run.exe、それ以前は VOICEVOX\vv-engine\run.exe / AivisSpeech\AivisSpeech-Engine\run.exe)
+    "EnginePath": "",             // 空ならインストール場所から自動検出 (VOICEVOX 0.26 以降の %APPDATA%\voicevox\vvpp-engines\ も探す)
     "ConnectionTimeout": 30,      // 秒。HTTP リクエスト 1 回の上限 (タイムアウトはリトライしない)。話者の初期化 (モデルの読み込み) は完了まで待つ
     "AutoStartEngine": true,
     "StartupTimeoutSeconds": 30,
     "KeepEngineRunning": true,    // false ならアプリ終了時にエンジンも停止 (強制終了時を除く。Hooks の注意を参照)
-    "FillerTexts": [],            // このエンジンのフィラーの文。空なら Filler.FillerTexts
-    // "MaxFillersPerWait": 1     // 次の文を待つ 1 回に鳴らすフィラーの上限。null = 上限なし (VOICEVOX は省略時も上限なし)、0 = このエンジンでは鳴らさない
+    "FillerTexts": [],            // このエンジンのフィラーの文 (フィラー音声の節)
+    // "MaxFillersPerWait": 1     // 待ち 1 回に鳴らすフィラーの上限 (フィラー音声の節)
   },
   "Cache": {
     "Directory": "./cache/audio/",
     "UseExecutableBaseDirectory": true,  // 相対パスを exe 基準で解決
-    "ExpirationDays": 30,         // 最後に使ってからこの日数を過ぎたキャッシュを削除 (使うたびに延長)。フィラーも同じ日数で --init のときに削除
+    "ExpirationDays": 30,         // 最後に使ってからこの日数を過ぎたキャッシュを削除 (使うたびに延長)
     "MaxSizeGB": 1.0,             // 上限超過時は最後に使ったのが古い順に削除
     "OpusBitrateKbps": 32         // Opus のビットレート 12-128。キャッシュ・フィラー・--out .opus 共通 (キーに含まれないので既存キャッシュは流用)
   },
@@ -202,7 +215,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "FillerTexts": ["えーっと、", "あのー、", "あのう、", "ええと、", "ええっと、", "えとえと、"]
   },
   "Lock": {
-    // "MaxWaitSeconds": 10       // 先の読み上げなどを待つ上限 (秒)。既定は未設定 = 上限なし、0 なら待たない。超えたら終了コード 9。--max-wait で上書き
+    // "MaxWaitSeconds": 10       // 先の読み上げなどを待つ上限 (秒)。未設定なら上限なし (同時実行の節)
   },
   "Logging": {
     "Level": "info",              // trace|debug|info|warn|error|crit|none
@@ -217,7 +230,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
     "DefaultSpeaker": "",         // 例: "Otomachi Una" / "Otomachi Una:joy=50"。空なら --engine voicepeak では -s が必須
     "TimeoutSeconds": 60,         // voicepeak.exe 1 回 (1 文) を待つ上限 (秒、10-600)
     "FillerTexts": ["えーっと、ちょっと待ってくださいね、", "少々お待ちください、", "..."],  // 1 文 10 秒ほどかかるので長めのフィラー
-    "MaxFillersPerWait": 2        // 次の文を待つ 1 回に鳴らすフィラーの上限。null = 上限なし、0 = 鳴らさない (省略時は 2)
+    "MaxFillersPerWait": 2        // 待ち 1 回に鳴らすフィラーの上限 (フィラー音声の節)
   }
 }
 ```
@@ -265,7 +278,7 @@ VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラ�
   "StartupTimeoutSeconds": 60,
   "KeepHostRunning": true,       // 自分で起動した CeVIO AI を残す
   "SynthesisTimeoutSeconds": 30, // 1 文の合成・閉じるなどを待つ上限 (秒)
-  "FillerTexts": []              // CeVIO 用のフィラー。空なら Filler.FillerTexts (MaxFillersPerWait も書ける。省略時は上限なし)
+  "FillerTexts": []              // CeVIO 用のフィラー。MaxFillersPerWait も書ける (フィラー音声の節)
 }
 ```
 
@@ -273,7 +286,13 @@ VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラ�
 
 ### セグメント単位キャッシュ
 
-入力テキストは文末記号 (`。！？!?`) と改行で文単位に分割される。半角 `.` は直後が空白か文末のときだけ区切る (`3.14` や `Node.js` は割らない)。記号だけになる部分 (「えっ！？」の「？」、「「完了。」」の「」」など) は前の文にまとめる。100 文字を超える文は、後半にある最後の読点 (`、` `，`) か空白の直後で分割する (無ければ 100 文字目で切るが、絵文字などのサロゲートペアは割らない)。各セグメントはテキスト・スピーカー ID・速度・ピッチ・音量から作る SHA256 をキーに、`.opus` (Ogg Opus) + `.meta.json` として独立にキャッシュされる。v2 以前の `.mp3` キャッシュは使われず、次回の新規合成時か `--clear` で削除される。
+入力テキストは文単位のセグメントに分割され、セグメントごとにキャッシュされる。
+
+- 文末記号 (`。！？!?`) と改行で区切る。半角 `.` は直後が空白か文末のときだけ区切る (`3.14` や `Node.js` は割らない)
+- 記号だけになる部分 (「えっ！？」の「？」、「「完了。」」の「」」など) は前の文にまとめる
+- 100 文字を超える文は、後半にある最後の読点 (`、` `，`) か空白の直後で分割する。無ければ 100 文字目で切るが、絵文字などのサロゲートペアは割らない
+- キーはテキスト・エンジン・話者・速度・ピッチ・音量から作る SHA256。`.opus` (Ogg Opus) と `.meta.json` の組で保存する
+- v2 以前の `.mp3` キャッシュは使われず、次回の新規合成時か `--clear` で削除される
 
 - **部分変更でも再利用**: テキストの一部だけ変えても、変更されていない文はキャッシュヒット
 - **即時再生**: キャッシュ済みセグメントは待機なしで再生開始 (エンジンの起動・接続は最初に合成が必要になったときに行うので、先頭がキャッシュ済みならエンジンの起動を待つ間にそこから鳴る)
@@ -296,19 +315,47 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 
 `Filler.Enabled: true` にすると、セグメント生成待ちの隙間に「えーっと、」「あのー、」などのフィラー音声を再生して無音を回避する (既定は無効)。
 
-フィラーは `--init` で事前生成したキャッシュからしか再生されない。有効にする前に一度 `--init` を実行しておくこと (`--init` は `Filler.Enabled` に関係なく生成する。未生成だとフィラーは鳴らず、Warning ログが 1 回出るだけ)。`--clear` はフィラーのキャッシュも消すので、その後は `--init` をやり直す。
+**生成**
 
-フィラーは読み上げと同じ話者の声で再生する (途中で声が変わらないように)。`--init` が生成するのは既定のエンジン・`DefaultSpeaker` の分なので、`--speaker 3` のように別の話者 (や `--engine` で別のエンジン) で読み上げるなら `--init -s 3` (`--init --engine <name> -s <話者>`) でその話者の分も生成しておく。生成していない話者ではフィラーは鳴らない。フィラーの音量は読み上げの `--volume` に合わせる (話速・音高は既定のまま)。フィラーの読み込みや再生に失敗しても本編の読み上げは止めず、その回はフィラーを使わない (再生がタイムアウトしたときは、再生デバイスの異常として本編と同じく止める)。
+- フィラーは `--init` で事前生成したキャッシュからしか再生されない。有効にする前に一度 `--init` を実行しておく (`--init` は `Filler.Enabled` に関係なく生成する)
+- 未生成だとフィラーは鳴らず、Warning ログが 1 回出るだけ
+- `--clear` はフィラーのキャッシュも消すので、その後は `--init` をやり直す
 
-フィラーの文と回数はエンジンごとに変えられる。各エンジンのセクションの `FillerTexts` (空なら `Filler.FillerTexts`) と `MaxFillersPerWait` (次の文を待つ 1 回に鳴らす上限。`null` なら届くまで繰り返す、`0` ならそのエンジンでは鳴らさない。省略したときは VOICEVOX が上限なし、VOICEPEAK が 2 なので、VOICEPEAK で上限をなくすには `null` を書く)。VOICEPEAK は 1 文の合成に 10 秒ほどかかるので、既定で長めの文を待ち 1 回に 2 回までにしている。文を変えたら `--init` でその文の分を生成し直す。
+**話者と音量**
 
-最後に使ってから `Cache.ExpirationDays` 日を過ぎたフィラー (文を変える前の分・使わなくなった話者の分) は、`--init` のときに削除される。読み上げに使った話者の分は、読み上げるたびに延長される (`--no-play` でも延長される。`Filler.Enabled: false` の間は延長されない)。3.1.0 以前に作ったフィラーは、更新後の最初の `--init` では削除されず、そこから日数を数える (フィラーのフォルダに `last-used-tracking.txt` を作る)。生成の途中で落ちて残った一時ファイル (`.opus.tmp`) も `--init` のときに削除する。削除するのはフィラーのファイルだけで、同じフォルダのほかのファイルは消さない。
+- フィラーは読み上げと同じ話者の声で再生する (途中で声が変わらないように)。生成していない話者ではフィラーは鳴らない
+- `--init` が生成するのは既定のエンジン・`DefaultSpeaker` の分。別の話者やエンジンで読み上げるなら、`--init -s 3` / `--init --engine <name> -s <話者>` でその話者の分も生成しておく
+- 音量は読み上げの `--volume` に合わせる (話速・音高は既定のまま)
+- フィラーの読み込みや再生に失敗しても本編の読み上げは止めず、その回はフィラーを使わない (再生がタイムアウトしたときは、再生デバイスの異常として本編と同じく止める)
+
+**文と回数 (エンジンごと)**
+
+- `FillerTexts`: 各エンジンのセクションに書く。空なら `Filler.FillerTexts`。文を変えたら `--init` でその文の分を生成し直す
+- `MaxFillersPerWait`: 次の文を待つ 1 回に鳴らす上限。`null` なら届くまで繰り返す、`0` ならそのエンジンでは鳴らさない
+- 省略したときは VOICEVOX・CeVIO が上限なし、VOICEPEAK が 2。VOICEPEAK は 1 文の合成に 10 秒ほどかかるので、既定で長めの文を待ち 1 回に 2 回までにしている。VOICEPEAK で上限をなくすには `null` を書く
+
+**削除**
+
+- 最後に使ってから `Cache.ExpirationDays` 日を過ぎたフィラー (文を変える前の分・使わなくなった話者の分) は、`--init` のときに削除される
+- 読み上げに使った話者の分は、読み上げるたびに延長される (`--no-play` でも延長される。`Filler.Enabled: false` の間は延長されない)
+- 3.1.0 以前に作ったフィラーは、更新後の最初の `--init` では削除されず、そこから日数を数える (フィラーのフォルダに `last-used-tracking.txt` を作る)
+- 生成の途中で落ちて残った一時ファイル (`.opus.tmp`) も `--init` のときに削除する
+- 削除するのはフィラーのファイルだけで、同じフォルダのほかのファイルは消さない
 
 ### 同時実行
 
-読み上げ (キャッシュ参照・合成・再生・`--out`)・`--init` (フィラー生成)・`speakers`・`--clear` は、一時フォルダのロックファイル (`%TEMP%\VoicevoxRunCached.speech.lock`) で 1 プロセスずつに直列化される。同時に起動すると後から来た方は先の処理が終わるまで待つので、音声が重ならず、エンジンへの API 呼び出しや自動起動も 1 つずつになる (Ctrl+C で待機を中止できる。読み上げ中に `speakers` を実行すると、読み上げが終わるまで待つ)。待っているものが 2 つ以上あるとき、どれが次に実行されるかは来た順とは限らない。プロセスが強制終了されてもロックは OS が解放する。`devices` は対象外。`KeepEngineRunning: false` のときは、自分が起動したエンジンをロックを解放する前に止めるので、待っていた後続の処理は必要ならエンジンを起動し直す。
+読み上げ (キャッシュ参照・合成・再生・`--out`)・`--init` (フィラー生成)・`speakers`・`--clear` は、一時フォルダのロックファイル (`%TEMP%\VoicevoxRunCached.speech.lock`) で 1 プロセスずつに直列化される (`devices` は対象外)。
 
-待つ時間には上限を設けられる (`Lock.MaxWaitSeconds`、読み上げ・`--test` では `--max-wait` で上書き)。上限までに先の処理が終わらなければ、実行せずに終了コード 9 で終わる。Hooks が続けて発火したとき、古い通知を後からまとめて読み上げないようにしたい場合に使う。`--init` / `--clear` / `speakers` は `--max-wait` を取らないので、上限を変えるときは `VoicevoxRunCached --clear --Lock:MaxWaitSeconds=60` のように設定の上書きで指定する。
+- 同時に起動すると、後から来た方は先の処理が終わるまで待つ。音声が重ならず、エンジンへの API 呼び出しや自動起動も 1 つずつになる (読み上げ中に `speakers` を実行すると、読み上げが終わるまで待つ)
+- 待っているものが 2 つ以上あるとき、どれが次に実行されるかは来た順とは限らない
+- Ctrl+C で待機を中止できる。プロセスが強制終了されてもロックは OS が解放する
+- `KeepEngineRunning: false` のときは、自分が起動したエンジンをロックを解放する前に止める。待っていた後続の処理は、必要ならエンジンを起動し直す
+
+**待つ上限** (`Lock.MaxWaitSeconds`、読み上げ・`--test` では `--max-wait` で上書き)
+
+- 上限までに先の処理が終わらなければ、実行せずに終了コード 9 で終わる。未設定なら上限なし、0 なら待たない
+- Hooks が続けて発火したとき、古い通知を後からまとめて読み上げないようにしたい場合に使う
+- `--init` / `--clear` / `speakers` は `--max-wait` を取らない。上限を変えるときは `VoicevoxRunCached --clear --Lock:MaxWaitSeconds=60` のように設定の上書きで指定する
 
 ### vs `curl` 直叩き
 
