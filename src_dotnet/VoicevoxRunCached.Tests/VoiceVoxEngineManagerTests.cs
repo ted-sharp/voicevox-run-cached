@@ -93,20 +93,28 @@ public class VoiceVoxEngineManagerTests
     {
         // 起動中のエンジン (エディタが起動したもの等) があると、起動したプロセスはポートを取れずに終わる。
         // 同じ名前のプロセスがあれば失敗にせず、その起動を待ち続ける
+        // 起動したプロセスが終わった後も、次の確認 (2 回目) まで待ち続けたらキャンセルして止める。
+        // 固定の時間 (以前は 3 秒) で止めると、負荷が高いときに cmd.exe の起動と終了が間に合わず、確認の前に止まって失敗していた
         string? checkedPath = null;
+        var checks = 0;
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         using var manager = new VoiceVoxEngineManager(StartupSettings(Cmd, "/c exit 1"), NullLogger.Instance, SystemClock.Instance)
         {
             IsAnotherInstanceRunning = (path, _) =>
             {
                 checkedPath = path;
+                if (Interlocked.Increment(ref checks) == 2)
+                {
+                    cts.Cancel();
+                }
                 return true;
             },
         };
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
 
         await Assert.ThrowsAsync<OperationCanceledException>(() => manager.EnsureRunningOrThrowAsync(cts.Token));
 
         await Assert.That(checkedPath).IsEqualTo(Cmd);
+        await Assert.That(checks).IsEqualTo(2);
     }
 
     [Test]
