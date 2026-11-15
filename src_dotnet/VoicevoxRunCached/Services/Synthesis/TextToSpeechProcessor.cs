@@ -56,8 +56,14 @@ public class TextToSpeechProcessor
     /// エンジンの起動もプロセスをまたいで 1 つずつになる。後から来た方は先の読み上げが終わるまで待つ
     /// (上限は <c>--max-wait</c> / <c>Lock.MaxWaitSeconds</c>)。
     /// </remarks>
-    public Task<int> ProcessTextToSpeechAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken = default)
-        => _speechLock.RunAsync(() => ProcessLockedAsync(request, options, cancellationToken), cancellationToken, options.MaxWaitSeconds);
+    public async Task<int> ProcessTextToSpeechAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken = default)
+    {
+        if (!String.IsNullOrWhiteSpace(options.OutPath))
+        {
+            AudioExportService.EnsureWritableOutput(options.OutPath);
+        }
+        return await _speechLock.RunAsync(() => ProcessLockedAsync(request, options, cancellationToken), cancellationToken, options.MaxWaitSeconds);
+    }
 
     private async Task<int> ProcessLockedAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken)
     {
@@ -171,7 +177,7 @@ public class TextToSpeechProcessor
         CancellationToken cancellationToken)
     {
         // エンジンの準備は producer が最初に合成が必要になったときに 1 回だけ呼ぶ。全部キャッシュから読めればエンジンに一切接続しない
-        // (起動待ちで通知が遅れない・エンジン停止中でも鳴る)。先頭がキャッシュ済みなら、エンジンの起動を待つ間にそこから鳴り始める。
+        // (起動待ちで通知が遅れない・エンジン停止中でも鳴る)。先頭がキャッシュ済みなら、エンジンの起動を待つ間にそこから鳴り始める (その間フィラーも鳴りうる)。
         // 準備の失敗は producer が投げずに返す (投げると鳴っているキャッシュ済みの文が途中で止められる)。--cache-only は合成しない (読めないキャッシュは失敗として数える)
         // 準備の中身 (起動確認・話者の確認と初期化) は ISpeechEngine.PrepareAsync
         Func<CancellationToken, Task>? prepareSynthesis = options.CacheOnly
@@ -236,6 +242,7 @@ public class TextToSpeechProcessor
             ct => _fillerManager.GetRandomFillerAudioAsync(engine, request.Speaker, request.Volume, ct),
             engine.FillerSettings.MaxFillersPerWait,
             cancellationToken);
+        _fillerManager.MarkUsed(engine, request.Speaker);
 
         if (verbose)
         {

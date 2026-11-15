@@ -17,6 +17,11 @@ public class VoiceVoxEngineManager : IDisposable
     private Process? _engineProcess;
     private bool _disposed;
 
+    /// <summary>
+    /// 起動したプロセス (引数の ID) のほかに、同じ実行ファイル名のプロセスが動いているか。テストで差し替える。
+    /// </summary>
+    public Func<string, int, bool> IsAnotherInstanceRunning { get; init; } = ProcessInstances.IsAnotherInstanceRunning;
+
     public VoiceVoxEngineManager(VoiceVoxSettings settings, ILogger logger, IClock clock)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -127,6 +132,8 @@ public class VoiceVoxEngineManager : IDisposable
             return false;
         }
 
+        // 起動したプロセス。自分のエンジンとして残す (_engineProcess) もの以外は最後に破棄する
+        Process? process = null;
         try
         {
             using var spinner = new ProgressSpinner("Starting VOICEVOX engine...");
@@ -144,12 +151,15 @@ public class VoiceVoxEngineManager : IDisposable
                 WorkingDirectory = Path.GetDirectoryName(enginePath) ?? Environment.CurrentDirectory
             };
 
-            _engineProcess = Process.Start(startInfo);
-            if (_engineProcess == null)
+            process = Process.Start(startInfo);
+            if (process == null)
             {
                 _logger.LogError("VOICEVOXエンジンプロセスの起動に失敗しました");
                 return false;
             }
+            _engineProcess = process;
+            // 起動したプロセスが終わった後も、起動中の別のエンジン (エディタ) を待っているか
+            var waitingForOtherInstance = false;
 
             var timeout = TimeSpan.FromSeconds(_settings.StartupTimeoutSeconds);
             var startTime = _clock.UtcNow;
@@ -162,6 +172,31 @@ public class VoiceVoxEngineManager : IDisposable
                 {
                     _logger.LogInformation("VOICEVOXエンジンが正常に起動しました");
                     return true;
+                }
+
+                if (process.HasExited)
+                {
+                    // 起動中のエンジンがあると、起動したプロセスはポートを取れずに終わる (エディタは起動中のエディタに任せて終わる)。
+                    // 同じ名前のプロセスがあればその起動を待ち、自分が起動したものとして扱わない (止めない)。
+                    // 無ければ起動の失敗なので、タイムアウトまで (ロックを持ったまま) 待たない。待っていたプロセスが終わったときも同じ
+                    _engineProcess = null;
+                    if (!IsAnotherInstanceRunning(enginePath, process.Id))
+                    {
+                        if (waitingForOtherInstance)
+                        {
+                            _logger.LogError("起動を待っていたVOICEVOXエンジンが終了しました");
+                        }
+                        else
+                        {
+                            _logger.LogError("VOICEVOXエンジンが起動中に終了しました: {EnginePath}", enginePath);
+                        }
+                        return false;
+                    }
+                    if (!waitingForOtherInstance)
+                    {
+                        _logger.LogInformation("起動中のVOICEVOXエンジンを待ちます");
+                        waitingForOtherInstance = true;
+                    }
                 }
 
                 await Task.Delay(AudioConstants.EngineStartupPollIntervalMs, cancellationToken);
@@ -179,6 +214,13 @@ public class VoiceVoxEngineManager : IDisposable
         {
             _logger.LogError(ex, "VOICEVOXエンジンの起動中にエラーが発生しました");
             return false;
+        }
+        finally
+        {
+            if (process != null && process != _engineProcess)
+            {
+                process.Dispose();
+            }
         }
     }
 

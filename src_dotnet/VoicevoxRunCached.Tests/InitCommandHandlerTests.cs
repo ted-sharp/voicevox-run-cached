@@ -87,7 +87,7 @@ public class InitCommandHandlerTests
             var fillerSettings = new FillerSettings { Enabled = true, Directory = dir, FillerTexts = ["a", "b"] };
             using var engineManager = new VoiceVoxEngineManager(voiceVoxSettings, NullLogger.Instance, SystemClock.Instance);
             using var apiClient = engine.CreateApiClient();
-            var fillerManager = new FillerManager(fillerSettings, new CacheSettings(), NullLogger.Instance);
+            var fillerManager = new FillerManager(fillerSettings, new CacheSettings(), SystemClock.Instance, NullLogger.Instance);
             var handler = new InitCommandHandler(
                 TestEngines.Create(engineManager, apiClient), fillerManager, lockFile.CreateSpeechLock(TestEngines.Create(engineManager)), NullLogger.Instance);
 

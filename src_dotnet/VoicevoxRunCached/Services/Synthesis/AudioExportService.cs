@@ -131,6 +131,39 @@ public class AudioExportService
         return source;
     }
 
+    /// <summary>
+    /// <c>--out</c> の出力先に書き込めるかを確かめる (フォルダが無ければ作る)。書き込めなければ <see cref="ErrorCodes.Audio.AudioFileExportFailed"/>。
+    /// </summary>
+    /// <remarks>
+    /// 出力は合成・再生がすべて終わってからなので、ここで確かめないと、書き込めないことに読み上げを最後まで聞いてから気づく。
+    /// 呼び出し元 (<see cref="TextToSpeechProcessor"/>) はプロセス間ロックを待つ前に呼ぶ。
+    /// </remarks>
+    public static void EnsureWritableOutput(string outPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(outPath);
+
+        var fullPath = Path.GetFullPath(outPath);
+        if (Directory.Exists(fullPath))
+        {
+            throw NotWritable(outPath, $"出力先がフォルダです: {outPath}", "--out にはファイル名 (.wav / .opus) を指定してください。");
+        }
+        var directory = Path.GetDirectoryName(fullPath);
+        if (directory == null || !DirectoryValidation.BeWritableDirectory(directory))
+        {
+            throw NotWritable(outPath, $"出力先のフォルダに書き込めません: {outPath}", "出力先のフォルダの場所と権限を確認してください。");
+        }
+    }
+
+    private static AudioProcessingException NotWritable(string outPath, string userMessage, string suggestedSolution) => new(
+        ErrorCodes.Audio.AudioFileExportFailed,
+        $"Output path is not writable: {outPath}",
+        userMessage,
+        suggestedSolution);
+
+    /// <remarks>
+    /// 一時ファイル (<see cref="DiskCacheStore.TemporarySuffix"/>) に書いてから置き換える。直接書くと、途中で失敗・中断したときに
+    /// 途中までのファイルが残り、既存のファイルも壊れる。一時ファイルは失敗しても残さない。
+    /// </remarks>
     private async Task WriteOutputFileAsync(byte[] audioData, string outPath, CancellationToken cancellationToken)
     {
         var directory = Path.GetDirectoryName(outPath);
@@ -139,7 +172,17 @@ public class AudioExportService
             Directory.CreateDirectory(directory);
         }
 
-        await File.WriteAllBytesAsync(outPath, audioData, cancellationToken);
+        var tempPath = outPath + DiskCacheStore.TemporarySuffix;
+        try
+        {
+            await File.WriteAllBytesAsync(tempPath, audioData, cancellationToken);
+            File.Move(tempPath, outPath, overwrite: true);
+        }
+        finally
+        {
+            // 置き換えた後は無いので何もしない (File.Delete はファイルが無くても例外にならない)
+            File.Delete(tempPath);
+        }
         _logger.LogDebug("音声ファイルを書き込みました: {OutPath}, サイズ: {Size} bytes", outPath, audioData.Length);
     }
 }

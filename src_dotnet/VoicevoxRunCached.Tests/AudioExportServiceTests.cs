@@ -1,6 +1,7 @@
 ﻿using Microsoft.Extensions.Logging.Abstractions;
 using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Audio;
 using VoicevoxRunCached.Services.Synthesis;
@@ -104,6 +105,73 @@ public class AudioExportServiceTests
         {
             File.Delete(lowPath);
             File.Delete(highPath);
+        }
+    }
+
+    [Test]
+    public async Task Export_ReplacesExistingFileWithoutLeavingTemporaryFile()
+    {
+        // 一時ファイルに書いてから置き換える (直接書くと、途中で失敗したときに途中までのファイルが残る)
+        var outPath = TempPath(".wav");
+        await File.WriteAllBytesAsync(outPath, [1, 2, 3]);
+
+        try
+        {
+            await CreateService().ExportSegmentsAsync([Segment(TestAudio.SineWav(24000, 300))], outPath);
+
+            await Assert.That(AudioFormatDetector.DetectFormat(await File.ReadAllBytesAsync(outPath))).IsEqualTo(AudioFormat.Wav);
+            await Assert.That(File.Exists(outPath + ".tmp")).IsFalse();
+        }
+        finally
+        {
+            File.Delete(outPath);
+        }
+    }
+
+    [Test]
+    public async Task EnsureWritableOutput_FolderUnderFile_Throws()
+    {
+        // 出力先のフォルダを作れない (途中がファイル) なら、合成・再生の前にエラーにする
+        var file = TempPath(".txt");
+        await File.WriteAllTextAsync(file, "x");
+
+        try
+        {
+            var ex = await Assert.ThrowsAsync<AudioProcessingException>(
+                () => Task.Run(() => AudioExportService.EnsureWritableOutput(Path.Combine(file, "sub", "out.wav"))));
+
+            await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Audio.AudioFileExportFailed);
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Test]
+    public async Task EnsureWritableOutput_ExistingFolder_Throws()
+    {
+        var ex = await Assert.ThrowsAsync<AudioProcessingException>(
+            () => Task.Run(() => AudioExportService.EnsureWritableOutput(Path.GetTempPath())));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Audio.AudioFileExportFailed);
+    }
+
+    [Test]
+    public async Task EnsureWritableOutput_WritableFolder_CreatesFolder()
+    {
+        var dir = Path.Combine(Path.GetTempPath(), $"export_dir_{Guid.NewGuid():N}");
+
+        try
+        {
+            AudioExportService.EnsureWritableOutput(Path.Combine(dir, "out.wav"));
+
+            await Assert.That(Directory.Exists(dir)).IsTrue();
+            await Assert.That(Directory.GetFiles(dir)).IsEmpty();
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
         }
     }
 }

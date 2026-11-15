@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Logging.Abstractions;
 using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Services.Infrastructure;
 using VoicevoxRunCached.Services.Synthesis;
 
@@ -61,22 +62,87 @@ public class VoiceVoxEngineManagerTests
     public async Task EnsureRunningOrThrow_CancelledDuringStartup_ThrowsOperationCanceled()
     {
         // エンジン起動待ち中の Ctrl+C が「エンジンが利用できません」(終了コード 3) になっていた回帰の検知。
-        // - EnginePath: すぐ終了する cmd.exe を「エンジン」として起動させる
+        // - EnginePath: しばらく終了しない ping.exe を「エンジン」として起動させる
         // - BaseUrl: 絶対 URL でないので死活確認は通信せず即失敗し、起動待ちのポーリングに入る
-        var settings = new VoiceVoxSettings
-        {
-            BaseUrl = "not-a-url",
-            AutoStartEngine = true,
-            KeepEngineRunning = false,
-            EnginePath = Path.Combine(Environment.SystemDirectory, "cmd.exe"),
-            EngineArguments = "/c exit 0",
-            StartupTimeoutSeconds = 30,
-        };
+        var settings = StartupSettings(Ping, "-n 30 127.0.0.1");
         using var manager = new VoiceVoxEngineManager(settings, NullLogger.Instance, SystemClock.Instance);
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
 
         await Assert.ThrowsAsync<OperationCanceledException>(() => manager.EnsureRunningOrThrowAsync(cts.Token));
     }
+
+    [Test]
+    public async Task EngineExitsDuringStartup_FailsWithoutWaitingForTimeout()
+    {
+        // 起動したエンジンがすぐ終わっても (EnginePath の間違い・起動直後のエラー)、起動のタイムアウト (60 秒) まで
+        // ロックを持ったまま待っていた回帰の検知 (ほかのテストも cmd を動かすので、同じ名前のプロセスは無いことにする)
+        using var manager = new VoiceVoxEngineManager(StartupSettings(Cmd, "/c exit 1"), NullLogger.Instance, SystemClock.Instance)
+        {
+            IsAnotherInstanceRunning = (_, _) => false,
+        };
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => manager.EnsureRunningOrThrowAsync(CancellationToken.None));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Engine.EngineNotAvailable);
+        await Assert.That(stopwatch.Elapsed).IsLessThan(TimeSpan.FromSeconds(30));
+    }
+
+    [Test]
+    public async Task EngineHandedToStartingInstance_KeepsWaiting()
+    {
+        // 起動中のエンジン (エディタが起動したもの等) があると、起動したプロセスはポートを取れずに終わる。
+        // 同じ名前のプロセスがあれば失敗にせず、その起動を待ち続ける
+        string? checkedPath = null;
+        using var manager = new VoiceVoxEngineManager(StartupSettings(Cmd, "/c exit 1"), NullLogger.Instance, SystemClock.Instance)
+        {
+            IsAnotherInstanceRunning = (path, _) =>
+            {
+                checkedPath = path;
+                return true;
+            },
+        };
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+        await Assert.ThrowsAsync<OperationCanceledException>(() => manager.EnsureRunningOrThrowAsync(cts.Token));
+
+        await Assert.That(checkedPath).IsEqualTo(Cmd);
+    }
+
+    [Test]
+    public async Task StartingInstanceExits_FailsWithoutWaitingForTimeout()
+    {
+        // 待っていたエンジンも終わったら、起動のタイムアウト (60 秒) までロックを持ったまま待たない
+        var checks = 0;
+        using var manager = new VoiceVoxEngineManager(StartupSettings(Cmd, "/c exit 1"), NullLogger.Instance, SystemClock.Instance)
+        {
+            // 1 回目は起動中のプロセスがあり、2 回目にはもう無い
+            IsAnotherInstanceRunning = (_, _) => Interlocked.Increment(ref checks) == 1,
+        };
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => manager.EnsureRunningOrThrowAsync(CancellationToken.None));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Engine.EngineNotAvailable);
+        await Assert.That(checks).IsEqualTo(2);
+        await Assert.That(stopwatch.Elapsed).IsLessThan(TimeSpan.FromSeconds(30));
+    }
+
+    private static readonly string Cmd = Path.Combine(Environment.SystemDirectory, "cmd.exe");
+    private static readonly string Ping = Path.Combine(Environment.SystemDirectory, "PING.EXE");
+
+    /// <summary>
+    /// 起動待ちを試す設定。BaseUrl は絶対 URL でないので死活確認は通信せず即失敗し、起動待ちのポーリングに入る。
+    /// </summary>
+    private static VoiceVoxSettings StartupSettings(string enginePath, string engineArguments) => new()
+    {
+        BaseUrl = "not-a-url",
+        AutoStartEngine = true,
+        KeepEngineRunning = false,
+        EnginePath = enginePath,
+        EngineArguments = engineArguments,
+        StartupTimeoutSeconds = 60,
+    };
 
     // 起動している間に他のテストがプロセスを起動すると、そちらにパイプが継承されて誤判定するため単独で実行する
     [Test]
@@ -90,15 +156,7 @@ public class VoiceVoxEngineManagerTests
         // - EnginePath: しばらく終了しない ping.exe を「エンジン」として起動させる
         using var pipe = new System.IO.Pipes.AnonymousPipeServerStream(
             System.IO.Pipes.PipeDirection.In, HandleInheritability.Inheritable);
-        var settings = new VoiceVoxSettings
-        {
-            BaseUrl = "not-a-url",
-            AutoStartEngine = true,
-            KeepEngineRunning = false,
-            EnginePath = Path.Combine(Environment.SystemDirectory, "PING.EXE"),
-            EngineArguments = "-n 30 127.0.0.1",
-            StartupTimeoutSeconds = 30,
-        };
+        var settings = StartupSettings(Ping, "-n 30 127.0.0.1");
         using (var manager = new VoiceVoxEngineManager(settings, NullLogger.Instance, SystemClock.Instance))
         {
             using var startCts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));

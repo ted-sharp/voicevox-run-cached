@@ -5,6 +5,7 @@ using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Services.Audio;
+using VoicevoxRunCached.Services.Infrastructure;
 using VoicevoxRunCached.Services.Synthesis;
 
 namespace VoicevoxRunCached.Tests;
@@ -25,7 +26,7 @@ public class FillerManagerTests
             Directory = Path.GetTempPath(),
             FillerTexts = ["a", "b"]
         };
-        var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
+        var mgr = new FillerManager(settings, new CacheSettings(), SystemClock.Instance, NullLogger.Instance);
 
         var data = await mgr.GetRandomFillerAudioAsync(Voicevox, "1", volume: 1.0);
 
@@ -41,7 +42,7 @@ public class FillerManagerTests
             Directory = Path.GetTempPath(),
             FillerTexts = []
         };
-        var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
+        var mgr = new FillerManager(settings, new CacheSettings(), SystemClock.Instance, NullLogger.Instance);
 
         var data = await mgr.GetRandomFillerAudioAsync(Voicevox, "1", volume: 1.0);
 
@@ -62,7 +63,7 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["えーっと、"]
             };
-            var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
+            var mgr = new FillerManager(settings, new CacheSettings(), SystemClock.Instance, NullLogger.Instance);
 
             var data = await mgr.GetRandomFillerAudioAsync(Voicevox, "1", volume: 1.0);
 
@@ -84,7 +85,7 @@ public class FillerManagerTests
         {
             var settings = new FillerSettings { Enabled = true, Directory = dir, FillerTexts = ["a"] };
             var logger = new RecordingLogger();
-            var mgr = new FillerManager(settings, new CacheSettings(), logger);
+            var mgr = new FillerManager(settings, new CacheSettings(), SystemClock.Instance, logger);
             using var apiClient = engine.CreateApiClient();
             await mgr.InitializeFillerCacheAsync(TestEngines.Voicevox(apiClient), "1");
 
@@ -113,7 +114,7 @@ public class FillerManagerTests
         try
         {
             var settings = new FillerSettings { Enabled = true, Directory = dir, FillerTexts = ["a"] };
-            var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
+            var mgr = new FillerManager(settings, new CacheSettings(), SystemClock.Instance, NullLogger.Instance);
             using var apiClient = engine.CreateApiClient();
             await mgr.InitializeFillerCacheAsync(TestEngines.Voicevox(apiClient), "1");
             var stored = await File.ReadAllBytesAsync(Directory.GetFiles(dir, "*.opus").Single());
@@ -153,7 +154,7 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["a"]
             };
-            var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
+            var mgr = new FillerManager(settings, new CacheSettings(), SystemClock.Instance, NullLogger.Instance);
 
             await mgr.ClearFillerCacheAsync();
 
@@ -178,7 +179,7 @@ public class FillerManagerTests
             Directory = dir,
             FillerTexts = ["a"]
         };
-        var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
+        var mgr = new FillerManager(settings, new CacheSettings(), SystemClock.Instance, NullLogger.Instance);
 
         await mgr.ClearFillerCacheAsync();
         // 例外を投げない (no-op で完了)
@@ -200,7 +201,7 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["a"]
             };
-            var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
+            var mgr = new FillerManager(settings, new CacheSettings(), SystemClock.Instance, NullLogger.Instance);
 
             // FileShare.None で開いたままにすると Windows では File.Delete が共有違反 (IOException) になる
             using (new FileStream(lockedPath, FileMode.Open, FileAccess.Read, FileShare.None))
@@ -233,7 +234,7 @@ public class FillerManagerTests
                 Directory = dir,
                 FillerTexts = ["a"]
             };
-            var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
+            var mgr = new FillerManager(settings, new CacheSettings(), SystemClock.Instance, NullLogger.Instance);
             using var apiClient = engine.CreateApiClient();
 
             SynthesisResult result;
@@ -321,7 +322,7 @@ public class FillerManagerTests
         {
             var settings = new FillerSettings { Enabled = true, Directory = dir, FillerTexts = ["共通"] };
             var logger = new RecordingLogger();
-            var mgr = new FillerManager(settings, new CacheSettings(), logger);
+            var mgr = new FillerManager(settings, new CacheSettings(), SystemClock.Instance, logger);
             var voicepeak = new StubSpeechEngine(SpeechEngineKind.Voicepeak, ["長めのフィラー、"]);
 
             await mgr.InitializeFillerCacheAsync(voicepeak, "Otomachi Una");
@@ -350,7 +351,7 @@ public class FillerManagerTests
         try
         {
             var settings = new FillerSettings { Enabled = true, Directory = dir, FillerTexts = ["共通"] };
-            var mgr = new FillerManager(settings, new CacheSettings(), NullLogger.Instance);
+            var mgr = new FillerManager(settings, new CacheSettings(), SystemClock.Instance, NullLogger.Instance);
             var voicevox = new StubSpeechEngine(SpeechEngineKind.Voicevox);
 
             await mgr.InitializeFillerCacheAsync(voicevox, "1");
@@ -367,6 +368,74 @@ public class FillerManagerTests
         }
     }
 
+    [Test]
+    public async Task Init_DeletesFillersOfOldTexts()
+    {
+        // 回帰: FillerTexts を変えると、古い文のフィラーが --clear するまで残り続けていた。
+        // 最終利用から Cache.ExpirationDays (既定 30 日) を過ぎたものは --init が消す
+        var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
+        var clock = new MutableClock(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        try
+        {
+            var engine = new StubSpeechEngine(SpeechEngineKind.Voicevox);
+            await CreateManager(dir, ["古い文"], clock).InitializeFillerCacheAsync(engine, "1");
+
+            clock.UtcNow = clock.UtcNow.AddDays(31);
+            var mgr = CreateManager(dir, ["新しい文"], clock);
+            await mgr.InitializeFillerCacheAsync(engine, "1");
+
+            await Assert.That(Directory.GetFiles(dir)).HasSingleItem();
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(engine, "1", volume: 1.0)).IsNotNull();
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task Init_KeepsCurrentAndRecentlyUsedFillers()
+    {
+        // 消すのは使っていないフィラーだけ。--init した話者の今の文の分と、最近の読み上げに使った話者 (MarkUsed) の分は残す
+        var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
+        var clock = new MutableClock(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        try
+        {
+            var engine = new StubSpeechEngine(SpeechEngineKind.Voicevox);
+            var mgr = CreateManager(dir, ["文"], clock);
+            foreach (var speaker in new[] { "1", "2", "3" })
+            {
+                await mgr.InitializeFillerCacheAsync(engine, speaker);
+            }
+
+            clock.UtcNow = clock.UtcNow.AddDays(20);
+            mgr.MarkUsed(engine, "2");
+            clock.UtcNow = clock.UtcNow.AddDays(15);
+            await mgr.InitializeFillerCacheAsync(engine, "1");
+
+            // 話者 1 (--init で生成済み)・2 (20 日目に使った) が残り、35 日使っていない 3 は消える
+            await Assert.That(Directory.GetFiles(dir).Length).IsEqualTo(2);
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(engine, "1", volume: 1.0)).IsNotNull();
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(engine, "2", volume: 1.0)).IsNotNull();
+            await Assert.That(await mgr.GetRandomFillerAudioAsync(engine, "3", volume: 1.0)).IsNull();
+            // 生成済みの文は合成し直さない (3 話者の生成のみ)
+            await Assert.That(engine.SynthesizedTexts.Count).IsEqualTo(3);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
+        }
+    }
+
+    private static FillerManager CreateManager(string dir, string[] fillerTexts, IClock clock)
+        => new(new FillerSettings { Enabled = true, Directory = dir, FillerTexts = fillerTexts }, new CacheSettings(), clock, NullLogger.Instance);
+
     /// <summary>
     /// 一時ディレクトリに <paramref name="fillerTexts"/> のフィラーを生成し、結果と生成後のファイル (フルパス) を返す。
     /// </summary>
@@ -377,7 +446,7 @@ public class FillerManagerTests
         try
         {
             var settings = new FillerSettings { Enabled = enabled, Directory = dir, FillerTexts = fillerTexts };
-            var mgr = new FillerManager(settings, new CacheSettings(), logger ?? NullLogger.Instance);
+            var mgr = new FillerManager(settings, new CacheSettings(), SystemClock.Instance, logger ?? NullLogger.Instance);
             using var apiClient = engine.CreateApiClient();
 
             var result = await mgr.InitializeFillerCacheAsync(TestEngines.Voicevox(apiClient), FakeEngineServer.Speaker);

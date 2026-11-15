@@ -34,7 +34,7 @@ public class CevioHostManager
     /// <summary>
     /// 起動したプロセス (引数の ID) のほかに、同じ実行ファイル名のプロセスが動いているか。テストで差し替える。
     /// </summary>
-    public Func<string, int, bool> IsAnotherInstanceRunning { get; init; } = IsProcessRunning;
+    public Func<string, int, bool> IsAnotherInstanceRunning { get; init; } = ProcessInstances.IsAnotherInstanceRunning;
 
     /// <summary>
     /// ホストが起動していなければ (<see cref="CevioSettings.AutoStartHost"/> なら) 起動し、使えるようになるまで待つ。
@@ -160,22 +160,6 @@ public class CevioHostManager
                 userMessage: $"CeVIO AI を起動できませんでした: {hostPath} ({ex.Message})",
                 innerException: ex,
                 suggestedSolution: "CeVIO AI を手動で起動できるか、appsettings.json の Cevio.HostPath が正しいか確認してください。");
-        }
-    }
-
-    private static bool IsProcessRunning(string hostPath, int excludedProcessId)
-    {
-        var processes = Process.GetProcessesByName(Path.GetFileNameWithoutExtension(hostPath));
-        try
-        {
-            return processes.Any(p => p.Id != excludedProcessId);
-        }
-        finally
-        {
-            foreach (var p in processes)
-            {
-                p.Dispose();
-            }
         }
     }
 

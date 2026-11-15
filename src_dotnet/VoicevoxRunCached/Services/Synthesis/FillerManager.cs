@@ -14,20 +14,26 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// 話者ごとに <c>--init [--engine &lt;名前&gt;] -s &lt;話者&gt;</c> で生成しておく。生成していない話者ではフィラーを鳴らさない。
 /// 文はエンジンごとに変えられる (エンジンのセクションの <c>FillerTexts</c>。空なら <see cref="FillerSettings.FillerTexts"/>)。
 /// 合成に時間のかかるエンジン (VOICEPEAK) では長めの文にして、待ちを少ない回数で埋める。
+/// 最終利用日時 (ファイルの更新日時) から <see cref="CacheSettings.ExpirationDays"/> を過ぎたフィラー (文を変えた・話者を使わなくなった)
+/// は <c>--init</c> が消す。最終利用日時は、読み上げのたびにその話者の今の文の分を更新する (<see cref="MarkUsed"/>)。
 /// </remarks>
 public class FillerManager
 {
     private readonly FillerSettings _settings;
     private readonly int _opusBitrateKbps;
+    private readonly TimeSpan _expiration;
+    private readonly IClock _clock;
     private readonly ILogger _logger;
     private string? _lastUsedFiller;
     private bool _missingFillerWarned;
 
-    public FillerManager(FillerSettings settings, CacheSettings cacheSettings, ILogger logger)
+    public FillerManager(FillerSettings settings, CacheSettings cacheSettings, IClock clock, ILogger logger)
     {
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
         ArgumentNullException.ThrowIfNull(cacheSettings);
         _opusBitrateKbps = cacheSettings.OpusBitrateKbps;
+        _expiration = TimeSpan.FromDays(cacheSettings.ExpirationDays);
+        _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
 
         _logger.LogDebug("FillerManager を初期化しました - 有効: {Enabled}, ディレクトリ: {Directory}",
@@ -77,6 +83,8 @@ public class FillerManager
             if (File.Exists(fillerCachePath))
             {
                 _logger.LogDebug("フィラー音声は既にキャッシュ済み: \"{Text}\"", fillerText);
+                // 今の文のフィラーなので、使っていないフィラーとして消さない
+                TouchBestEffort(fillerCachePath);
                 continue;
             }
 
@@ -99,6 +107,8 @@ public class FillerManager
                 var tempPath = fillerCachePath + DiskCacheStore.TemporarySuffix;
                 await File.WriteAllBytesAsync(tempPath, OpusCodec.EncodeWav(audioData, _opusBitrateKbps), cancellationToken);
                 File.Move(tempPath, fillerCachePath, overwrite: true);
+                // 最終利用日時を IClock の時刻に揃える (使っていないフィラーの判定は IClock と比べるため)
+                File.SetLastWriteTimeUtc(fillerCachePath, _clock.UtcNow);
                 _logger.LogDebug("フィラー音声を生成・保存しました: \"{Text}\"", fillerText);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -123,7 +133,82 @@ public class FillerManager
 
         _logger.LogInformation("フィラーキャッシュの初期化が完了しました - 生成: {Success}, 失敗: {Failure}, 生成済み: {Skipped}",
             attempted - failed, failed, total - attempted);
+        DeleteUnusedFillers();
         return new SynthesisResult(attempted, attempted - failed, failed, FirstError: firstError);
+    }
+
+    /// <summary>
+    /// 読み上げに使った話者のフィラー (今の文の分) の最終利用日時を今にする。<c>--init</c> が使っていないフィラーとして消さないようにする。
+    /// </summary>
+    /// <remarks>
+    /// フィラーを鳴らしたかどうかに関係なく、読み上げたら更新する (全部キャッシュから鳴る話者でもフィラーは使う設定のままなので)。
+    /// フィラーが無効なら何もしない (再生に使わないので、使っていないものとして消えてよい)。
+    /// </remarks>
+    public void MarkUsed(ISpeechEngine engine, string speaker)
+    {
+        ArgumentNullException.ThrowIfNull(engine);
+        if (!_settings.Enabled)
+        {
+            return;
+        }
+
+        foreach (var fillerText in FillerTextsFor(engine))
+        {
+            var fillerCachePath = ResolveFillerCachePath(BuildFillerRequest(fillerText, engine.Kind, speaker));
+            if (File.Exists(fillerCachePath))
+            {
+                TouchBestEffort(fillerCachePath);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 最終利用日時を今にする。失敗しても読み上げ・生成には影響しないので Warning で続行する。
+    /// </summary>
+    private void TouchBestEffort(string fillerCachePath)
+    {
+        try
+        {
+            File.SetLastWriteTimeUtc(fillerCachePath, _clock.UtcNow);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "フィラーの最終利用日時を更新できませんでした: {Path}", fillerCachePath);
+        }
+    }
+
+    /// <summary>
+    /// 最終利用から <see cref="CacheSettings.ExpirationDays"/> を過ぎたフィラーを消す (文を変えた・話者を使わなくなったもの)。
+    /// </summary>
+    /// <remarks>
+    /// フィラーのファイル名はキー (ハッシュ) だけで、どの文・話者のものか分からないので、最終利用日時で判断する。
+    /// best-effort で、削除の失敗は Warning に留める (旧形式の削除 <see cref="DeleteLegacyFiles"/> と同じ)。
+    /// </remarks>
+    private void DeleteUnusedFillers()
+    {
+        var now = _clock.UtcNow;
+        var deleted = 0;
+        foreach (var file in new DirectoryInfo(_settings.Directory).EnumerateFiles($"*{DiskCacheStore.AudioExtension}"))
+        {
+            if (now - file.LastWriteTimeUtc <= _expiration)
+            {
+                continue;
+            }
+            try
+            {
+                file.Delete();
+                deleted++;
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "使っていないフィラーの削除に失敗: {Path}", file.FullName);
+            }
+        }
+
+        if (deleted > 0)
+        {
+            _logger.LogInformation("{Days} 日使っていないフィラーを {Count} 件削除しました", _expiration.TotalDays, deleted);
+        }
     }
 
     /// <summary>

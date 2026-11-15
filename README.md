@@ -121,7 +121,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 | `--no-cache` | キャッシュを使わない (読みも書きもしない) | false |
 | `--cache-only` | キャッシュのみ使う (API を呼ばず、エンジンにも接続しない。キャッシュに無い文があれば終了コード 4) | false |
 | `--refresh` | キャッシュを読まずに全部合成し直し、キャッシュを上書きする (`--no-cache` / `--cache-only` とは併用不可) | false |
-| `--out, -o <path>` | ファイル保存 (`.wav` / `.opus` を拡張子で判定。それ以外はエラー) | — |
+| `--out, -o <path>` | ファイル保存 (`.wav` / `.opus` を拡張子で判定。それ以外はエラー)。書き込めない場所なら合成・再生の前にエラー (終了コード 5) | — |
 | `--no-play` | 再生しない (`--out` と併用推奨) | false |
 | `--verbose` | 再生時間と総実行時間を表示 | false |
 | `--max-wait <seconds>` | 先に動いている読み上げなどを待つ上限 (秒、0 以上。0 なら待たない)。超えたら読み上げずに終了コード 9 (`--test` でも使える) | `Lock.MaxWaitSeconds` (未設定なら上限なし) |
@@ -182,7 +182,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
   "Cache": {
     "Directory": "./cache/audio/",
     "UseExecutableBaseDirectory": true,  // 相対パスを exe 基準で解決
-    "ExpirationDays": 30,         // 最後に使ってからこの日数を過ぎたキャッシュを削除 (使うたびに延長)
+    "ExpirationDays": 30,         // 最後に使ってからこの日数を過ぎたキャッシュを削除 (使うたびに延長)。フィラーも同じ日数で --init のときに削除
     "MaxSizeGB": 1.0,             // 上限超過時は最後に使ったのが古い順に削除
     "OpusBitrateKbps": 32         // Opus のビットレート 12-128。キャッシュ・フィラー・--out .opus 共通 (キーに含まれないので既存キャッシュは流用)
   },
@@ -302,6 +302,8 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 
 フィラーの文と回数はエンジンごとに変えられる。各エンジンのセクションの `FillerTexts` (空なら `Filler.FillerTexts`) と `MaxFillersPerWait` (次の文を待つ 1 回に鳴らす上限。`null` なら届くまで繰り返す、`0` ならそのエンジンでは鳴らさない。省略したときは VOICEVOX が上限なし、VOICEPEAK が 2 なので、VOICEPEAK で上限をなくすには `null` を書く)。VOICEPEAK は 1 文の合成に 10 秒ほどかかるので、既定で長めの文を待ち 1 回に 2 回までにしている。文を変えたら `--init` でその文の分を生成し直す。
 
+最後に使ってから `Cache.ExpirationDays` 日を過ぎたフィラー (文を変える前の分・使わなくなった話者の分) は、`--init` のときに削除される。読み上げに使った話者の分は、読み上げるたびに延長される (`Filler.Enabled: false` の間は延長されない)。
+
 ### 同時実行
 
 読み上げ (キャッシュ参照・合成・再生・`--out`)・`--init` (フィラー生成)・`speakers`・`--clear` は、一時フォルダのロックファイル (`%TEMP%\VoicevoxRunCached.speech.lock`) で 1 プロセスずつに直列化される。同時に起動すると後から来た方は先の処理が終わるまで待つので、音声が重ならず、エンジンへの API 呼び出しや自動起動も 1 つずつになる (Ctrl+C で待機を中止できる。読み上げ中に `speakers` を実行すると、読み上げが終わるまで待つ)。プロセスが強制終了されてもロックは OS が解放する。`devices` は対象外。`KeepEngineRunning: false` のときは、自分が起動したエンジンをロックを解放する前に止めるので、待っていた後続の処理は必要ならエンジンを起動し直す。
@@ -326,7 +328,7 @@ Total execution time: 2445.4ms
 ## トラブルシューティング
 
 **「VOICEVOXエンジンが利用できません。」と表示される**
-→ エンジンが起動しているか、`appsettings.json` の `BaseUrl` が正しいか確認。`AutoStartEngine: true` の場合は `EnginePath` 自動検出が失敗していないかも確認。
+→ エンジンが起動しているか、`appsettings.json` の `BaseUrl` が正しいか確認。`AutoStartEngine: true` の場合は `EnginePath` 自動検出が失敗していないかも確認。起動したエンジンがすぐ終了したとき (`EnginePath` の間違いなど) は、`StartupTimeoutSeconds` を待たずにこのエラーになる。
 
 **音声が再生されない**
 → まず `Audio.OutputDevice = -1` (OS デフォルト) を試す。特定のデバイスで鳴らすには `VoicevoxRunCached.exe devices` の「Audio.OutputDevice (WaveOut index)」欄の番号を `Audio.OutputDevice` に設定する。上段の WASAPI 一覧 (`--full` の `[n]`) とは番号が一致しないことがあるので注意 (デバイス名は WinMM の制約で 31 文字までに切られる)。
@@ -397,7 +399,7 @@ task hooks:install                # コミット時のチェック (ビルド・
 
 バージョンは `src_dotnet/Directory.Build.props` の `<Version>` で一元管理している。リリース手順は [`doc/RELEASE.md`](./doc/RELEASE.md)。
 
-設計方針・アーキテクチャ詳細は [`CLAUDE.md`](./CLAUDE.md) を参照。
+開発で守ること (と回帰を検知するテスト) は [`CLAUDE.md`](./CLAUDE.md)、そうした理由は該当するコードのコメントにある。
 
 ## ライセンス
 

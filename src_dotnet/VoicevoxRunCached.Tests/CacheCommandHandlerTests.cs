@@ -23,7 +23,7 @@ public class CacheCommandHandlerTests
             using var engineManager = new VoiceVoxEngineManager(new VoiceVoxSettings(), NullLogger.Instance, SystemClock.Instance);
             var handler = new CacheCommandHandler(
                 new AudioCacheManager(cacheSettings, NullLogger.Instance, SystemClock.Instance),
-                new FillerManager(fillerSettings, cacheSettings, NullLogger.Instance),
+                new FillerManager(fillerSettings, cacheSettings, SystemClock.Instance, NullLogger.Instance),
                 lockFile.CreateSpeechLock(TestEngines.Create(engineManager)),
                 NullLogger.Instance);
 

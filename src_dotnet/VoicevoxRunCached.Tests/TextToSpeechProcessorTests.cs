@@ -50,6 +50,25 @@ public class TextToSpeechProcessorTests
     }
 
     [Test]
+    public async Task OutPathNotWritable_FailsBeforeSynthesis()
+    {
+        // 回帰: --out に書き込めないことが合成・再生の後で分かっていた。合成の前 (ロックを待つ前) にエラーにする
+        // (合成していればエンジン停止のエラー (終了コード 3) になる)
+        var file = Path.Combine(Path.GetTempPath(), $"vrc_out_{Guid.NewGuid():N}.txt");
+        await File.WriteAllTextAsync(file, "x");
+        try
+        {
+            var exitCode = await RunWithStoppedEngineAsync(["キャッシュに無い文です。", "--no-play", "--out", Path.Combine(file, "out.wav")]);
+
+            await Assert.That(exitCode).IsEqualTo(ErrorCodes.GetExitCode(ErrorCodes.Audio.AudioFileExportFailed));
+        }
+        finally
+        {
+            File.Delete(file);
+        }
+    }
+
+    [Test]
     public async Task PartlyCached_NeedsEngine_ReturnsEngineError()
     {
         // 先頭のキャッシュ済みの文は鳴らし (再生を途中で止めない)、終了コードは準備の失敗 (エンジン無し) のまま
