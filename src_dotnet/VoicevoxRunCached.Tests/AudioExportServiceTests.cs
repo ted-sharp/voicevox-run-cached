@@ -158,6 +158,67 @@ public class AudioExportServiceTests
     }
 
     [Test]
+    public async Task EnsureWritableOutput_ReadOnlyFile_Throws()
+    {
+        // 回帰: フォルダだけを確かめていたため、読み取り専用のファイルへの --out は読み上げが終わってから失敗していた
+        var path = TempPath(".wav");
+        await File.WriteAllBytesAsync(path, [1]);
+        File.SetAttributes(path, FileAttributes.ReadOnly);
+        try
+        {
+            var ex = await Assert.ThrowsAsync<AudioProcessingException>(
+                () => Task.Run(() => AudioExportService.EnsureWritableOutput(path)));
+
+            await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Audio.AudioFileExportFailed);
+        }
+        finally
+        {
+            File.SetAttributes(path, FileAttributes.Normal);
+            File.Delete(path);
+        }
+    }
+
+    [Test]
+    public async Task EnsureWritableOutput_FileOpenedByOtherApp_Throws()
+    {
+        // ほかのアプリが開いているファイルも、最後の置き換えで失敗するので先にエラーにする
+        var path = TempPath(".wav");
+        await File.WriteAllBytesAsync(path, [1]);
+        try
+        {
+            using (new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                var ex = await Assert.ThrowsAsync<AudioProcessingException>(
+                    () => Task.Run(() => AudioExportService.EnsureWritableOutput(path)));
+
+                await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Audio.AudioFileExportFailed);
+            }
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Test]
+    public async Task EnsureWritableOutput_ExistingFile_KeepsContent()
+    {
+        // 上書きできるかを確かめるだけで、既存のファイルの中身は変えない
+        var path = TempPath(".wav");
+        await File.WriteAllBytesAsync(path, [1, 2, 3]);
+        try
+        {
+            AudioExportService.EnsureWritableOutput(path);
+
+            await Assert.That(await File.ReadAllBytesAsync(path)).IsEquivalentTo(new byte[] { 1, 2, 3 });
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Test]
     public async Task EnsureWritableOutput_WritableFolder_CreatesFolder()
     {
         var dir = Path.Combine(Path.GetTempPath(), $"export_dir_{Guid.NewGuid():N}");

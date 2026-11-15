@@ -86,7 +86,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - 起動済みか確かめてから起動する。外部で起動済みのエンジンには触れない。`KeepEngineRunning: true` なら常駐させる
 - `EnginePath` が空なら VVPP のエンジン (`FindVoicevoxVvppEngine`。UUID で探す) を最初に、エディタ (`{製品名}.exe`) を最後に探す — `VoiceVoxEngineManagerTests.VvppEngine_*` / `EngineRelativePaths_FindEngineBeforeEditor`
 - `UseShellExecute = true` + `WindowStyle = Hidden` で起動する — `StartEngine_DoesNotInheritHandles`
-- 起動したプロセスが終わったら、同じ名前のプロセスが無ければタイムアウトを待たずに失敗にする。あれば起動を待ち、自分が起動したものとして扱わない (止めない)。判定は CeVIO と共通の `ProcessInstances.IsAnotherInstanceRunning` — `EngineExitsDuringStartup_FailsWithoutWaitingForTimeout` / `EngineHandedToStartingInstance_KeepsWaiting` / `StartingInstanceExits_FailsWithoutWaitingForTimeout`
+- 起動したプロセスが終わったら、同じ実行ファイルのプロセスが無ければタイムアウトを待たずに失敗にする。あれば起動を待ち、自分が起動したものとして扱わない (止めない)。判定は CeVIO と共通の `ProcessInstances.IsAnotherInstanceRunning` (名前でなくフルパスで比べる) — `ProcessInstancesTests` / `EngineExitsDuringStartup_FailsWithoutWaitingForTimeout` / `EngineHandedToStartingInstance_KeepsWaiting` / `StartingInstanceExits_FailsWithoutWaitingForTimeout`
 - 読み上げでエンジンに接続するのは合成が必要になったときだけ。準備 (`ISpeechEngine.PrepareAsync`) は `SegmentProducer` が最初に合成するときに 1 回呼ぶ — `TextToSpeechProcessorTests` / `SegmentProducerTests`
 - 準備の失敗は文ごとの失敗にせず終了コード 3 / 1。producer は投げずに `SynthesisResult.PreparationError` で返し (以降は合成せずキャッシュ済みの文だけ流す)、`TextToSpeechProcessor` が再生を終えてから投げる — `SegmentProducerTests.PrepareFailure_IsReturnedAndCachedSegmentsStillFlow`
 
@@ -110,7 +110,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 ### CeVIO AI (`CevioEngine` / `CevioHostManager` / `CevioRemoteService`)
 - COM に触れるのは `CevioRemoteService` だけ (遅延バインディング)。同期の COM 呼び出しは `CevioEngine.RunComAsync` で包む。テストは `FakeCevioRemoteService`
 - ホストの起動に `ServiceControl2V40.StartHost` を使わない。`CevioHostManager` が `UseShellExecute = true` で起動する — `CevioHostManagerTests.StartHost_DoesNotInheritHandles`。自分で起動したホストだけを `KeepHostRunning: false` のとき閉じる
-- 起動したプロセスが終わったら、同じ名前のプロセスがあれば起動を待ち (閉じない)、無ければすぐ `EngineNotAvailable` — `CevioHostManagerTests.HostHandedToStartingInstance_WaitsAndIsNotClosed` / `HostExitsDuringStartup_FailsWithoutWaitingForTimeout` / `StartingInstanceExits_FailsWithoutWaitingForTimeout`
+- 起動したプロセスが終わったら、同じ実行ファイルのプロセスがあれば起動を待ち (閉じない)、無ければすぐ `EngineNotAvailable` — `CevioHostManagerTests.HostHandedToStartingInstance_WaitsAndIsNotClosed` / `HostExitsDuringStartup_FailsWithoutWaitingForTimeout` / `StartingInstanceExits_FailsWithoutWaitingForTimeout`
 - `CloseHost` も `SynthesisTimeoutSeconds` で待つのをやめる — `CevioHostManagerTests.CloseHostNoResponse_GivesUpWithinTimeout`
 - キャストは `PrepareAsync` で `AvailableCasts` と照合してから `Talker.Cast` に代入する (無ければ `InvalidArguments`) — `CevioEngineTests.Prepare_UnknownCast_ThrowsInvalidArgumentsWithoutSelectingIt`
 - 話者は `キャスト名[:感情=値,...]` (0〜100)。`NormalizeSpeaker` が感情を名前順に並べる。感情を書けば書いていない感情は 0、書かなければキャストの既定値。合成のたびにキャスト・話速・音高・全感情を設定し直す — `CevioEngineTests`
@@ -149,12 +149,13 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - 保存先は既定で実行ファイルと同じディレクトリ (`UseExecutableBaseDirectory: true`)
 
 ### フィラーの掃除 (`FillerManager`)
-- 最終利用日時 = フィラーのファイルの更新日時。読み上げのたびに `TextToSpeechProcessor` が `FillerManager.MarkUsed` でその話者の今の文の分を更新する (`Filler.Enabled: false` なら更新しない)。`--init` は生成済みの分も更新する
-- `--init` の最後に、最終利用から `Cache.ExpirationDays` を過ぎたフィラーを消す (best-effort) — `FillerManagerTests.Init_DeletesFillersOfOldTexts` / `Init_KeepsCurrentAndRecentlyUsedFillers`
+- 最終利用日時 = フィラーのファイルの更新日時。読み上げのたびに `TextToSpeechProcessor` が合成・再生の**前**に `FillerManager.MarkUsed` でその話者の今の文の分を更新する (`Filler.Enabled: false` なら更新しない) — `TextToSpeechProcessorTests.NoPlay_UpdatesFillerLastUsed`。`--init` は生成済みの分も更新する
+- `--init` の最後に、最終利用から `Cache.ExpirationDays` を過ぎたフィラーを消す (best-effort)。対象はキーの形 (16 進 64 文字) の `.opus` だけ — `FillerManagerTests.Init_DeletesFillersOfOldTexts` / `Init_KeepsCurrentAndRecentlyUsedFillers` / `Init_DoesNotDeleteNonFillerFiles`
+- 記録を始めた印 (`FillerManager.UsageTrackingMarkerFileName`) が無ければ、消さずに全部の日時を今にして印を作る — `FillerManagerTests.Init_FirstCleanup_KeepsFillersCreatedBeforeTracking`
 
 ### `--out` (`AudioExportService`)
-- 書き込めるかは `EnsureWritableOutput` でロックを待つ前に確かめる (`AUDIO_*`、終了コード 5) — `TextToSpeechProcessorTests.OutPathNotWritable_FailsBeforeSynthesis` / `AudioExportServiceTests.EnsureWritableOutput_*`
-- `{out}.tmp` に書いてから置き換え、失敗しても `.tmp` を残さない — `AudioExportServiceTests.Export_ReplacesExistingFileWithoutLeavingTemporaryFile`
+- 書き込めるか (フォルダと、既存のファイルを置き換えられるか) は `EnsureWritableOutput` でロックを待つ前に確かめる (`AUDIO_*`、終了コード 5) — `TextToSpeechProcessorTests.OutPathNotWritable_FailsBeforeSynthesis` / `AudioExportServiceTests.EnsureWritableOutput_*`
+- `{out}.tmp` に書いてから置き換え、失敗しても `.tmp` を残さない (消せなくても Warning で、元の失敗の理由を上書きしない) — `AudioExportServiceTests.Export_ReplacesExistingFileWithoutLeavingTemporaryFile`
 
 ### テキスト分割 (`TextSegmentProcessor`)
 - `。！？!?` と改行で区切る。半角 `.` は直後が空白か文末のときだけ

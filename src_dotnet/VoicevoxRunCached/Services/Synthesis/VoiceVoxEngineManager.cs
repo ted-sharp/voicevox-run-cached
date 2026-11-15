@@ -18,7 +18,7 @@ public class VoiceVoxEngineManager : IDisposable
     private bool _disposed;
 
     /// <summary>
-    /// 起動したプロセス (引数の ID) のほかに、同じ実行ファイル名のプロセスが動いているか。テストで差し替える。
+    /// 起動したプロセス (引数の ID) のほかに、同じ実行ファイル (フルパス) のプロセスが動いているか。テストで差し替える。
     /// </summary>
     public Func<string, int, bool> IsAnotherInstanceRunning { get; init; } = ProcessInstances.IsAnotherInstanceRunning;
 
@@ -177,7 +177,7 @@ public class VoiceVoxEngineManager : IDisposable
                 if (process.HasExited)
                 {
                     // 起動中のエンジンがあると、起動したプロセスはポートを取れずに終わる (エディタは起動中のエディタに任せて終わる)。
-                    // 同じ名前のプロセスがあればその起動を待ち、自分が起動したものとして扱わない (止めない)。
+                    // 同じ実行ファイルのプロセスがあればその起動を待ち、自分が起動したものとして扱わない (止めない)。
                     // 無ければ起動の失敗なので、タイムアウトまで (ロックを持ったまま) 待たない。待っていたプロセスが終わったときも同じ
                     _engineProcess = null;
                     if (!IsAnotherInstanceRunning(enginePath, process.Id))

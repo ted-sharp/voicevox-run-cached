@@ -69,6 +69,38 @@ public class TextToSpeechProcessorTests
     }
 
     [Test]
+    public async Task NoPlay_UpdatesFillerLastUsed()
+    {
+        // 回帰: フィラーの最終利用日時を再生が正常に終わった後にだけ更新していたため、--no-play (Ctrl+C・再生の失敗も) では更新されず、
+        // 使っている話者のフィラーも --init で消えていた
+        using var stoppedEngine = new StoppedEngine();
+        var old = DateTime.UtcNow.AddDays(-40);
+        string? fillerPath = null;
+        var lastUsed = DateTime.MinValue;
+
+        var run = await RunAsync(
+            new VoiceVoxSettings { BaseUrl = stoppedEngine.BaseUrl, AutoStartEngine = false, DefaultSpeaker = 1 },
+            [CachedText, "--no-play"],
+            afterCommand: () =>
+            {
+                lastUsed = File.GetLastWriteTimeUtc(fillerPath!);
+                return Task.CompletedTask;
+            },
+            prepareCache: async cachePath =>
+            {
+                var fillerDir = Path.Combine(Path.GetDirectoryName(Path.GetDirectoryName(cachePath))!, "filler");
+                Directory.CreateDirectory(fillerDir);
+                fillerPath = Path.Combine(fillerDir, CacheKeyGenerator.Compute(new VoiceRequest("えーと", "1")) + DiskCacheStore.AudioExtension);
+                await File.WriteAllBytesAsync(fillerPath, [1]);
+                File.SetLastWriteTimeUtc(fillerPath, old);
+            },
+            fillerTexts: ["えーと"]);
+
+        await Assert.That(run.ExitCode).IsEqualTo(0);
+        await Assert.That(lastUsed).IsGreaterThan(old.AddDays(39));
+    }
+
+    [Test]
     public async Task PartlyCached_NeedsEngine_ReturnsEngineError()
     {
         // 先頭のキャッシュ済みの文は鳴らし (再生を途中で止めない)、終了コードは準備の失敗 (エンジン無し) のまま
@@ -191,10 +223,11 @@ public class TextToSpeechProcessorTests
     /// <param name="afterCommand">コマンドから戻った後、サービスを破棄する前に呼ぶ</param>
     /// <param name="prepareCache">キャッシュを保存した後、コマンドの前に呼ぶ (引数は <see cref="CachedText"/> の .opus のパス)</param>
     /// <param name="alsoCached"><see cref="CachedText"/> のほかにキャッシュしておく文</param>
+    /// <param name="fillerTexts">指定したらフィラーを有効にし、その文にする (フィラーのフォルダはキャッシュのフォルダと並びの <c>filler</c>)</param>
     /// <returns>終了コードと、実行前後の <see cref="CachedText"/> のキャッシュファイルの中身 (実行後に無ければ空)</returns>
     private static async Task<(int ExitCode, byte[] CacheBefore, byte[] CacheAfter)> RunAsync(
         VoiceVoxSettings voiceVox, string[] args, Func<Task>? afterCommand = null, Func<string, Task>? prepareCache = null,
-        string[]? alsoCached = null)
+        string[]? alsoCached = null, string[]? fillerTexts = null)
     {
         var dir = Path.Combine(Path.GetTempPath(), "vrc_tts_" + Guid.NewGuid().ToString("N"));
         var cacheDir = Path.Combine(dir, "audio");
@@ -204,7 +237,13 @@ public class TextToSpeechProcessorTests
             VoiceVox = voiceVox,
             Audio = new AudioSettings { PrepareDevice = false },
             Cache = new CacheSettings { Directory = cacheDir, UseExecutableBaseDirectory = false },
-            Filler = new FillerSettings { Directory = Path.Combine(dir, "filler"), UseExecutableBaseDirectory = false },
+            Filler = new FillerSettings
+            {
+                Enabled = fillerTexts != null,
+                Directory = Path.Combine(dir, "filler"),
+                UseExecutableBaseDirectory = false,
+                FillerTexts = fillerTexts ?? [],
+            },
         };
 
         try

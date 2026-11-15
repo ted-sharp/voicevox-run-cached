@@ -384,7 +384,7 @@ public class FillerManagerTests
             var mgr = CreateManager(dir, ["新しい文"], clock);
             await mgr.InitializeFillerCacheAsync(engine, "1");
 
-            await Assert.That(Directory.GetFiles(dir)).HasSingleItem();
+            await Assert.That(Directory.GetFiles(dir, "*.opus")).HasSingleItem();
             await Assert.That(await mgr.GetRandomFillerAudioAsync(engine, "1", volume: 1.0)).IsNotNull();
         }
         finally
@@ -417,12 +417,78 @@ public class FillerManagerTests
             await mgr.InitializeFillerCacheAsync(engine, "1");
 
             // 話者 1 (--init で生成済み)・2 (20 日目に使った) が残り、35 日使っていない 3 は消える
-            await Assert.That(Directory.GetFiles(dir).Length).IsEqualTo(2);
+            await Assert.That(Directory.GetFiles(dir, "*.opus").Length).IsEqualTo(2);
             await Assert.That(await mgr.GetRandomFillerAudioAsync(engine, "1", volume: 1.0)).IsNotNull();
             await Assert.That(await mgr.GetRandomFillerAudioAsync(engine, "2", volume: 1.0)).IsNotNull();
             await Assert.That(await mgr.GetRandomFillerAudioAsync(engine, "3", volume: 1.0)).IsNull();
             // 生成済みの文は合成し直さない (3 話者の生成のみ)
             await Assert.That(engine.SynthesizedTexts.Count).IsEqualTo(3);
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task Init_FirstCleanup_KeepsFillersCreatedBeforeTracking()
+    {
+        // 回帰: 最終利用日時を記録する前 (3.1.0 以前) のフィラーは生成した日時のままなので、更新後の最初の --init で
+        // 普段使っている話者の分まで消えていた。記録を始めた印が無ければ消さずに日時を今にし、そこから期限を数える
+        var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
+        var clock = new MutableClock(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        try
+        {
+            Directory.CreateDirectory(dir);
+            var oldFiller = Path.Combine(dir, new string('a', 64) + ".opus");
+            await File.WriteAllBytesAsync(oldFiller, [1]);
+            File.SetLastWriteTimeUtc(oldFiller, clock.UtcNow.AddDays(-60));
+            var engine = new StubSpeechEngine(SpeechEngineKind.Voicevox);
+
+            await CreateManager(dir, ["文"], clock).InitializeFillerCacheAsync(engine, "1");
+
+            await Assert.That(File.Exists(oldFiller)).IsTrue();
+            await Assert.That(File.Exists(Path.Combine(dir, FillerManager.UsageTrackingMarkerFileName))).IsTrue();
+
+            // 印を作ってからも使われなければ、期限を過ぎた次の --init で消える
+            clock.UtcNow = clock.UtcNow.AddDays(31);
+            await CreateManager(dir, ["文"], clock).InitializeFillerCacheAsync(engine, "1");
+
+            await Assert.That(File.Exists(oldFiller)).IsFalse();
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
+        }
+    }
+
+    [Test]
+    public async Task Init_DoesNotDeleteNonFillerFiles()
+    {
+        // 回帰: Filler.Directory にある .opus を全部対象にしていたため、フォルダを共用すると関係ないファイルも消していた。
+        // 消すのはキーの形 (SHA256 の 16 進 64 文字) のファイルだけ
+        var dir = Path.Combine(Path.GetTempPath(), "vrc_filler_" + Guid.NewGuid().ToString("N"));
+        var clock = new MutableClock(new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+        try
+        {
+            var engine = new StubSpeechEngine(SpeechEngineKind.Voicevox);
+            await CreateManager(dir, ["文"], clock).InitializeFillerCacheAsync(engine, "1");
+            var otherFile = Path.Combine(dir, "exported.opus");
+            await File.WriteAllBytesAsync(otherFile, [1]);
+            File.SetLastWriteTimeUtc(otherFile, clock.UtcNow);
+
+            clock.UtcNow = clock.UtcNow.AddDays(31);
+            await CreateManager(dir, ["新しい文"], clock).InitializeFillerCacheAsync(engine, "1");
+
+            await Assert.That(File.Exists(otherFile)).IsTrue();
+            // 古い文のフィラーは消え、新しい文のフィラーと関係ないファイルが残る
+            await Assert.That(Directory.GetFiles(dir, "*.opus").Length).IsEqualTo(2);
         }
         finally
         {
@@ -450,7 +516,7 @@ public class FillerManagerTests
             using var apiClient = engine.CreateApiClient();
 
             var result = await mgr.InitializeFillerCacheAsync(TestEngines.Voicevox(apiClient), FakeEngineServer.Speaker);
-            return (result, Directory.GetFiles(dir));
+            return (result, Directory.GetFiles(dir, "*.opus"));
         }
         finally
         {

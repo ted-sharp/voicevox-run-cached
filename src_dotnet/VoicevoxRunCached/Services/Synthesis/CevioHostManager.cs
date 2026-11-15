@@ -32,7 +32,7 @@ public class CevioHostManager
     }
 
     /// <summary>
-    /// 起動したプロセス (引数の ID) のほかに、同じ実行ファイル名のプロセスが動いているか。テストで差し替える。
+    /// 起動したプロセス (引数の ID) のほかに、同じ実行ファイル (フルパス) のプロセスが動いているか。テストで差し替える。
     /// </summary>
     public Func<string, int, bool> IsAnotherInstanceRunning { get; init; } = ProcessInstances.IsAnotherInstanceRunning;
 

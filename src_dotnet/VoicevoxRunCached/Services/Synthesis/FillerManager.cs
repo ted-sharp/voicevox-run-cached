@@ -107,8 +107,6 @@ public class FillerManager
                 var tempPath = fillerCachePath + DiskCacheStore.TemporarySuffix;
                 await File.WriteAllBytesAsync(tempPath, OpusCodec.EncodeWav(audioData, _opusBitrateKbps), cancellationToken);
                 File.Move(tempPath, fillerCachePath, overwrite: true);
-                // 最終利用日時を IClock の時刻に揃える (使っていないフィラーの判定は IClock と比べるため)
-                File.SetLastWriteTimeUtc(fillerCachePath, _clock.UtcNow);
                 _logger.LogDebug("フィラー音声を生成・保存しました: \"{Text}\"", fillerText);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -122,7 +120,12 @@ public class FillerManager
 
                 firstError ??= ex;
                 engineUnavailable = engine.IsEngineUnavailable(ex);
+                continue;
             }
+
+            // 最終利用日時を IClock の時刻に揃える (使っていないフィラーの判定は IClock と比べるため)。
+            // 生成と保存は済んでいるので、失敗しても生成の失敗には数えない
+            TouchBestEffort(fillerCachePath);
         }
 
         // 残りが生成済みだけなら打ち切ったものは無いので、実際に API を呼ばなかった件数で出す
@@ -141,7 +144,9 @@ public class FillerManager
     /// 読み上げに使った話者のフィラー (今の文の分) の最終利用日時を今にする。<c>--init</c> が使っていないフィラーとして消さないようにする。
     /// </summary>
     /// <remarks>
-    /// フィラーを鳴らしたかどうかに関係なく、読み上げたら更新する (全部キャッシュから鳴る話者でもフィラーは使う設定のままなので)。
+    /// フィラーを鳴らしたかどうかに関係なく、読み上げたら更新する (全部キャッシュから鳴る話者・<c>--no-play</c> でも、
+    /// その話者を使っている間はフィラーを残す)。呼び出し元 (<see cref="TextToSpeechProcessor"/>) は合成・再生の前に呼ぶ
+    /// (再生の後だと、Ctrl+C や再生の失敗で更新されない)。
     /// フィラーが無効なら何もしない (再生に使わないので、使っていないものとして消えてよい)。
     /// </remarks>
     public void MarkUsed(ISpeechEngine engine, string speaker)
@@ -178,17 +183,52 @@ public class FillerManager
     }
 
     /// <summary>
+    /// 最終利用日時の記録を始めたことを示すファイル。フィラーのフォルダに置く。
+    /// </summary>
+    public const string UsageTrackingMarkerFileName = "last-used-tracking.txt";
+
+    /// <summary>
     /// 最終利用から <see cref="CacheSettings.ExpirationDays"/> を過ぎたフィラーを消す (文を変えた・話者を使わなくなったもの)。
     /// </summary>
     /// <remarks>
     /// フィラーのファイル名はキー (ハッシュ) だけで、どの文・話者のものか分からないので、最終利用日時で判断する。
+    /// 対象はキーの形 (<see cref="IsFillerFileName"/>) の <c>.opus</c> だけにする (<c>Filler.Directory</c> をほかの用途と共用していても消さない)。
+    /// 最終利用日時を記録する前 (3.1.0 以前) のフィラーは、生成した日時のままで、使っていても古く見える。そのため記録を始めた印
+    /// (<see cref="UsageTrackingMarkerFileName"/>) が無いときは消さずに全部の日時を今にし、印を作る (消すのはそこから期限を過ぎたものだけ)。
     /// best-effort で、削除の失敗は Warning に留める (旧形式の削除 <see cref="DeleteLegacyFiles"/> と同じ)。
     /// </remarks>
     private void DeleteUnusedFillers()
     {
+        var fillers = new DirectoryInfo(_settings.Directory)
+            .EnumerateFiles($"*{DiskCacheStore.AudioExtension}")
+            .Where(file => IsFillerFileName(file.Name))
+            .ToList();
+
+        var markerPath = Path.Combine(_settings.Directory, UsageTrackingMarkerFileName);
+        if (!File.Exists(markerPath))
+        {
+            foreach (var file in fillers)
+            {
+                TouchBestEffort(file.FullName);
+            }
+            try
+            {
+                File.WriteAllText(markerPath,
+                    "VoicevoxRunCached がフィラーの最終利用日時 (ファイルの更新日時) の記録を始めた印です。" + Environment.NewLine +
+                    "消すと、次の --init は使っていないフィラーを消さずに、全部の最終利用日時を今にします。" + Environment.NewLine);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.LogWarning(ex, "フィラーの最終利用日時の記録を始められませんでした: {Path}", markerPath);
+                return;
+            }
+            _logger.LogInformation("フィラーの最終利用日時の記録を始めました ({Days} 日使わなかったフィラーは --init で削除します)", _expiration.TotalDays);
+            return;
+        }
+
         var now = _clock.UtcNow;
         var deleted = 0;
-        foreach (var file in new DirectoryInfo(_settings.Directory).EnumerateFiles($"*{DiskCacheStore.AudioExtension}"))
+        foreach (var file in fillers)
         {
             if (now - file.LastWriteTimeUtc <= _expiration)
             {
@@ -209,6 +249,15 @@ public class FillerManager
         {
             _logger.LogInformation("{Days} 日使っていないフィラーを {Count} 件削除しました", _expiration.TotalDays, deleted);
         }
+    }
+
+    /// <summary>
+    /// フィラーのファイル名 (キー = SHA256 の小文字 16 進 64 文字 + <c>.opus</c>) か。
+    /// </summary>
+    private static bool IsFillerFileName(string fileName)
+    {
+        var key = Path.GetFileNameWithoutExtension(fileName);
+        return key.Length == 64 && key.All(Char.IsAsciiHexDigitLower);
     }
 
     /// <summary>

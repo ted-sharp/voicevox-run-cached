@@ -152,6 +152,29 @@ public class AudioExportService
         {
             throw NotWritable(outPath, $"出力先のフォルダに書き込めません: {outPath}", "出力先のフォルダの場所と権限を確認してください。");
         }
+        if (File.Exists(fullPath) && !CanReplace(fullPath))
+        {
+            throw NotWritable(outPath, $"出力先のファイルを上書きできません: {outPath}", "ファイルが読み取り専用でないか、ほかのアプリで開いていないか確認してください。");
+        }
+    }
+
+    /// <summary>
+    /// 既存のファイルを置き換えられるか。読み取り専用・ほかのアプリが開いているファイルは、保存の最後の置き換え (<see cref="File.Move(string, string, bool)"/>) で失敗する。
+    /// </summary>
+    /// <remarks>
+    /// 書き込み・共有なしで開けるかで確かめる (中身も更新日時も変えない)。
+    /// </remarks>
+    private static bool CanReplace(string path)
+    {
+        try
+        {
+            using var stream = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.None);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
     }
 
     private static AudioProcessingException NotWritable(string outPath, string userMessage, string suggestedSolution) => new(
@@ -180,9 +203,26 @@ public class AudioExportService
         }
         finally
         {
-            // 置き換えた後は無いので何もしない (File.Delete はファイルが無くても例外にならない)
-            File.Delete(tempPath);
+            DeleteTemporaryFile(tempPath);
         }
         _logger.LogDebug("音声ファイルを書き込みました: {OutPath}, サイズ: {Size} bytes", outPath, audioData.Length);
+    }
+
+    /// <summary>
+    /// 一時ファイルを消す (置き換えた後は無いので何もしない。<see cref="File.Delete"/> はファイルが無くても例外にならない)。
+    /// </summary>
+    /// <remarks>
+    /// 失敗は Warning に留める。保存の失敗の後に呼ばれたとき、消せなかった例外で元の失敗の理由を上書きしないため。
+    /// </remarks>
+    private void DeleteTemporaryFile(string tempPath)
+    {
+        try
+        {
+            File.Delete(tempPath);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.LogWarning(ex, "一時ファイルを削除できませんでした: {Path}", tempPath);
+        }
     }
 }

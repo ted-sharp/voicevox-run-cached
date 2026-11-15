@@ -75,6 +75,9 @@ public class TextToSpeechProcessor
             _audioPlayer.BeginDevicePreparation();
         }
 
+        // この話者のフィラーを --init が使っていないものとして消さないようにする
+        _fillerManager.MarkUsed(_engines.Get(request.Engine), request.Speaker);
+
         // エンジンの確認・起動はここではしない。合成が必要になったときだけ SegmentProducer が行う。
         // --refresh はキャッシュを読まずに全部合成し直し、保存時に上書きする (--no-cache は読みも書きもしない)
         var segments = await LoadSegmentsAsync(request, skipLookup: options.NoCache || options.Refresh, cancellationToken);
@@ -242,7 +245,6 @@ public class TextToSpeechProcessor
             ct => _fillerManager.GetRandomFillerAudioAsync(engine, request.Speaker, request.Volume, ct),
             engine.FillerSettings.MaxFillersPerWait,
             cancellationToken);
-        _fillerManager.MarkUsed(engine, request.Speaker);
 
         if (verbose)
         {
