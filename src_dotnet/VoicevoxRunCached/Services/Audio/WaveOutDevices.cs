@@ -12,7 +12,7 @@ public sealed record WaveOutDeviceInfo(
     [property: JsonPropertyName("name")] string Name);
 
 /// <summary>
-/// 再生デバイスの指定 (<c>Audio.OutputDevice</c> など) に使う WaveOut のデバイス一覧。
+/// 再生デバイスの指定 (<c>Audio.Devices</c> など) に使う WaveOut のデバイス一覧。
 /// </summary>
 /// <remarks>
 /// <para>WASAPI の一覧とは並び・件数が一致するとは限らないので別に列挙する。</para>

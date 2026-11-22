@@ -190,12 +190,10 @@ public class ValidatorsTests
     [Arguments("Jabra", true)]
     [Arguments("-2", false)]
     [Arguments("", false)]
-    public async Task AudioSettings_OutputDevice(string device, bool expected)
+    public async Task AudioSettings_Devices(string device, bool expected)
     {
         var validator = new AudioSettingsValidator();
-        await Assert.That(validator.Validate(new AudioSettings { OutputDevice = device }).IsValid).IsEqualTo(expected);
-        // 代わりのデバイスも同じ書き方
-        await Assert.That(validator.Validate(new AudioSettings { FallbackDevices = ["-1", device] }).IsValid).IsEqualTo(expected);
+        await Assert.That(validator.Validate(new AudioSettings { Devices = ["Jabra", device] }).IsValid).IsEqualTo(expected);
     }
 
     [Test]
@@ -209,13 +207,25 @@ public class ValidatorsTests
     [Arguments((SpeechEngineKind)99, "3", "1", false)]
     public async Task AudioSettings_SpeakerDevices(SpeechEngineKind engine, string speaker, string device, bool expected)
     {
-        // 書き間違えた項目を黙って無視すると、その話者が OutputDevice で鳴って気づきにくいので設定エラーにする
+        // 書き間違えた項目を黙って無視すると、その話者が Audio.Devices で鳴って気づきにくいので設定エラーにする
         var validator = new AudioSettingsValidator();
         var result = validator.Validate(new AudioSettings
         {
-            SpeakerDevices = [new SpeakerDeviceSettings { Engine = engine, Speaker = speaker, Device = device }],
+            SpeakerDevices = [new SpeakerDeviceSettings { Engine = engine, Speaker = speaker, Devices = [device] }],
         });
         await Assert.That(result.IsValid).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task AudioSettings_SpeakerDevicesWithoutDevices_Fails()
+    {
+        // Devices を Device と単数で書き間違えると空になる。話者を書いた意味が無いので設定エラーにする
+        var validator = new AudioSettingsValidator();
+        var result = validator.Validate(new AudioSettings
+        {
+            SpeakerDevices = [new SpeakerDeviceSettings { Engine = SpeechEngineKind.Voicevox, Speaker = "3" }],
+        });
+        await Assert.That(result.IsValid).IsFalse();
     }
 
     [Test]

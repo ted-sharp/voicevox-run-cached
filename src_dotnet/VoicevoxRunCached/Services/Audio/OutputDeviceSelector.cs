@@ -6,11 +6,14 @@ using VoicevoxRunCached.Models;
 namespace VoicevoxRunCached.Services.Audio;
 
 /// <summary>
-/// 読み上げを鳴らす再生デバイスを決める。指定は WaveOut の index (-1 は OS 既定) か、デバイス名の一部。
+/// 読み上げを鳴らす再生デバイスを決める。候補を上から順に探し、つながっている最初のデバイスで鳴らす。
+/// 候補の各要素は WaveOut の index (-1 は OS 既定) か、デバイス名の一部。
 /// </summary>
 /// <remarks>
-/// <para>優先順は <c>--device</c> → <see cref="AudioSettings.SpeakerDevices"/> の最初に合う項目 → <see cref="AudioSettings.OutputDevice"/>。
-/// 話者はキャラクターで照合し、VOICEPEAK・CeVIO の感情 (<c>:</c> から後ろ) は見ない。感情を変えるたびに対応表を書かずに済むように。
+/// <para>候補は <c>--device</c> (指定が無ければ <see cref="AudioSettings.SpeakerDevices"/> の最初に合う項目の候補) に、
+/// <see cref="AudioSettings.Devices"/> (空なら -1) を続けたもの。
+/// 代わりのデバイスを話者ごとに書かずに済むよう、話者の候補の後に全体の候補を続ける。</para>
+/// <para>話者はキャラクターで照合し、VOICEPEAK・CeVIO の感情 (<c>:</c> から後ろ) は見ない。感情を変えるたびに対応表を書かずに済むように。
 /// VOICEVOX の話者はスタイル ID なので、スタイルごとに書く。</para>
 /// <para>名前でも指定できるのは、index がつながっているデバイスだけに振られ、USB / Bluetooth の抜き差しでずれるため。
 /// 名前は WaveOut の名前 (WinMM の制約で 31 文字に切られたもの) と照合する。</para>
@@ -18,21 +21,25 @@ namespace VoicevoxRunCached.Services.Audio;
 public static class OutputDeviceSelector
 {
     /// <summary>
-    /// 指定を書いた場所 (設定・<c>--device</c>) から、使う指定の文字列を選ぶ。どのデバイスかは <see cref="ToIndex"/> で決める。
+    /// 探す順の候補を組み立てる。どのデバイスかは <see cref="ToIndex"/> で決める。
     /// </summary>
     /// <param name="settings">Audio の設定</param>
     /// <param name="request">読み上げの要求 (<see cref="VoiceRequest.Speaker"/> は正規化済み)</param>
     /// <param name="deviceOverride"><c>--device</c> の値</param>
-    public static string Resolve(AudioSettings settings, VoiceRequest request, string? deviceOverride)
+    public static IReadOnlyList<string> Resolve(AudioSettings settings, VoiceRequest request, string? deviceOverride)
     {
         ArgumentNullException.ThrowIfNull(settings);
         ArgumentNullException.ThrowIfNull(request);
 
-        if (deviceOverride is { } device)
-        {
-            return device;
-        }
+        IReadOnlyList<string> overall = settings.Devices.Length > 0 ? settings.Devices : [OsDefault];
+        var first = deviceOverride is { } device ? [device] : SpeakerCandidates(settings, request);
+        return [.. first, .. overall];
+    }
 
+    private const string OsDefault = "-1";
+
+    private static IReadOnlyList<string> SpeakerCandidates(AudioSettings settings, VoiceRequest request)
+    {
         var character = CharacterOf(request.Speaker);
         foreach (var entry in settings.SpeakerDevices)
         {
@@ -41,10 +48,10 @@ public static class OutputDeviceSelector
                 && SpeechEngineProvider.NormalizeSpeaker(entry.Engine, entry.Speaker, out _) is { } normalized
                 && CharacterOf(normalized) == character)
             {
-                return entry.Device;
+                return entry.Devices;
             }
         }
-        return settings.OutputDevice;
+        return [];
     }
 
     /// <summary>
@@ -70,10 +77,9 @@ public static class OutputDeviceSelector
     }
 
     /// <summary>
-    /// 指定 <paramref name="spec"/> を WaveOut の index にする。見つからなければ <paramref name="fallbacks"/> を順に探す。
+    /// 候補 <paramref name="candidates"/> を上から順に探し、最初に見つかったデバイスの WaveOut の index を返す。
     /// </summary>
-    /// <param name="spec">index (-1 は OS 既定) か、デバイス名の一部 (大文字小文字を区別しない)</param>
-    /// <param name="fallbacks">代わりのデバイス (<see cref="AudioSettings.FallbackDevices"/>。書き方は <paramref name="spec"/> と同じ)</param>
+    /// <param name="candidates">候補 (<see cref="Resolve"/>)。各要素は index (-1 は OS 既定) か、デバイス名の一部 (大文字小文字を区別しない)</param>
     /// <param name="waveOutNames">WaveOut のデバイス名 (要素の位置が index)</param>
     /// <exception cref="VoicevoxRunCachedException">
     /// どれも見つからない (<see cref="ErrorCodes.Audio.OutputDeviceNotFound"/>)・
@@ -82,36 +88,32 @@ public static class OutputDeviceSelector
     /// <remarks>
     /// <para>名前全体が一致するデバイスを部分一致より優先する。同じ語を含むデバイスが複数あっても、名前全体を書けば選べるように。</para>
     /// <para>複数に合うのは書き方の問題 (どれを鳴らすか決められない) なので、次の候補に進まずに投げる。</para>
-    /// <para>-1 は常にあるので、<paramref name="fallbacks"/> の最後に書けば、どれも無いとき OS 既定で鳴る (エラーにならない)。</para>
+    /// <para>-1 は常にあるので、候補の最後に書けば、どれも無いとき OS 既定で鳴る (エラーにならない)。</para>
     /// <para>確かめずに無い index を渡すと、合成した後の waveOutOpen で想定外のエラー (スタックトレース付きの終了コード 1) になるため、
     /// 呼び出し元はロックを待つ前に呼ぶ。</para>
     /// </remarks>
-    public static DeviceChoice ToIndex(string spec, IReadOnlyList<string> fallbacks, IReadOnlyList<string> waveOutNames)
+    public static DeviceChoice ToIndex(IReadOnlyList<string> candidates, IReadOnlyList<string> waveOutNames)
     {
-        ArgumentNullException.ThrowIfNull(spec);
-        ArgumentNullException.ThrowIfNull(fallbacks);
+        ArgumentNullException.ThrowIfNull(candidates);
         ArgumentNullException.ThrowIfNull(waveOutNames);
 
-        foreach (var candidate in (IEnumerable<string>)[spec, .. fallbacks])
+        for (var i = 0; i < candidates.Count; i++)
         {
-            if (Find(candidate, waveOutNames) is { } index)
+            if (Find(candidates[i], waveOutNames) is { } index)
             {
-                return new DeviceChoice(index, candidate);
+                return new DeviceChoice(index, candidates[i], IsFirstCandidate: i == 0);
             }
         }
 
         var available = waveOutNames.Count == 0
             ? "-1 (OS 既定) だけ"
             : $"-1 (OS 既定) と {DescribeDevices(waveOutNames, Enumerable.Range(0, waveOutNames.Count))}";
-        var reason = fallbacks.Count == 0
-            ? $"再生デバイス {DescribeSpec(spec)} が見つかりません"
-            : $"再生デバイス {DescribeSpec(spec)} も、代わりのデバイス ({String.Join(", ", fallbacks.Select(DescribeSpec))}) も見つかりません";
         throw new VoicevoxRunCachedException(
             errorCode: ErrorCodes.Audio.OutputDeviceNotFound,
-            message: $"Output device not found: {spec} (fallbacks: {String.Join(", ", fallbacks)})",
-            userMessage: $"{reason} (つながっているのは {available})。",
+            message: $"Output device not found: {String.Join(", ", candidates)}",
+            userMessage: $"再生デバイス ({String.Join(", ", candidates.Select(DescribeSpec))}) が見つかりません (つながっているのは {available})。",
             suggestedSolution: "devices --speak で確かめてください。番号は USB や Bluetooth のデバイスを抜き差しすると変わることがあるので、名前の一部で書くとずれません。"
-                + "見つからないときに鳴らすデバイスは Audio.FallbackDevices に順に書けます (最後に -1 を書くと OS 既定)。");
+                + "Audio.Devices の最後に -1 を書くと、どれも無いとき OS 既定で鳴ります。");
     }
 
     /// <summary>
@@ -170,5 +172,6 @@ public static class OutputDeviceSelector
 /// <see cref="OutputDeviceSelector.ToIndex"/> の結果。
 /// </summary>
 /// <param name="Index">WaveOut の index (-1 は OS 既定)</param>
-/// <param name="UsedSpec">使った指定 (指定のデバイスが見つからず代わりのデバイスにしたときは、その代わりの指定)</param>
-public sealed record DeviceChoice(int Index, string UsedSpec);
+/// <param name="UsedSpec">使った候補</param>
+/// <param name="IsFirstCandidate">最初の候補か (false なら、前の候補が見つからず代わりのデバイスにした)</param>
+public sealed record DeviceChoice(int Index, string UsedSpec, bool IsFirstCandidate);

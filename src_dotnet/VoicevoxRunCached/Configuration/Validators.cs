@@ -104,11 +104,11 @@ public class AudioSettingsValidator : AbstractValidator<AudioSettings>
 {
     public AudioSettingsValidator()
     {
-        RuleFor(x => x.OutputDevice).Custom((device, context) =>
+        RuleForEach(x => x.Devices).Custom((device, context) =>
         {
             if (!OutputDeviceSelector.TryValidateSpec(device, out var error))
             {
-                context.AddFailure($"OutputDeviceの指定が不正です: {error}");
+                context.AddFailure($"Devicesの指定が不正です: {error}");
             }
         });
 
@@ -129,14 +129,6 @@ public class AudioSettingsValidator : AbstractValidator<AudioSettings>
             .InclusiveBetween(1, 10).WithMessage("NumberOfBuffersは1-10の範囲である必要があります");
 
         RuleForEach(x => x.SpeakerDevices).SetValidator(new SpeakerDeviceSettingsValidator());
-
-        RuleForEach(x => x.FallbackDevices).Custom((device, context) =>
-        {
-            if (!OutputDeviceSelector.TryValidateSpec(device, out var error))
-            {
-                context.AddFailure($"FallbackDevicesの指定が不正です: {error}");
-            }
-        });
     }
 }
 
@@ -148,7 +140,7 @@ public class SpeakerDeviceSettingsValidator : AbstractValidator<SpeakerDeviceSet
         RuleFor(x => x.Engine)
             .IsInEnum().WithMessage($"SpeakerDevicesのEngineは {String.Join(" / ", Enum.GetNames<SpeechEngineKind>())} のどれかである必要があります");
 
-        // 書き間違いで黙って OutputDevice に鳴らさないよう、--speaker と同じ検証をする
+        // 書き間違いで黙って Audio.Devices に鳴らさないよう、--speaker と同じ検証をする
         RuleFor(x => x.Speaker).Custom((speaker, context) =>
         {
             var entry = context.InstanceToValidate;
@@ -158,11 +150,15 @@ public class SpeakerDeviceSettingsValidator : AbstractValidator<SpeakerDeviceSet
             }
         });
 
-        RuleFor(x => x.Device).Custom((device, context) =>
+        // 空だと話者を書いた意味が無い (Device と単数で書き間違えたときもここに来る)
+        RuleFor(x => x.Devices)
+            .NotEmpty().WithMessage("SpeakerDevicesのDevicesにデバイスを1つ以上書いてください");
+
+        RuleForEach(x => x.Devices).Custom((device, context) =>
         {
             if (!OutputDeviceSelector.TryValidateSpec(device, out var error))
             {
-                context.AddFailure($"SpeakerDevicesのDeviceの指定が不正です: {error}");
+                context.AddFailure($"SpeakerDevicesのDevicesの指定が不正です: {error}");
             }
         });
     }

@@ -100,9 +100,9 @@ public class ApplicationBootstrapTests
     public async Task SpeakerDevices_IsLoaded()
     {
         var dir = CreateConfigDirectory("""
-            { "Audio": { "OutputDevice": 2, "FallbackDevices": ["Headphones", -1], "SpeakerDevices": [
-                { "Engine": "Voicevox", "Speaker": "3", "Device": 1 },
-                { "Engine": "voicepeak", "Speaker": "Frimomen", "Device": "Jabra" }
+            { "Audio": { "Devices": ["Headphones (Senary", -1], "SpeakerDevices": [
+                { "Engine": "Voicevox", "Speaker": "3", "Devices": [1] },
+                { "Engine": "voicepeak", "Speaker": "Frimomen", "Devices": ["Jabra", "Anker"] }
             ] } }
             """);
         try
@@ -112,11 +112,32 @@ public class ApplicationBootstrapTests
             await Assert.That(settings.Audio.SpeakerDevices.Length).IsEqualTo(2);
             await Assert.That(settings.Audio.SpeakerDevices[0].Speaker).IsEqualTo("3");
             // 番号は JSON の数値でも、名前と同じく文字列として読む
-            await Assert.That(settings.Audio.SpeakerDevices[0].Device).IsEqualTo("1");
+            await Assert.That(settings.Audio.SpeakerDevices[0].Devices).IsEquivalentTo(["1"]);
             await Assert.That(settings.Audio.SpeakerDevices[1].Engine).IsEqualTo(SpeechEngineKind.Voicepeak);
-            await Assert.That(settings.Audio.SpeakerDevices[1].Device).IsEqualTo("Jabra");
-            await Assert.That(settings.Audio.OutputDevice).IsEqualTo("2");
-            await Assert.That(settings.Audio.FallbackDevices).IsEquivalentTo(["Headphones", "-1"]);
+            await Assert.That(settings.Audio.SpeakerDevices[1].Devices).IsEquivalentTo(["Jabra", "Anker"]);
+            await Assert.That(settings.Audio.Devices).IsEquivalentTo(["Headphones (Senary", "-1"]);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    [Arguments("""{ "Audio": { "OutputDevice": -1 } }""", new string[0])]
+    // コマンドラインの上書きでも同じ
+    [Arguments("{}", new[] { "--Audio:OutputDevice=2" })]
+    public async Task RemovedOutputDevice_IsConfigurationError(string json, string[] extraArgs)
+    {
+        // 回帰: 4.0.0 で Audio.Devices に変えた。知らないキーは無視されるので、残っていると書いたデバイスが黙って使われなくなる
+        var dir = CreateConfigDirectory(json);
+        try
+        {
+            var ex = await Assert.ThrowsAsync<ConfigurationException>(() =>
+                Task.FromResult(ApplicationBootstrap.LoadSettings(["text", .. extraArgs], dir)));
+
+            await Assert.That(ex!.UserMessage).Contains("Audio.Devices");
+            await Assert.That(ErrorCodes.GetExitCode(ex.ErrorCode)).IsEqualTo(7);
         }
         finally
         {

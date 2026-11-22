@@ -141,19 +141,13 @@ public class CacheSettings
 public class AudioSettings
 {
     /// <summary>
-    /// 再生デバイス。WaveOut の index (-1 は OS 既定) か、デバイス名の一部 (<see cref="OutputDeviceSelector"/>)。
-    /// JSON の数値 (<c>-1</c>) も文字列として読まれる。
-    /// </summary>
-    public string OutputDevice { get; set; } = "-1";
-
-    /// <summary>
-    /// 指定の再生デバイスが見つからないときに、代わりに探すデバイス (上から順。書き方は <see cref="OutputDevice"/> と同じ)。
-    /// 最後に <c>-1</c> を書けば、どれも無いとき OS 既定で鳴る。
+    /// 再生デバイスの候補 (上から順に、つながっている最初のデバイスで鳴らす)。各要素は WaveOut の index (-1 は OS 既定) か、
+    /// デバイス名の一部 (<see cref="OutputDeviceSelector"/>)。空なら OS 既定。JSON の数値 (<c>-1</c>) も文字列として読まれる。
     /// </summary>
     /// <remarks>
     /// 初期値を入れてはいけない (ConfigurationBinder が既存の要素に追記するため)。
     /// </remarks>
-    public string[] FallbackDevices { get; set; } = [];
+    public string[] Devices { get; set; } = [];
 
     public double Volume { get; set; } = 1.0;
     public bool PrepareDevice { get; set; } = false;
@@ -163,7 +157,8 @@ public class AudioSettings
     public int NumberOfBuffers { get; set; } = 3;
 
     /// <summary>
-    /// 話者ごとの再生デバイス。合う項目が無ければ <see cref="OutputDevice"/>。<c>--device</c> を指定すればそちらが優先。
+    /// 話者ごとの再生デバイスの候補。合う項目の候補を探し、見つからなければ <see cref="Devices"/> に続ける。
+    /// <c>--device</c> を指定すれば、話者の候補の代わりにそれを探す。
     /// </summary>
     /// <remarks>
     /// 辞書にしないのは、設定のキーでは <c>:</c> が階層の区切りになり、<c>"voicepeak:Frimomen"</c> のようなキーを書けないため。
@@ -183,9 +178,9 @@ public class SpeakerDeviceSettings
     public string Speaker { get; set; } = "";
 
     /// <summary>
-    /// 再生デバイス。<see cref="AudioSettings.OutputDevice"/> と同じ書き方 (index か、デバイス名の一部)。
+    /// 再生デバイスの候補 (上から順)。書き方は <see cref="AudioSettings.Devices"/> と同じ。1 つ以上書く。
     /// </summary>
-    public string Device { get; set; } = "-1";
+    public string[] Devices { get; set; } = [];
 }
 
 // Filler sound settings

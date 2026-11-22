@@ -678,7 +678,8 @@ Options:
   --out, -o <path>         Save output audio to file (.wav or .opus)
   --no-play                Do not play audio (useful with --out)
   --device <index|name>    Output device: WaveOut index shown by 'devices' (-1 = OS default) or part of its name
-                           (default: Audio.SpeakerDevices entry for the speaker, else Audio.OutputDevice)
+                           (if not found, continues with Audio.Devices; default: Audio.SpeakerDevices entry
+                           for the speaker, then Audio.Devices)
   --verbose                Show playback time and total execution time
   --max-wait <seconds>     Give up (exit code 9) if waiting for other runs (synthesis, then playback
                            on the same device) takes longer than this in total

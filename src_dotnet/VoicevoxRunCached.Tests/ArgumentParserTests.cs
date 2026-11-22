@@ -640,7 +640,7 @@ public class ArgumentParserTests
     [Arguments("", false, false)]
     [Arguments("--json", true, false)]
     [Arguments("--full --json", true, true)]
-    [Arguments("--full --log-level debug --Audio:OutputDevice=1", false, true)]
+    [Arguments("--full --log-level debug --Audio:Devices:0=1", false, true)]
     public async Task ParseDevicesOptions_ReadsFlags(string args, bool json, bool full)
     {
         var options = ArgumentParser.ParseDevicesOptions(args.Split(' ', StringSplitOptions.RemoveEmptyEntries), DefaultSettings());

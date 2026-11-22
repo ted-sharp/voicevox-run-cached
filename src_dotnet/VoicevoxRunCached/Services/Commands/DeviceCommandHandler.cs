@@ -218,7 +218,7 @@ public class DeviceCommandHandler
     private static void OutputWaveOutDevices(IReadOnlyList<WaveOutDeviceInfo> waveOutDevices)
     {
         ConsoleHelper.WriteLine("");
-        ConsoleHelper.WriteLine("Audio.OutputDevice (WaveOut index):");
+        ConsoleHelper.WriteLine("Audio.Devices (WaveOut index):");
         ConsoleHelper.WriteLine("  -1: OS default");
         foreach (var d in waveOutDevices)
         {
