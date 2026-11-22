@@ -138,10 +138,10 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - キャッシュ保存は fire-and-forget し、producer の `finally` で待つ。`writer.TryComplete()` は `WhenAll` より**前** — `ChannelProducerOrderingTests`
 - フィラーは次のセグメントが `FillerStartDelayMs` 以内に来なければ挟む。読み上げと同じエンジン・話者の声で、音量は `--volume` を掛ける (話速・音高は既定のまま)。`--init` は `Filler.Enabled` に関係なく生成し、`Enabled` は再生にだけ効く。未生成の話者では鳴らさず、Warning は 1 実行 1 回
 - フィラーの文と回数はエンジンごと (`FillerTexts` は空なら `Filler.FillerTexts` で、`--init` と再生の両方が使う。`MaxFillersPerWait` は null = 上限なし (JSON に null と書く)、0 = 鳴らさない、VOICEPEAK の省略時は 2) — `FillerWaitBudgetTests` / `FillerManagerTests.EngineFillerTexts_*` / `ApplicationBootstrapTests.MaxFillersPerWait_IsLoaded`
-- フィラーの失敗は本編を止めない (`AudioPlayer.TryPlayFillerAsync`)。ただし再生タイムアウト (`TimeoutException`) は投げ直す
+- フィラーの失敗は本編を止めない (`AudioPlayer.TryPlayFillerAsync`)。ただし再生タイムアウト (`TimeoutException`) とデバイスのエラー (`MmException`) は投げ直す
 
 ### 音声形式
-- `TextSegment.AudioData` は形式 (WAV / Ogg Opus) もサンプルレートも混在する (内訳は `TextSegment.AudioData` のコメント)。読むときは必ず `AudioFormatDetector.CreateWaveStream` で判定する (`WaveFileReader` 決め打ち禁止)。再生はセグメントごとに `Init` する。`AudioExportService` は 48kHz mono 16bit に揃えて結合する
+- `TextSegment.AudioData` は形式 (WAV / Ogg Opus) もサンプルレートも混在する (内訳は `TextSegment.AudioData` のコメント)。読むときは必ず `AudioFormatDetector.CreateWaveStream` で判定する (`WaveFileReader` 決め打ち禁止)。再生は 1 回の読み上げで `Init` を 1 回だけ行い、48kHz mono にそろえて `PlaybackStream` に並べて流し続ける (文ごとに止めると Bluetooth のデバイスが休み、次の文の始めが切れる。並んでいない間は無音を流す) — `PlaybackStreamTests`。`AudioExportService` は 48kHz mono 16bit に揃えて結合する
 - エンコードは `OpusCodec.EncodeWav` (`Cache.OpusBitrateKbps`、キャッシュ・フィラー・`--out .opus` 共通)。ビットレートはキャッシュキーに含めない
 - デコード (`OpusCodec.DecodeToWav`) は **48kHz 固定** — `OpusCodecTests`
 
