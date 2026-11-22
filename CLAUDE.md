@@ -75,6 +75,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - `devices --speak` は先に全部の番号をまとめて合成し (`--no-play`)、デバイスごとに鳴らす (`--cache-only` にしない。進捗は出さない `Quiet`) (`DeviceCommandHandler`) — `DeviceCommandHandlerTests.AllDeviceNumbersText_SplitsIntoEachDeviceNumberText`
 - ロックは `%TEMP%\VoicevoxRunCached.speech.lock` と `%TEMP%\VoicevoxRunCached.playback.{番号|default}.lock` を `FileShare.None` で開くファイルロック。名前付き Mutex は使わない
 - 読み上げは、キャッシュ参照・合成を `SpeechLock` の中で、再生をデバイスごとの `PlaybackLock` の中で行う。producer が終わったら再生の途中でも `SpeechLock` を手放す (`TextToSpeechProcessor`)。ロックの外の再生はエンジン・キャッシュに触れない (フィラーの読み込みは手放す前に `FillerGate.CloseAsync` で締め切る) — `TextToSpeechProcessorTests.WaitingForPlaybackDevice_ReleasesSpeechLock` / `FillerGateTests`
+- ただしエンジンに接続を持ったまま (`ISpeechEngine.HoldsConnectionUntilExit`。CeVIO が接続した後) なら、再生が終わるまで `SpeechLock` を手放さない — `TextToSpeechProcessorTests.ConnectedToCevio_HoldsSpeechLockUntilPlaybackEnds` / `CevioEngineTests.HoldsConnectionUntilExit_OnlyAfterConnecting`
 - `--out` は `SpeechLock` の中で保存する (`{out}.tmp` が固定名のため)。失敗は再生を終えてから投げる — `TextToSpeechProcessorTests.OutFile_IsSavedBeforeReleasingSpeechLock`
 - `PlaybackLock` の待ちきれなかったときの文は「再生しませんでした」(合成は済んでいる) — `PlaybackLockTests.MaxWait_CountsTimeAlreadyWaitedForSpeechLock`
 - 取る順は `SpeechLock` → `PlaybackLock`。`PlaybackLock` は consumer の中で待つ (待つ間も合成を進める)
@@ -117,6 +118,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - 標準入出力はリダイレクトし (標準入力は閉じる)、終了を待つ。`StopIfNotKept` は何もしない
 
 ### CeVIO AI (`CevioEngine` / `CevioHostManager` / `CevioRemoteService`)
+- 外部連携は同時に 1 アプリで、接続はプロセスの終了まで残る (COM を解放しても切れない)。`HoldsConnectionUntilExit` で再生の終わりまで `SpeechLock` を持つ。`OutputWaveToFile` が true でも WAV が無ければ `EngineNotAvailable` — `CevioEngineTests.Synthesize_ReportedSuccessWithoutWav_IsEngineUnavailable`
 - COM に触れるのは `CevioRemoteService` だけ (遅延バインディング)。同期の COM 呼び出しは `CevioEngine.RunComAsync` で包む。テストは `FakeCevioRemoteService`
 - ホストの起動に `ServiceControl2V40.StartHost` を使わない。`CevioHostManager` が `UseShellExecute = true` で起動する — `CevioHostManagerTests.StartHost_DoesNotInheritHandles`。自分で起動したホストだけを `KeepHostRunning: false` のとき閉じる
 - 起動したプロセスが終わったら、同じ実行ファイルのプロセスがあれば起動を待ち (閉じない)、無ければすぐ `EngineNotAvailable` — `CevioHostManagerTests.HostHandedToStartingInstance_WaitsAndIsNotClosed` / `HostExitsDuringStartup_FailsWithoutWaitingForTimeout` / `StartingInstanceExits_FailsWithoutWaitingForTimeout`
