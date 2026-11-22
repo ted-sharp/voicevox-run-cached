@@ -226,7 +226,7 @@ VoicevoxRunCached.exe --init --engine cevio -s "花隈千冬"           # フィ
 
 ### 再生デバイスを選ぶ
 
-既定では OS の既定のデバイスで鳴る。別のデバイスで鳴らすときや、話者ごとにデバイスを分けるときは次の順に設定する。
+既定では OS の既定のデバイスで鳴る。別のデバイスで鳴らすときや、話者ごとにデバイスを分けるときは次の順に設定する。デバイスは番号か、デバイス名の一部で指定する。
 
 1. **デバイスの番号を確かめる**。`devices --speak` は一覧を出し、各デバイスから「デバイス 0 番です」のようにその番号を順に読み上げる
 
@@ -247,20 +247,20 @@ VoicevoxRunCached.exe --init --engine cevio -s "花隈千冬"           # フィ
    - 声は読み上げと同じく `--engine` / `-s` で選べる。初回は合成するので少し待つ
    - 番号だけ見るなら `devices` (読み上げない)
 
-2. **全部の読み上げを 1 つのデバイスで鳴らす**なら、その番号を `Audio.OutputDevice` に書く
-3. **話者ごとに分ける**なら、`Audio.SpeakerDevices` に話者と番号の対応を書く (対応表に無い話者は `Audio.OutputDevice` で鳴る)
+2. **全部の読み上げを 1 つのデバイスで鳴らす**なら、そのデバイスを `Audio.OutputDevice` に書く
+3. **話者ごとに分ける**なら、`Audio.SpeakerDevices` に話者とデバイスの対応を書く (対応表に無い話者は `Audio.OutputDevice` で鳴る)
 
    ```jsonc
    "Audio": {
      "OutputDevice": -1,
      "SpeakerDevices": [
-       { "Engine": "Voicevox", "Speaker": "3", "Device": 1 },
-       { "Engine": "Cevio", "Speaker": "花隈千冬", "Device": 0 }
+       { "Engine": "Voicevox", "Speaker": "3", "Device": "Jabra" },
+       { "Engine": "Cevio", "Speaker": "花隈千冬", "Device": "Headphones" }
      ]
    }
    ```
 
-4. **試す**。`VoicevoxRunCached.exe "テストです。" -s 3` が 1 番のデバイスで鳴ればよい。1 回だけ別のデバイスで鳴らすなら `--device <番号>`
+4. **試す**。`VoicevoxRunCached.exe "テストです。" -s 3` が Jabra で鳴ればよい。1 回だけ別のデバイスで鳴らすなら `--device <番号か名前>`
 
 **`SpeakerDevices` の書き方**
 
@@ -274,12 +274,15 @@ VoicevoxRunCached.exe --init --engine cevio -s "花隈千冬"           # フィ
 
 - 違うデバイスに向けた読み上げは同時に鳴り、同じデバイスの読み上げは順番に鳴る。OS 既定 (-1) と番号での指定を混ぜるときの注意は「[同時実行](#同時実行)」
 
-**番号の注意**
+**デバイスの書き方**
 
-- 使う番号は `devices` の「Audio.OutputDevice (WaveOut index)」欄のもの。上段の WASAPI 一覧 (`devices --full` の `[n]`) とは番号が一致しないことがある
-- USB / Bluetooth のデバイスを抜き差しすると、番号が変わることがある。違うデバイスで鳴るようになったら `devices --speak` で確かめ直す
-- 無い番号を指定すると、合成の前にエラー (終了コード 5) になる
-- デバイス名は WinMM の制約で 31 文字までに切られる
+- **名前で書く** (おすすめ): `devices` の「Audio.OutputDevice (WaveOut index)」欄の名前の一部を書く (`"Jabra"` など。大文字小文字は区別しない)
+  - 番号は USB / Bluetooth のデバイスを抜き差しすると変わることがあるが、名前なら変わらない
+  - 名前全体が一致するデバイスがあれば、それを使う。無ければ名前の一部が合うデバイスを使う
+  - 複数のデバイスに合うとエラー (終了コード 5)。合ったデバイスが表示されるので、1 台に絞れるよう長く書く (`"Senary"` が 2 台に合うなら `"Headphones (Senary"` のように)
+  - デバイス名は WinMM の制約で 31 文字までに切られているので、その範囲で書く
+- **番号で書く**: 同じ欄の番号。-1 は OS 既定。上段の WASAPI 一覧 (`devices --full` の `[n]`) とは番号が一致しないことがある
+- **見つからないとき** (抜いている・無い番号): 合成の前にエラー (終了コード 5) になり、つながっているデバイスが表示される。`Audio.FallbackToDefaultDevice` を `true` にすると、エラーにせず OS 既定で鳴らす (Warning のログが出る)
 
 ### フィラーで待ち時間を埋める
 
@@ -338,7 +341,7 @@ VoicevoxRunCached.exe --clear               # キャッシュ全削除
 | `--refresh` | キャッシュを読まずに全部合成し直し、キャッシュを上書きする (`--no-cache` / `--cache-only` とは併用不可) | false |
 | `--out, -o <path>` | ファイル保存 (`.wav` / `.opus` を拡張子で判定。それ以外はエラー)。書き込めない場所 (読み取り専用やほかのアプリが開いているファイルも) なら合成・再生の前にエラー (終了コード 5) | — |
 | `--no-play` | 再生しない (`--out` と併用推奨) | false |
-| `--device <index>` | 再生デバイスの番号 (`devices` の WaveOut index。-1 は OS 既定。[再生デバイスを選ぶ](#再生デバイスを選ぶ)) | `Audio.SpeakerDevices` で話者に合う項目、無ければ `Audio.OutputDevice` |
+| `--device <index\|name>` | 再生デバイス。`devices` の WaveOut index (-1 は OS 既定) か、デバイス名の一部 ([再生デバイスを選ぶ](#再生デバイスを選ぶ)) | `Audio.SpeakerDevices` で話者に合う項目、無ければ `Audio.OutputDevice` |
 | `--verbose` | 再生時間と総実行時間を表示 | false |
 | `--max-wait <seconds>` | 合成と再生の順番待ちを合わせて待つ上限 (秒、0 以上。[同時実行](#同時実行)) | `Lock.MaxWaitSeconds` (未設定なら上限なし) |
 | `--log-level <level>` | `trace`/`debug`/`info`/`warn`/`error`/`crit`/`none` (`none` はログを一切出さない) | info |
@@ -369,7 +372,7 @@ VoicevoxRunCached.exe --clear               # キャッシュ全削除
 | 1 | 一般エラー (不正な引数・想定外の例外など) |
 | 3 | エンジンエラー (エンジンの起動失敗・エンジンに接続できない・エンジンが 500/503 を返した) |
 | 4 | キャッシュエラー (`--clear` で削除できなかった等) |
-| 5 | 音声エラー (全セグメント (`--init` では全フィラー) の合成失敗・音声形式の不正・`--out` の保存失敗・無い再生デバイスの番号) |
+| 5 | 音声エラー (全セグメント (`--init` では全フィラー) の合成失敗・音声形式の不正・`--out` の保存失敗・再生デバイスが見つからない・名前が複数のデバイスに合う) |
 | 6 | API エラー (タイムアウト・不正なリクエスト/レスポンス・レート制限など) |
 | 7 | 設定エラー (`appsettings.json` が無い・JSON の書式が不正・値の型や範囲が不正) |
 | 8 | 一部のセグメントだけ合成に失敗 (再生・保存は成功した分だけ行われる。`--init` では一部のフィラーだけ生成に失敗) |
@@ -503,7 +506,7 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 → エンジンが起動しているか、`appsettings.json` の `BaseUrl` が正しいか確認。`AutoStartEngine: true` の場合は `EnginePath` 自動検出が失敗していないかも確認。起動したエンジンがすぐ終了したとき (`EnginePath` の間違いなど) は、`StartupTimeoutSeconds` を待たずにこのエラーになる。
 
 **音声が再生されない・違うデバイスで鳴る**
-→ まず `Audio.OutputDevice = -1` (OS デフォルト) を試す。番号で指定しているときは、デバイスの抜き差しで番号が変わっていないか `devices --speak` で確かめる ([再生デバイスを選ぶ](#再生デバイスを選ぶ))。
+→ まず `Audio.OutputDevice = -1` (OS デフォルト) を試す。番号で指定しているときは、デバイスの抜き差しで番号が変わっていないか `devices --speak` で確かめる。名前で指定すれば、抜き差しで番号が変わっても同じデバイスで鳴る ([再生デバイスを選ぶ](#再生デバイスを選ぶ))。
 
 **音声の冒頭が途切れる (USB / Bluetooth デバイスで多発)**
 → `Audio.PrepareDevice: true` にして `PreparationDurationMs` を 300–500 に増やす。

@@ -204,9 +204,9 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - Serilog は `LoggingManager` がプログラムで構成する (`Serilog:*` は読まない)
 
 ### オーディオデバイス
-- `OutputDevice = -1` で OS 既定、`0+` で WaveOut の index
+- `OutputDevice = -1` で OS 既定、`0+` で WaveOut の index、それ以外の文字列はデバイス名の一部
 - 再生デバイスは `OutputDeviceSelector.Resolve` で決め (`--device` → `Audio.SpeakerDevices` → `OutputDevice`。VOICEPEAK・CeVIO は感情を見ない)、`AudioPlayer` → `AudioDeviceManager` / `WavePlayerManager` に引数で渡す (`AudioSettings.OutputDevice` を直接読まない) — `OutputDeviceSelectorTests`
-- 再生するときは、ロックの前に `OutputDeviceSelector.EnsureExists` でデバイスが有るか確かめる (無ければ `AUDIO_008`、終了コード 5。`CommandRouter` はスタックトレースなしの Warning) — `OutputDeviceSelectorTests.EnsureExists_*`
+- 指定は番号かデバイス名の一部 (`OutputDevice` / `SpeakerDevices[].Device` / `--device` は文字列。書き方は `OutputDeviceSelector.TryValidateSpec`)。WaveOut の index には再生するときにロックの前で `OutputDeviceSelector.ToIndex` が決める (名前全体の一致を優先、複数に合えば `AUDIO_009`、見つからなければ `AUDIO_008`。`FallbackToDefaultDevice` なら -1。複数に合うときは常にエラー。`CommandRouter` はスタックトレースなしの Warning) — `OutputDeviceSelectorTests.ToIndex_*`
 - バッファは `WavePlayerManager.GetBufferMilliseconds` で換算する。CA1416 を避けるため `Directory.Build.props` で全プロジェクトを Windows 専用と宣言している
 - warm-up は `AudioDeviceManager.StartPreparation` で始める (コンストラクタで始めない)。読み上げは `PlaybackLock` を取った直後に `AudioPlayer.BeginDevicePreparation` (先に始めると同じデバイスの再生に重なる)。デバイスを切り替えるとき前の warm-up を同期で待たない
 
