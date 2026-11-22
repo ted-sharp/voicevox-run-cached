@@ -641,20 +641,42 @@ public class ArgumentParserTests
     [Arguments("--full --log-level debug --Audio:OutputDevice=1", false, true)]
     public async Task ParseDevicesOptions_ReadsFlags(string args, bool json, bool full)
     {
-        var options = ArgumentParser.ParseDevicesOptions(args.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        var options = ArgumentParser.ParseDevicesOptions(args.Split(' ', StringSplitOptions.RemoveEmptyEntries), DefaultSettings());
 
-        await Assert.That(options).IsEqualTo((json, full));
+        await Assert.That((options.Json, options.Full)).IsEqualTo((json, full));
+        await Assert.That(options.Speak).IsNull();
+    }
+
+    [Test]
+    [Arguments("--speak", SpeechEngineKind.Voicevox, "1")]
+    [Arguments("--speak -s 3", SpeechEngineKind.Voicevox, "3")]
+    [Arguments("--speaker Frimomen --engine voicepeak --speak --full", SpeechEngineKind.Voicepeak, "Frimomen")]
+    public async Task ParseDevicesOptions_Speak(string args, SpeechEngineKind engine, string speaker)
+    {
+        var options = ArgumentParser.ParseDevicesOptions(args.Split(' '), DefaultSettings());
+
+        await Assert.That(options.Speak).IsNotNull();
+        await Assert.That(options.Speak!.Engine).IsEqualTo(engine);
+        await Assert.That(options.Speak.Speaker).IsEqualTo(speaker);
     }
 
     [Test]
     [Arguments("--jsn")]
     [Arguments("--json extra")]
     [Arguments("--log-level")]
+    // --speak の声の指定は --speak のときだけ (一覧だけ出して黙って無視しない)
+    [Arguments("-s 3")]
+    [Arguments("--engine voicepeak")]
+    // --speak は stdout に人向けの行を出すので、JSON のつもりの stdout を壊さない
+    [Arguments("--speak --json")]
+    [Arguments("--speak -s abc")]
+    // VOICEPEAK は DefaultSpeaker が空なので -s が必須
+    [Arguments("--speak --engine voicepeak")]
     public async Task ParseDevicesOptions_UnexpectedArgument_ThrowsInvalidArguments(string args)
     {
         // 回帰: 不明な引数を読み飛ばしていたため、devices --jsn で JSON のつもりの stdout に人向けの一覧を出して成功していた
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
-            Task.FromResult(ArgumentParser.ParseDevicesOptions(args.Split(' '))));
+            Task.FromResult(ArgumentParser.ParseDevicesOptions(args.Split(' '), DefaultSettings())));
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
     }

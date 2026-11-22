@@ -111,6 +111,7 @@ VoicevoxRunCached -- <text> [options]   # <text> がコマンド名 (speakers �
 VoicevoxRunCached --test [options]      # appsettings.json の Test.Message で実行
 VoicevoxRunCached speakers [--engine <name>]  # スピーカー一覧
 VoicevoxRunCached devices [--full] [--json]  # オーディオデバイス一覧
+VoicevoxRunCached devices --speak [--engine <name>] [-s <id>]  # 一覧を出し、各デバイスでその番号を順に読み上げる
 VoicevoxRunCached --init [--engine <name>] [-s <id>]  # フィラー音声キャッシュを初期化 (話者ごと。省略時は DefaultSpeaker)
 VoicevoxRunCached --clear               # キャッシュ全削除
 ```
@@ -299,7 +300,7 @@ VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラ�
 }
 ```
 
-- **デバイスの番号**: `devices` の「Audio.OutputDevice (WaveOut index)」欄の番号 (-1 は OS 既定)
+- **デバイスの番号**: `devices` の「Audio.OutputDevice (WaveOut index)」欄の番号 (-1 は OS 既定)。`devices --speak` で、各デバイスから「デバイス 0 番です」のようにその番号が聞こえる (番号順。声は読み上げと同じく `--engine` / `-s` で選べる。初回は合成するので少し待つ)
 - **話者**: `-s` と同じ書き方。VOICEPEAK・CeVIO は感情 (`:` から後ろ) を見ずにキャラクターで照合する。VOICEVOX はスタイルごとの ID で書く。合う項目が複数あれば上のものを使う
 - **優先順**: `--device` → `SpeakerDevices` → `OutputDevice`
 - 書き方が不正な項目 (話者が空・エンジン名の間違いなど) は設定エラー (終了コード 7)
@@ -366,7 +367,7 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 
 ### 同時実行
 
-読み上げ (キャッシュ参照・合成・再生・`--out`)・`--init` (フィラー生成)・`speakers`・`--clear` は、一時フォルダのロックファイル (`%TEMP%\VoicevoxRunCached.speech.lock`) で 1 プロセスずつに直列化される (`devices` は対象外)。
+読み上げ (キャッシュ参照・合成・再生・`--out`)・`--init` (フィラー生成)・`speakers`・`--clear` は、一時フォルダのロックファイル (`%TEMP%\VoicevoxRunCached.speech.lock`) で 1 プロセスずつに直列化される (`devices` は対象外。`devices --speak` は読み上げと同じく対象)。
 
 - 同時に起動すると、後から来た方は先の処理が終わるまで待つ。音声が重ならず、エンジンへの API 呼び出しや自動起動も 1 つずつになる (読み上げ中に `speakers` を実行すると、読み上げが終わるまで待つ)
 - 待っているものが 2 つ以上あるとき、どれが次に実行されるかは来た順とは限らない
@@ -400,7 +401,7 @@ Total execution time: 2445.4ms
 → エンジンが起動しているか、`appsettings.json` の `BaseUrl` が正しいか確認。`AutoStartEngine: true` の場合は `EnginePath` 自動検出が失敗していないかも確認。起動したエンジンがすぐ終了したとき (`EnginePath` の間違いなど) は、`StartupTimeoutSeconds` を待たずにこのエラーになる。
 
 **音声が再生されない**
-→ まず `Audio.OutputDevice = -1` (OS デフォルト) を試す。特定のデバイスで鳴らすには `VoicevoxRunCached.exe devices` の「Audio.OutputDevice (WaveOut index)」欄の番号を `Audio.OutputDevice` に設定する。上段の WASAPI 一覧 (`--full` の `[n]`) とは番号が一致しないことがあるので注意 (デバイス名は WinMM の制約で 31 文字までに切られる)。
+→ まず `Audio.OutputDevice = -1` (OS デフォルト) を試す。特定のデバイスで鳴らすには `VoicevoxRunCached.exe devices` の「Audio.OutputDevice (WaveOut index)」欄の番号を `Audio.OutputDevice` に設定する (どれがどのデバイスかは `devices --speak` で聞き分けられる)。上段の WASAPI 一覧 (`--full` の `[n]`) とは番号が一致しないことがあるので注意 (デバイス名は WinMM の制約で 31 文字までに切られる)。
 
 **音声の冒頭が途切れる (USB / Bluetooth デバイスで多発)**
 → `Audio.PrepareDevice: true` にして `PreparationDurationMs` を 300–500 に増やす。

@@ -3,6 +3,8 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
+using VoicevoxRunCached.Exceptions;
+using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Utilities;
 
 namespace VoicevoxRunCached.Services.Commands;
@@ -36,32 +38,96 @@ internal sealed record AudioDeviceListPayload(
 /// </summary>
 public class DeviceCommandHandler
 {
+    private readonly TextToSpeechProcessor _ttsProcessor;
     private readonly ILogger _logger;
 
-    public DeviceCommandHandler(ILogger logger)
+    public DeviceCommandHandler(TextToSpeechProcessor ttsProcessor, ILogger logger)
     {
+        _ttsProcessor = ttsProcessor ?? throw new ArgumentNullException(nameof(ttsProcessor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <param name="outputJson"><c>--json</c></param>
-    /// <param name="full"><c>--full</c></param>
-    public int HandleDevices(bool outputJson, bool full)
+    public async Task<int> HandleDevicesAsync(DevicesOptions options, CancellationToken cancellationToken = default)
     {
-        using var enumerator = new MMDeviceEnumerator();
+        ArgumentNullException.ThrowIfNull(options);
 
-        var (defaultName, defaultId) = GetDefaultAudioEndpoint(enumerator);
-        var deviceList = full ? EnumerateDevices(enumerator) : new List<AudioDeviceInfo>();
         var waveOutDevices = EnumerateWaveOutDevices();
-
-        if (outputJson)
+        using (var enumerator = new MMDeviceEnumerator())
         {
-            OutputJson(defaultName, defaultId, deviceList, waveOutDevices);
-            return 0;
+            var (defaultName, defaultId) = GetDefaultAudioEndpoint(enumerator);
+            var deviceList = options.Full ? EnumerateDevices(enumerator) : new List<AudioDeviceInfo>();
+
+            if (options.Json)
+            {
+                OutputJson(defaultName, defaultId, deviceList, waveOutDevices);
+                return 0;
+            }
+
+            OutputConsole(defaultName, defaultId, deviceList, options.Full);
+            OutputWaveOutDevices(waveOutDevices);
         }
 
-        OutputConsole(defaultName, defaultId, deviceList, full);
-        OutputWaveOutDevices(waveOutDevices);
+        if (options.Speak is { } voice)
+        {
+            await SpeakDeviceNumbersAsync(voice, waveOutDevices, cancellationToken);
+        }
         return 0;
+    }
+
+    /// <summary>
+    /// 番号の読み上げ (<c>devices --speak</c>) の文。
+    /// </summary>
+    public static string DeviceNumberText(int index) => $"デバイス{index}番です。";
+
+    /// <summary>
+    /// 先にまとめて合成する文。<see cref="TextSegmentProcessor"/> で分けると、デバイスごとの <see cref="DeviceNumberText"/> と同じ文になる
+    /// (同じキャッシュを引けるように)。
+    /// </summary>
+    public static string AllDeviceNumbersText(IEnumerable<int> devices) => String.Join("\n", devices.Select(DeviceNumberText));
+
+    /// <summary>
+    /// WaveOut のデバイスを番号順に、そのデバイスで番号を読み上げる。
+    /// </summary>
+    /// <remarks>
+    /// <para>読み上げと同じ <see cref="TextToSpeechProcessor"/> を通す (ロック・キャッシュ・エンジンの起動もそのまま使う)。</para>
+    /// <para>先に全部の文を再生せずに合成してキャッシュし、それからデバイスごとにキャッシュだけで鳴らす。
+    /// デバイスごとに合成すると、<c>KeepEngineRunning: false</c> ではロックを手放すたびにエンジンが止まり、デバイスの数だけ起動し直すため。</para>
+    /// <para>失敗 (エンジン・デバイスのエラー) はそこで止める。直前に出した番号と名前で、どのデバイスかが分かる。</para>
+    /// </remarks>
+    private async Task SpeakDeviceNumbersAsync(VoiceRequest voice, IReadOnlyList<WaveOutDeviceInfo> devices, CancellationToken cancellationToken)
+    {
+        if (devices.Count == 0)
+        {
+            return;
+        }
+
+        ConsoleHelper.WriteLine("");
+        ConsoleHelper.WriteLine("Speaking each WaveOut index on its device...");
+        var prepare = voice.WithText(AllDeviceNumbersText(devices.Select(d => d.Index)));
+        await RunOrThrowAsync(prepare, new TextToSpeechOptions(NoCache: false, CacheOnly: false, Verbose: false, OutPath: null, NoPlay: true), cancellationToken);
+
+        foreach (var device in devices)
+        {
+            ConsoleHelper.WriteLine($"  {device.Index,2}: \"{device.Name}\"");
+            var options = new TextToSpeechOptions(NoCache: false, CacheOnly: true, Verbose: false, OutPath: null, NoPlay: false, Device: device.Index);
+            await RunOrThrowAsync(voice.WithText(DeviceNumberText(device.Index)), options, cancellationToken);
+        }
+        _logger.LogInformation("デバイスの番号を読み上げました: {Count} 台", devices.Count);
+    }
+
+    /// <summary>
+    /// 読み上げを実行し、一部の文の失敗 (終了コード 8) もエラーにする (読み上げの文は 1 文なので、通常は例外になる)。
+    /// </summary>
+    private async Task RunOrThrowAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken)
+    {
+        var exitCode = await _ttsProcessor.ProcessTextToSpeechAsync(request, options, cancellationToken);
+        if (exitCode != 0)
+        {
+            throw new VoicevoxRunCachedException(
+                errorCode: ErrorCodes.Audio.AudioGenerationFailed,
+                message: $"Failed to speak device numbers (exit code {exitCode})",
+                userMessage: "デバイスの番号を読み上げられませんでした。");
+        }
     }
 
     /// <summary>

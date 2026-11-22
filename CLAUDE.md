@@ -67,7 +67,8 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 理由は各クラスのコメントにある。
 
 ### プロセス間ロック (`SpeechLock` / `InterProcessLock`)
-- エンジンかキャッシュに触れるコマンド (読み上げ・`--test`・`--init`・`speakers`・`--clear`) は `SpeechLock.RunAsync` で囲む。囲まないのは `devices` だけ
+- エンジンかキャッシュに触れるコマンド (読み上げ・`--test`・`--init`・`speakers`・`--clear`) は `SpeechLock.RunAsync` で囲む。囲まないのは `devices` (一覧) だけ。`devices --speak` は `TextToSpeechProcessor` を通して囲む
+- `devices --speak` は先に全部の番号をまとめて合成し (`--no-play`)、デバイスごとに `--cache-only` で鳴らす (`DeviceCommandHandler`) — `DeviceCommandHandlerTests.AllDeviceNumbersText_SplitsIntoEachDeviceNumberText`
 - ロックは `%TEMP%\VoicevoxRunCached.speech.lock` を `FileShare.None` で開くファイルロック。名前付き Mutex は使わない
 - ロックを**解放する前に**全エンジンの `StopIfNotKept` を呼ぶ — 各テストクラスの `EngineStartedByUs_IsStoppedBeforeReleasingLock`
 - `--clear` もロックの中で消す — `CacheCommandHandlerTests`

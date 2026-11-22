@@ -53,7 +53,7 @@ public class CommandRouter
             return command switch
             {
                 "speakers" => await HandleSpeakersCommandAsync(subArgs, cancellationToken),
-                "devices" => HandleDevicesCommand(subArgs),
+                "devices" => await HandleDevicesCommandAsync(subArgs, cancellationToken),
                 "--init" => await HandleInitCommandAsync(subArgs, cancellationToken),
                 "--clear" => await HandleClearCommandAsync(subArgs, cancellationToken),
                 "--test" => await HandleTestCommandAsync(subArgs, cancellationToken),
@@ -114,11 +114,8 @@ public class CommandRouter
         return _cacheHandler.HandleClearCacheAsync(cancellationToken);
     }
 
-    private int HandleDevicesCommand(string[] args)
-    {
-        var (json, full) = ArgumentParser.ParseDevicesOptions(args);
-        return _deviceHandler.HandleDevices(json, full);
-    }
+    private Task<int> HandleDevicesCommandAsync(string[] args, CancellationToken cancellationToken)
+        => _deviceHandler.HandleDevicesAsync(ArgumentParser.ParseDevicesOptions(args, _settings), cancellationToken);
 
     private async Task<int> HandleTestCommandAsync(string[] args, CancellationToken cancellationToken)
     {
