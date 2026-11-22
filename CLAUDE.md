@@ -59,21 +59,23 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 
 1. `Program.cs` → `ApplicationBootstrap` (設定の読み込み・検証、Serilog) → `CommandRouter.ExecuteCommandAsync` の switch → 各ハンドラ
 2. 読み上げは `TextToSpeechProcessor`: `SpeechLock` の中で、`TextSegmentProcessor` で文に分割 → `AudioCacheManager` でキャッシュ (Opus) を引く
-3. `SegmentProducer` (producer) と `AudioPlayer.PlayStreamingAsync` (consumer) を `Channel<TextSegment>` で並走させる。producer はキャッシュ済みを WAV にデコードして流し、未キャッシュ分は `ISpeechEngine` で 1 件ずつ合成して流す
+3. `SegmentProducer` (producer) と `AudioPlayer.PlayStreamingAsync` (consumer。`PlaybackLock` の中) を `Channel<TextSegment>` で並走させる。producer が終われば `SpeechLock` を手放し、再生の終わりはロックの外で待つ。producer はキャッシュ済みを WAV にデコードして流し、未キャッシュ分は `ISpeechEngine` で 1 件ずつ合成して流す
 4. `--out` 指定時は `AudioExportService` が WAV / Opus で保存
 
 ## 守ること
 
 理由は各クラスのコメントにある。
 
-### プロセス間ロック (`SpeechLock` / `InterProcessLock`)
+### プロセス間ロック (`SpeechLock` / `PlaybackLock` / `InterProcessLock`)
 - エンジンかキャッシュに触れるコマンド (読み上げ・`--test`・`--init`・`speakers`・`--clear`) は `SpeechLock.RunAsync` で囲む。囲まないのは `devices` (一覧) だけ。`devices --speak` は `TextToSpeechProcessor` を通して囲む
 - `devices --speak` は先に全部の番号をまとめて合成し (`--no-play`)、デバイスごとに `--cache-only` で鳴らす (`DeviceCommandHandler`) — `DeviceCommandHandlerTests.AllDeviceNumbersText_SplitsIntoEachDeviceNumberText`
-- ロックは `%TEMP%\VoicevoxRunCached.speech.lock` を `FileShare.None` で開くファイルロック。名前付き Mutex は使わない
+- ロックは `%TEMP%\VoicevoxRunCached.speech.lock` と `%TEMP%\VoicevoxRunCached.playback.{番号|default}.lock` を `FileShare.None` で開くファイルロック。名前付き Mutex は使わない
+- 読み上げは、キャッシュ参照・合成を `SpeechLock` の中で、再生をデバイスごとの `PlaybackLock` の中で行う。producer が終わったら再生の途中でも `SpeechLock` を手放す (`TextToSpeechProcessor`)。ロックの外の再生・`--out` はエンジン・キャッシュに触れない — `TextToSpeechProcessorTests.WaitingForPlaybackDevice_ReleasesSpeechLock`
+- 取る順は `SpeechLock` → `PlaybackLock`。`PlaybackLock` は consumer の中で待つ (待つ間も合成を進める)
 - ロックを**解放する前に**全エンジンの `StopIfNotKept` を呼ぶ — 各テストクラスの `EngineStartedByUs_IsStoppedBeforeReleasingLock`
 - `--clear` もロックの中で消す — `CacheCommandHandlerTests`
-- 待つ上限は `Lock.MaxWaitSeconds` / `--max-wait` (`SpeechLock.ResolveMaxWait`。未設定 = 上限なし、0 = 待たない)。超えたら `LOCK_001` (終了コード 9)、`CommandRouter` はスタックトレースなしの Warning — `InterProcessLockTests` / `SpeechLockTests`
-- テストは本物のロックファイルを使わない (`TestLockFile.CreateSpeechLock` / `AppServiceProvider.SpeechLockPath`)。既定が共有のファイルであることは `AppServiceProviderTests.SpeechLock_UsesSharedLockFileByDefault`
+- 待つ上限は `Lock.MaxWaitSeconds` / `--max-wait` (`SpeechLock.ResolveMaxWait`。未設定 = 上限なし、0 = 待たない)。読み上げでは 2 つのロックを待った時間の合計に掛ける。超えたら `LOCK_001` (終了コード 9)、`CommandRouter` はスタックトレースなしの Warning — `InterProcessLockTests` / `SpeechLockTests` / `PlaybackLockTests.MaxWait_CountsTimeAlreadyWaitedForSpeechLock`
+- テストは本物のロックファイルを使わない (`TestLockFile.CreateSpeechLock` / `TempLockDirectory.CreatePlaybackLock` / `AppServiceProvider.SpeechLockPath` / `PlaybackLockDirectory`)。既定が共有のファイルであることは `AppServiceProviderTests.SpeechLock_UsesSharedLockFileByDefault` / `PlaybackLock_UsesSharedLockDirectoryByDefault`
 - ロックより前に走る書き込み確認 (`DirectoryValidation.BeWritableDirectory`) のファイル名は毎回一意にし、`FileOptions.DeleteOnClose` で消す
 
 ### 合成エンジンの切り替え (`ISpeechEngine` / `SpeechEngineProvider`)
@@ -124,7 +126,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - キャッシュ由来の音声は producer が `AudioCacheManager.DecodeOrDelete` で WAV にデコードしてから流す (`Task.Run` で再生と並行)。読めなければ未キャッシュとして合成し直し、`--cache-only` なら失敗として数える — `SegmentProducerTests` / `AudioCacheManagerIntegrationTests` / `TextToSpeechProcessorTests.CorruptedCache_IsResynthesizedAndRewritten`
 - 1 回の入力に同じ文が複数あれば、2 回目以降は 1 回目の結果 (失敗なら失敗) を使い、保存も 1 回だけ — `SegmentProducerTests`
 - `ISpeechEngine.IsEngineUnavailable` の失敗の後は、残りの未キャッシュ分を呼ばずに失敗として数え、channel に流さない (キャッシュ済みは流す)。`--init` も同じ — `SegmentProducerTests` / `FillerManagerTests`
-- 片側の例外は `WhenAllOrCancelOnFaultAsync` でもう一方も止める — `WhenAllOrCancelOnFaultTests`
+- producer が終わる前の片側の例外は `WhenFirstCompletesOrCancelOnFaultAsync` でもう一方も止める — `WhenFirstCompletesOrCancelOnFaultTests`
 - キャッシュ保存は fire-and-forget し、producer の `finally` で待つ。`writer.TryComplete()` は `WhenAll` より**前** — `ChannelProducerOrderingTests`
 - フィラーは次のセグメントが `FillerStartDelayMs` 以内に来なければ挟む。読み上げと同じエンジン・話者の声で、音量は `--volume` を掛ける (話速・音高は既定のまま)。`--init` は `Filler.Enabled` に関係なく生成し、`Enabled` は再生にだけ効く。未生成の話者では鳴らさず、Warning は 1 実行 1 回
 - フィラーの文と回数はエンジンごと (`FillerTexts` は空なら `Filler.FillerTexts` で、`--init` と再生の両方が使う。`MaxFillersPerWait` は null = 上限なし (JSON に null と書く)、0 = 鳴らさない、VOICEPEAK の省略時は 2) — `FillerWaitBudgetTests` / `FillerManagerTests.EngineFillerTexts_*` / `ApplicationBootstrapTests.MaxFillersPerWait_IsLoaded`

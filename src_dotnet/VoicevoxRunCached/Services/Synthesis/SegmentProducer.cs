@@ -22,7 +22,7 @@ namespace VoicevoxRunCached.Services.Synthesis;
 /// エンジンの準備 (起動確認・話者の初期化) は最初に合成が必要になったときに 1 回だけ行う。全部キャッシュから読めればエンジンに接続しない
 /// (起動待ちで通知が遅れない・エンジンが止まっていても鳴る)。先頭がキャッシュ済みなら、エンジンの起動を待つ間にそこから鳴り始める (その間フィラーも鳴りうる)。
 /// 準備に失敗したら以降は合成せず、キャッシュ済みのセグメントだけ流して、失敗を <see cref="SynthesisResult.PreparationError"/> で返す。
-/// ここで投げると、先に流したキャッシュ済みのセグメントの再生が途中で止められる (<c>WhenAllOrCancelOnFaultAsync</c>) ため。
+/// ここで投げると、先に流したキャッシュ済みのセグメントの再生が途中で止められる (<c>WhenFirstCompletesOrCancelOnFaultAsync</c>) ため。
 /// </remarks>
 public class SegmentProducer
 {

@@ -25,6 +25,7 @@ public class TextToSpeechProcessor
     private readonly TextSegmentProcessor _textProcessor;
     private readonly SegmentProducer _producer;
     private readonly SpeechLock _speechLock;
+    private readonly PlaybackLock _playbackLock;
     private readonly IClock _clock;
     private readonly AudioSettings _audioSettings;
 
@@ -37,6 +38,7 @@ public class TextToSpeechProcessor
         FillerManager fillerManager,
         SegmentProducer producer,
         SpeechLock speechLock,
+        PlaybackLock playbackLock,
         AudioSettings audioSettings,
         IClock clock,
         ILogger logger)
@@ -49,16 +51,20 @@ public class TextToSpeechProcessor
         _fillerManager = fillerManager ?? throw new ArgumentNullException(nameof(fillerManager));
         _producer = producer ?? throw new ArgumentNullException(nameof(producer));
         _speechLock = speechLock ?? throw new ArgumentNullException(nameof(speechLock));
+        _playbackLock = playbackLock ?? throw new ArgumentNullException(nameof(playbackLock));
         _audioSettings = audioSettings ?? throw new ArgumentNullException(nameof(audioSettings));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <remarks>
-    /// 処理全体 (キャッシュ参照 → 合成 → 再生 → <c>--out</c>) を <see cref="SpeechLock"/> で
-    /// プロセス間に直列化する。Hooks が同時に発火しても音声が重ならず、合成エンジンの直列実行と
-    /// エンジンの起動もプロセスをまたいで 1 つずつになる。後から来た方は先の読み上げが終わるまで待つ
-    /// (上限は <c>--max-wait</c> / <c>Lock.MaxWaitSeconds</c>)。
+    /// <para>キャッシュ参照と合成は <see cref="SpeechLock"/> の中で行い、プロセス間に直列化する
+    /// (合成エンジンの呼び出しと起動・キャッシュの読み書きがプロセスをまたいで 1 つずつになる)。
+    /// 再生は合成と並走させ、再生デバイスごとの <see cref="PlaybackLock"/> で直列化する。
+    /// 合成を終えたら、再生の途中でも <see cref="SpeechLock"/> を手放す。同じデバイスの読み上げは前の再生が終わるまで待ち (音声が重ならない)、
+    /// 違うデバイスの読み上げはその間に合成・再生できる。</para>
+    /// <para>待つ上限 (<c>--max-wait</c> / <c>Lock.MaxWaitSeconds</c>) は、2 つのロックを待った時間の合計に掛ける。</para>
+    /// <para>ロックを手放した後の再生と <c>--out</c> は、メモリ上の音声だけを使い、エンジン・キャッシュに触れない。</para>
     /// </remarks>
     public async Task<int> ProcessTextToSpeechAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken = default)
     {
@@ -66,18 +72,54 @@ public class TextToSpeechProcessor
         {
             AudioExportService.EnsureWritableOutput(options.OutPath);
         }
-        return await _speechLock.RunAsync(() => ProcessLockedAsync(request, options, cancellationToken), cancellationToken, options.MaxWaitSeconds);
+
+        var device = OutputDeviceSelector.Resolve(_audioSettings, request, options.Device);
+        var maxWait = _speechLock.ResolveMaxWait(options.MaxWaitSeconds);
+        var requestedAt = _clock.UtcNow;
+
+        // 再生は SpeechLock を手放した後も続くので、producer と再生を一緒に止める CTS はロックの外で持つ
+        using var sharedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var run = await _speechLock.RunAsync(
+            () =>
+            {
+                var playback = new PlaybackTarget(device, maxWait, AlreadyWaited: _clock.UtcNow - requestedAt);
+                return SynthesizeLockedAsync(request, options, playback, sharedCts, cancellationToken);
+            },
+            cancellationToken,
+            options.MaxWaitSeconds);
+
+        // producer は終わっているので、ここで失敗しても止めるものは無い
+        await run.Playback;
+        return await CompleteAsync(run, options, cancellationToken);
     }
 
-    private async Task<int> ProcessLockedAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken)
+    /// <summary>
+    /// 再生するデバイスと、<see cref="PlaybackLock"/> を待つ上限 (<see cref="SpeechLock"/> を待った時間を引いて使う)。
+    /// </summary>
+    private sealed record PlaybackTarget(int Device, TimeSpan? MaxWait, TimeSpan AlreadyWaited);
+
+    /// <summary>
+    /// <see cref="SpeechLock"/> の中での処理の結果。<see cref="Playback"/> はまだ終わっていないことがある。
+    /// </summary>
+    private sealed record SynthesisRun(List<TextSegment> Segments, SynthesisResult Result, Task Playback, DateTime StartedAt);
+
+    /// <summary>
+    /// キャッシュ参照と合成を行い、再生を始める。合成が終わったら (再生の途中でも) 戻る。
+    /// </summary>
+    private async Task<SynthesisRun> SynthesizeLockedAsync(
+        VoiceRequest request,
+        TextToSpeechOptions options,
+        PlaybackTarget playback,
+        CancellationTokenSource sharedCts,
+        CancellationToken cancellationToken)
     {
         var totalStartTime = _clock.UtcNow;
-        var device = OutputDeviceSelector.Resolve(_audioSettings, request, options.Device);
 
         if (!options.NoPlay)
         {
             // デバイスの warm-up (PrepareDevice) はキャッシュ参照・エンジン起動と並行させる
-            _audioPlayer.BeginDevicePreparation(device);
+            // (PlaybackLock を取る前なので、同じデバイスの先の再生に小さな音量で重なることがある)
+            _audioPlayer.BeginDevicePreparation(playback.Device);
         }
 
         // この話者のフィラーを --init が使っていないものとして消さないようにする
@@ -108,7 +150,16 @@ public class TextToSpeechProcessor
             }
         }
 
-        var synthesisResult = await SynthesizeAndPlayAsync(segments, request, options, device, cancellationToken);
+        var (result, playbackTask) = await SynthesizeAndStartPlaybackAsync(segments, request, options, playback, sharedCts);
+        return new SynthesisRun(segments, result, playbackTask, totalStartTime);
+    }
+
+    /// <summary>
+    /// 再生が終わった後の判定と <c>--out</c> の保存。
+    /// </summary>
+    private async Task<int> CompleteAsync(SynthesisRun run, TextToSpeechOptions options, CancellationToken cancellationToken)
+    {
+        var (segments, synthesisResult, _, totalStartTime) = run;
 
         // 準備の失敗 (エンジン無し・話者無し) は、キャッシュ済みの文を鳴らし終えてから投げる (終了コード 3 / 1)。
         // 一部失敗 (8) にはしない (原因がエンジンの設定・入力にあり、文ごとの失敗ではないため)。--out も保存しない
@@ -176,14 +227,18 @@ public class TextToSpeechProcessor
     }
 
     /// <summary>
-    /// Producer (合成) と Consumer (再生) を <see cref="Channel{T}"/> で繋ぎ、両方が並走しながら処理する。
+    /// Producer (合成) と Consumer (再生) を <see cref="Channel{T}"/> で繋いで並走させ、producer が終わったら戻る。
+    /// 返す再生の Task はまだ終わっていないことがある (呼び出し元が <see cref="SpeechLock"/> を手放してから待つ)。
     /// </summary>
-    private async Task<SynthesisResult> SynthesizeAndPlayAsync(
+    /// <remarks>
+    /// producer が終わる前に再生が失敗したら producer も止めて例外を投げる (<see cref="WhenFirstCompletesOrCancelOnFaultAsync"/>)。
+    /// </remarks>
+    private async Task<(SynthesisResult Result, Task Playback)> SynthesizeAndStartPlaybackAsync(
         List<TextSegment> segments,
         VoiceRequest request,
         TextToSpeechOptions options,
-        int device,
-        CancellationToken cancellationToken)
+        PlaybackTarget playback,
+        CancellationTokenSource sharedCts)
     {
         // エンジンの準備 (ISpeechEngine.PrepareAsync) は producer が最初に合成が必要になったときに 1 回だけ呼ぶ (理由は SegmentProducer)。
         // --cache-only は合成しない
@@ -197,28 +252,26 @@ public class TextToSpeechProcessor
             SingleReader = true,
         });
 
-        // 一方が落ちたらもう一方も止めるための Linked CTS
-        using var sharedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-
         var producerTask = _producer.ProduceAsync(
             segments, channel.Writer, request, saveToCache: !options.NoCache, prepareSynthesis, sharedCts.Token);
         var playbackTask = options.NoPlay
             ? Task.CompletedTask
-            : RunPlaybackAsync(channel.Reader, request, device, options.Verbose, sharedCts.Token);
+            : RunPlaybackAsync(channel.Reader, request, playback, options.Verbose, sharedCts.Token);
 
-        await WhenAllOrCancelOnFaultAsync(producerTask, playbackTask, sharedCts);
-        return await producerTask;
+        await WhenFirstCompletesOrCancelOnFaultAsync(producerTask, playbackTask, sharedCts);
+        return (await producerTask, playbackTask);
     }
 
     /// <summary>
-    /// 2 つの Task の完了を待つ。先に終わった側が失敗していたら、その時点で <paramref name="cts"/> をキャンセルして
-    /// もう一方を止め、その終了を待ってから最初の例外を投げる。
+    /// <paramref name="first"/> の完了を待つ。その前にどちらかが失敗したら、その時点で <paramref name="cts"/> をキャンセルして
+    /// もう一方を止め、両方の終了を待ってから最初の例外を投げる。<paramref name="second"/> は終わっていなくても戻る。
     /// </summary>
     /// <remarks>
-    /// <see cref="Task.WhenAll(Task[])"/> だけだと両方が終わるまで戻らないため、再生がデバイスエラーで落ちても
-    /// producer が残りの全セグメントを合成し終えるまでエラーにならない。
+    /// producer (<paramref name="first"/>) が終われば <see cref="SpeechLock"/> を手放せるが、再生 (<paramref name="second"/>) はまだ続くため。
+    /// <see cref="Task.WhenAny(Task[])"/> で先に終わった側を見るのは、再生がデバイスエラーで落ちたとき、producer が残りの全セグメントを
+    /// 合成し終えるのを待たずにエラーにするため。
     /// </remarks>
-    public static async Task WhenAllOrCancelOnFaultAsync(Task first, Task second, CancellationTokenSource cts)
+    public static async Task WhenFirstCompletesOrCancelOnFaultAsync(Task first, Task second, CancellationTokenSource cts)
     {
         ArgumentNullException.ThrowIfNull(cts);
 
@@ -226,7 +279,7 @@ public class TextToSpeechProcessor
         {
             var finished = await Task.WhenAny(first, second);
             await finished; // 先に終わった側が失敗していればここで例外になる
-            await Task.WhenAll(first, second);
+            await first;
         }
         catch
         {
@@ -239,14 +292,18 @@ public class TextToSpeechProcessor
         }
     }
 
-    private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, VoiceRequest request, int device, bool verbose, CancellationToken cancellationToken)
+    /// <remarks>
+    /// <see cref="PlaybackLock"/> は consumer の中で待つ。待っている間も producer は合成を進めるので、前の再生が終わればすぐ鳴らせる。
+    /// </remarks>
+    private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, VoiceRequest request, PlaybackTarget target, bool verbose, CancellationToken cancellationToken)
     {
+        using var playbackLock = await _playbackLock.AcquireAsync(target.Device, target.MaxWait, target.AlreadyWaited, cancellationToken);
         var playbackStartTime = _clock.UtcNow;
         // フィラーも読み上げと同じ話者の声 (--init -s で話者ごとに生成したもの)・同じ音量にする。文と待ち 1 回の回数はエンジンごと
         var engine = _engines.Get(request.Engine);
         await _audioPlayer.PlayStreamingAsync(
             reader,
-            device,
+            target.Device,
             ct => _fillerManager.GetRandomFillerAudioAsync(engine, request.Speaker, request.Volume, ct),
             engine.FillerSettings.MaxFillersPerWait,
             cancellationToken);

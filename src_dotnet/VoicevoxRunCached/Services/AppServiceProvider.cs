@@ -36,6 +36,7 @@ namespace VoicevoxRunCached.Services;
 [Singleton(typeof(SpeechEngineProvider))]
 [Singleton(typeof(TextSegmentProcessor))]
 [Singleton(typeof(SpeechLock), Factory = nameof(CreateSpeechLock))]
+[Singleton(typeof(PlaybackLock), Factory = nameof(CreatePlaybackLock))]
 // 音声再生サブシステム (IDisposable はプロバイダの Dispose で破棄される)
 [Singleton(typeof(AudioDeviceManager))]
 [Singleton(typeof(AudioFormatDetector))]
@@ -79,4 +80,12 @@ public partial class AppServiceProvider
 
     private SpeechLock CreateSpeechLock(SpeechEngineProvider engines, LockSettings settings, ILogger logger)
         => new(engines, settings, logger) { LockFilePath = SpeechLockPath };
+
+    /// <summary>
+    /// <see cref="PlaybackLock"/> のロックファイルを置くフォルダ。テストで差し替える (既定はほかのプロセスと共有するもの)。
+    /// </summary>
+    public string PlaybackLockDirectory { get; init; } = Path.GetTempPath();
+
+    private PlaybackLock CreatePlaybackLock(ILogger logger)
+        => new(logger) { LockDirectory = PlaybackLockDirectory };
 }
