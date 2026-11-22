@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
@@ -17,13 +18,6 @@ public sealed record AudioDeviceInfo(
     [property: JsonPropertyName("id")] string Id,
     [property: JsonPropertyName("name")] string Name,
     [property: JsonPropertyName("state")] string State);
-
-/// <summary>
-/// Audio.OutputDevice に指定する WaveOut デバイス (再生は WaveOut.DeviceNumber = Index で選ぶ)。
-/// </summary>
-public sealed record WaveOutDeviceInfo(
-    [property: JsonPropertyName("index")] int Index,
-    [property: JsonPropertyName("name")] string Name);
 
 /// <summary>
 /// devices --json コマンドの出力ペイロード形状。
@@ -51,7 +45,7 @@ public class DeviceCommandHandler
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        var waveOutDevices = EnumerateWaveOutDevices();
+        var waveOutDevices = WaveOutDevices.List();
         using (var enumerator = new MMDeviceEnumerator())
         {
             var (defaultName, defaultId) = GetDefaultAudioEndpoint(enumerator);
@@ -112,7 +106,7 @@ public class DeviceCommandHandler
         foreach (var device in devices)
         {
             ConsoleHelper.WriteLine($"  {device.Index,2}: \"{device.Name}\"");
-            var options = new TextToSpeechOptions(NoCache: false, CacheOnly: false, Verbose: false, OutPath: null, NoPlay: false, Device: device.Index, Quiet: true);
+            var options = new TextToSpeechOptions(NoCache: false, CacheOnly: false, Verbose: false, OutPath: null, NoPlay: false, Device: device.Index.ToString(CultureInfo.InvariantCulture), Quiet: true);
             await RunOrThrowAsync(voice.WithText(DeviceNumberText(device.Index)), options, cancellationToken);
         }
         _logger.LogInformation("デバイスの番号を読み上げました: {Count} 台", devices.Count);
@@ -131,20 +125,6 @@ public class DeviceCommandHandler
                 message: $"Failed to speak device numbers (exit code {exitCode})",
                 userMessage: "デバイスの番号を読み上げられませんでした。");
         }
-    }
-
-    /// <summary>
-    /// 再生デバイスの選択 (Audio.OutputDevice) に使う WaveOut の index 一覧。
-    /// WASAPI の一覧とは並び・件数が一致するとは限らないので別に列挙する。
-    /// </summary>
-    /// <remarks>
-    /// WinMM の制約で ProductName は最大 31 文字に切られる。
-    /// </remarks>
-    private static List<WaveOutDeviceInfo> EnumerateWaveOutDevices()
-    {
-        return Enumerable.Range(0, WaveOut.DeviceCount)
-            .Select(i => new WaveOutDeviceInfo(i, WaveOut.GetCapabilities(i).ProductName))
-            .ToList();
     }
 
     private (string? Name, string? Id) GetDefaultAudioEndpoint(MMDeviceEnumerator enumerator)

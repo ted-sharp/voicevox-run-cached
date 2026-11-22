@@ -14,7 +14,7 @@ namespace VoicevoxRunCached.Services;
 /// <param name="NoCache">キャッシュを読みも書きもしない</param>
 /// <param name="Refresh">キャッシュを読まずに全部合成し直し、キャッシュを上書きする (辞書登録・エンジン更新の反映用)</param>
 /// <param name="MaxWaitSeconds">先の読み上げが終わるのを待つ上限 (秒、<c>--max-wait</c>)。null なら <c>Lock.MaxWaitSeconds</c> に従う</param>
-/// <param name="Device">再生デバイス (WaveOut の index、<c>--device</c>)。null なら <see cref="OutputDeviceSelector.Resolve"/> が設定から決める</param>
+/// <param name="Device">再生デバイス (WaveOut の index かデバイス名の一部、<c>--device</c>)。null なら <see cref="OutputDeviceSelector.Resolve"/> が設定から決める</param>
 /// <param name="Quiet">進捗 (<c>Processing segments...</c> など) を表示しない。ほかのコマンドの中から呼ぶとき用で、CLI のオプションは無い</param>
 public record TextToSpeechOptions(
     bool NoCache,
@@ -24,7 +24,7 @@ public record TextToSpeechOptions(
     bool NoPlay,
     bool Refresh = false,
     int? MaxWaitSeconds = null,
-    int? Device = null,
+    string? Device = null,
     bool Quiet = false);
 
 /// <summary>
@@ -409,7 +409,8 @@ public static class ArgumentParser
     {
         bool noCache = false, cacheOnly = false, verbose = false, noPlay = false, refresh = false;
         string? outPath = null;
-        int? maxWaitSeconds = null, device = null;
+        int? maxWaitSeconds = null;
+        string? device = null;
         var engine = settings.Synthesis.Engine;
         (string Option, string Value)? speakerArg = null;
 
@@ -463,7 +464,7 @@ public static class ArgumentParser
                     i += 2;
                     break;
                 case "--device":
-                    device = ReadInt(processedArgs, i, min: -1);
+                    device = ReadDevice(processedArgs, i);
                     i += 2;
                     break;
                 default:
@@ -592,6 +593,19 @@ public static class ArgumentParser
                 userMessage: $"appsettings.json の {engine}.DefaultSpeaker が不正です: {defaultError}");
     }
 
+    /// <summary>
+    /// <c>--device</c> の値を読む (index かデバイス名の一部。どのデバイスかは鳴らす直前に決める)。
+    /// </summary>
+    private static string ReadDevice(string[] args, int optionIndex)
+    {
+        var raw = ReadValue(args, optionIndex);
+        if (!OutputDeviceSelector.TryValidateSpec(raw, out var error))
+        {
+            throw InvalidOption(args[optionIndex], error!);
+        }
+        return raw;
+    }
+
     private static int ReadInt(string[] args, int optionIndex, int min)
     {
         var raw = ReadValue(args, optionIndex);
@@ -663,7 +677,7 @@ Options:
   --refresh                Re-synthesize all segments and overwrite the cache
   --out, -o <path>         Save output audio to file (.wav or .opus)
   --no-play                Do not play audio (useful with --out)
-  --device <index>         Output device (WaveOut index shown by 'devices'; -1 = OS default)
+  --device <index|name>    Output device: WaveOut index shown by 'devices' (-1 = OS default) or part of its name
                            (default: Audio.SpeakerDevices entry for the speaker, else Audio.OutputDevice)
   --verbose                Show playback time and total execution time
   --max-wait <seconds>     Give up (exit code 9) if waiting for other runs (synthesis, then playback

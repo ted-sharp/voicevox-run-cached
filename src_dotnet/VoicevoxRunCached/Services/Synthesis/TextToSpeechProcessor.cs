@@ -77,11 +77,7 @@ public class TextToSpeechProcessor
             AudioExportService.EnsureWritableOutput(options.OutPath);
         }
 
-        var device = OutputDeviceSelector.Resolve(_audioSettings, request, options.Device);
-        if (!options.NoPlay)
-        {
-            OutputDeviceSelector.EnsureExists(device, WaveOut.DeviceCount);
-        }
+        var device = options.NoPlay ? -1 : ChooseDevice(request, options.Device);
         var maxWait = _speechLock.ResolveMaxWait(options.MaxWaitSeconds);
         var requestedAt = _clock.UtcNow;
 
@@ -99,6 +95,22 @@ public class TextToSpeechProcessor
         // producer は終わっているので、ここで失敗しても止めるものは無い
         await run.Playback;
         return Complete(run, options);
+    }
+
+    /// <summary>
+    /// 再生デバイスを決める (指定が見つからなければ、<see cref="AudioSettings.FallbackToDefaultDevice"/> なら OS 既定)。
+    /// ロックを待つ前に呼ぶ (理由は <see cref="OutputDeviceSelector.ToIndex"/>)。
+    /// </summary>
+    private int ChooseDevice(VoiceRequest request, string? deviceOverride)
+    {
+        var spec = OutputDeviceSelector.Resolve(_audioSettings, request, deviceOverride);
+        var names = WaveOutDevices.List().Select(d => d.Name).ToList();
+        var choice = OutputDeviceSelector.ToIndex(spec, names, _audioSettings.FallbackToDefaultDevice);
+        if (choice.FellBackToDefault)
+        {
+            _logger.LogWarning("再生デバイス \"{Device}\" が見つからないため、OS 既定のデバイスで鳴らします", spec);
+        }
+        return choice.Index;
     }
 
     /// <summary>

@@ -100,9 +100,9 @@ public class ApplicationBootstrapTests
     public async Task SpeakerDevices_IsLoaded()
     {
         var dir = CreateConfigDirectory("""
-            { "Audio": { "SpeakerDevices": [
+            { "Audio": { "OutputDevice": 2, "FallbackToDefaultDevice": true, "SpeakerDevices": [
                 { "Engine": "Voicevox", "Speaker": "3", "Device": 1 },
-                { "Engine": "voicepeak", "Speaker": "Frimomen", "Device": 2 }
+                { "Engine": "voicepeak", "Speaker": "Frimomen", "Device": "Jabra" }
             ] } }
             """);
         try
@@ -111,8 +111,12 @@ public class ApplicationBootstrapTests
 
             await Assert.That(settings.Audio.SpeakerDevices.Length).IsEqualTo(2);
             await Assert.That(settings.Audio.SpeakerDevices[0].Speaker).IsEqualTo("3");
-            await Assert.That(settings.Audio.SpeakerDevices[0].Device).IsEqualTo(1);
+            // 番号は JSON の数値でも、名前と同じく文字列として読む
+            await Assert.That(settings.Audio.SpeakerDevices[0].Device).IsEqualTo("1");
             await Assert.That(settings.Audio.SpeakerDevices[1].Engine).IsEqualTo(SpeechEngineKind.Voicepeak);
+            await Assert.That(settings.Audio.SpeakerDevices[1].Device).IsEqualTo("Jabra");
+            await Assert.That(settings.Audio.OutputDevice).IsEqualTo("2");
+            await Assert.That(settings.Audio.FallbackToDefaultDevice).IsTrue();
         }
         finally
         {

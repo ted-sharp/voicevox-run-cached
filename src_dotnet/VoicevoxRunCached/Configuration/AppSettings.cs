@@ -140,7 +140,17 @@ public class CacheSettings
 // Audio output settings
 public class AudioSettings
 {
-    public int OutputDevice { get; set; } = -1;
+    /// <summary>
+    /// 再生デバイス。WaveOut の index (-1 は OS 既定) か、デバイス名の一部 (<see cref="OutputDeviceSelector"/>)。
+    /// JSON の数値 (<c>-1</c>) も文字列として読まれる。
+    /// </summary>
+    public string OutputDevice { get; set; } = "-1";
+
+    /// <summary>
+    /// 指定の再生デバイスが見つからないとき、エラーにせず OS 既定で鳴らす。
+    /// </summary>
+    public bool FallbackToDefaultDevice { get; set; }
+
     public double Volume { get; set; } = 1.0;
     public bool PrepareDevice { get; set; } = false;
     public int PreparationDurationMs { get; set; } = 200;
@@ -169,9 +179,9 @@ public class SpeakerDeviceSettings
     public string Speaker { get; set; } = "";
 
     /// <summary>
-    /// WaveOut の index (<see cref="AudioSettings.OutputDevice"/> と同じ。-1 は OS 既定)。
+    /// 再生デバイス。<see cref="AudioSettings.OutputDevice"/> と同じ書き方 (index か、デバイス名の一部)。
     /// </summary>
-    public int Device { get; set; } = -1;
+    public string Device { get; set; } = "-1";
 }
 
 // Filler sound settings

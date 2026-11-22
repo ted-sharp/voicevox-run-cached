@@ -239,9 +239,11 @@ public class ArgumentParserTests
 
     [Test]
     [Arguments("text", null)]
-    [Arguments("text --device 2", 2)]
-    [Arguments("text --device -1 --no-play", -1)]
-    public async Task Parse_Device(string commandLine, int? expected)
+    [Arguments("text --device 2", "2")]
+    [Arguments("text --device -1 --no-play", "-1")]
+    // 名前の一部でも指定できる (どのデバイスかは鳴らす直前に決める)
+    [Arguments("text --device Jabra", "Jabra")]
+    public async Task Parse_Device(string commandLine, string? expected)
     {
         var (_, options) = ArgumentParser.Parse(commandLine.Split(' '), DefaultSettings());
 
@@ -269,7 +271,7 @@ public class ArgumentParserTests
     [Arguments("--max-wait", "1.5")]
     [Arguments("--max-wait", "--no-play")]
     [Arguments("--device", "-2")]
-    [Arguments("--device", "a")]
+    [Arguments("--device", "")]
     [Arguments("--device", "--no-play")]
     public async Task Parse_InvalidOptionValue_Throws(string option, string value)
     {

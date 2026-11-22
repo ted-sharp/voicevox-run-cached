@@ -63,8 +63,8 @@ public class CommandRouter
         }
         catch (VoicevoxRunCachedException ex)
         {
-            // 利用者の入力・設定の誤り (無い再生デバイスの番号も) はスタックトレースが不要なので Warning で要点だけ残す
-            if (ex.ErrorCode is ErrorCodes.General.InvalidArguments or ErrorCodes.Audio.OutputDeviceNotFound)
+            // 利用者の入力・設定の誤り (見つからない・決められない再生デバイスも) はスタックトレースが不要なので Warning で要点だけ残す
+            if (ex.ErrorCode is ErrorCodes.General.InvalidArguments or ErrorCodes.Audio.OutputDeviceNotFound or ErrorCodes.Audio.OutputDeviceAmbiguous)
             {
                 _logger.LogWarning("入力が不正です: {Command}, {Message}", command, ex.Message);
             }

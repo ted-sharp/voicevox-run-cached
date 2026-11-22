@@ -185,21 +185,28 @@ public class ValidatorsTests
     }
 
     [Test]
-    public async Task AudioSettings_OutputDeviceMinus2_Fails()
+    [Arguments("-1", true)]
+    [Arguments("3", true)]
+    [Arguments("Jabra", true)]
+    [Arguments("-2", false)]
+    [Arguments("", false)]
+    public async Task AudioSettings_OutputDevice(string device, bool expected)
     {
         var validator = new AudioSettingsValidator();
-        var result = validator.Validate(new AudioSettings { OutputDevice = -2 });
-        await Assert.That(result.IsValid).IsFalse();
+        var result = validator.Validate(new AudioSettings { OutputDevice = device });
+        await Assert.That(result.IsValid).IsEqualTo(expected);
     }
 
     [Test]
-    [Arguments(SpeechEngineKind.Voicevox, "3", 1, true)]
-    [Arguments(SpeechEngineKind.Voicepeak, "Frimomen:happy=50", -1, true)]
-    [Arguments(SpeechEngineKind.Voicevox, "abc", 1, false)]
-    [Arguments(SpeechEngineKind.Voicevox, "", 1, false)]
-    [Arguments(SpeechEngineKind.Voicevox, "3", -2, false)]
-    [Arguments((SpeechEngineKind)99, "3", 1, false)]
-    public async Task AudioSettings_SpeakerDevices(SpeechEngineKind engine, string speaker, int device, bool expected)
+    [Arguments(SpeechEngineKind.Voicevox, "3", "1", true)]
+    [Arguments(SpeechEngineKind.Voicepeak, "Frimomen:happy=50", "-1", true)]
+    [Arguments(SpeechEngineKind.Voicevox, "3", "Jabra", true)]
+    [Arguments(SpeechEngineKind.Voicevox, "abc", "1", false)]
+    [Arguments(SpeechEngineKind.Voicevox, "", "1", false)]
+    [Arguments(SpeechEngineKind.Voicevox, "3", "-2", false)]
+    [Arguments(SpeechEngineKind.Voicevox, "3", "", false)]
+    [Arguments((SpeechEngineKind)99, "3", "1", false)]
+    public async Task AudioSettings_SpeakerDevices(SpeechEngineKind engine, string speaker, string device, bool expected)
     {
         // 書き間違えた項目を黙って無視すると、その話者が OutputDevice で鳴って気づきにくいので設定エラーにする
         var validator = new AudioSettingsValidator();

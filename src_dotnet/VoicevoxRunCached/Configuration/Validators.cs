@@ -104,8 +104,13 @@ public class AudioSettingsValidator : AbstractValidator<AudioSettings>
 {
     public AudioSettingsValidator()
     {
-        RuleFor(x => x.OutputDevice)
-            .GreaterThanOrEqualTo(-1).WithMessage("OutputDeviceは-1以上である必要があります");
+        RuleFor(x => x.OutputDevice).Custom((device, context) =>
+        {
+            if (!OutputDeviceSelector.TryValidateSpec(device, out var error))
+            {
+                context.AddFailure($"OutputDeviceの指定が不正です: {error}");
+            }
+        });
 
         RuleFor(x => x.Volume)
             .InclusiveBetween(0.0, 1.0).WithMessage("Volumeは0.0-1.0の範囲である必要があります");
@@ -145,8 +150,13 @@ public class SpeakerDeviceSettingsValidator : AbstractValidator<SpeakerDeviceSet
             }
         });
 
-        RuleFor(x => x.Device)
-            .GreaterThanOrEqualTo(-1).WithMessage("SpeakerDevicesのDeviceは-1以上である必要があります");
+        RuleFor(x => x.Device).Custom((device, context) =>
+        {
+            if (!OutputDeviceSelector.TryValidateSpec(device, out var error))
+            {
+                context.AddFailure($"SpeakerDevicesのDeviceの指定が不正です: {error}");
+            }
+        });
     }
 }
 
