@@ -102,6 +102,9 @@ public class VoicepeakEngine : ISpeechEngine
     /// <summary>
     /// 何もしない (voicepeak.exe は 1 回ごとに終わり、常駐するものが無い)。
     /// </summary>
+    /// <remarks>1 文ごとに voicepeak.exe を起動して終わるのを待つので、接続を持ち続けない。</remarks>
+    public bool HoldsConnectionUntilExit => false;
+
     public void StopIfNotKept()
     {
     }

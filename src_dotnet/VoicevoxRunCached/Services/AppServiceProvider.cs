@@ -56,7 +56,7 @@ namespace VoicevoxRunCached.Services;
 [Singleton(typeof(CommandRouter))]
 // CeVIO AI (--engine cevio)
 [Singleton(typeof(CevioSettings), Instance = nameof(Cevio))]
-[Singleton(typeof(ICevioRemoteService), typeof(CevioRemoteService))]
+[Singleton(typeof(ICevioRemoteService), Instance = nameof(CevioRemote))]
 [Singleton(typeof(CevioHostManager))]
 [Singleton(typeof(CevioEngine))]
 public partial class AppServiceProvider
@@ -72,6 +72,11 @@ public partial class AppServiceProvider
     public LockSettings Lock => Settings.Lock;
     public VoicepeakSettings Voicepeak => Settings.Voicepeak;
     public CevioSettings Cevio => Settings.Cevio;
+
+    /// <summary>
+    /// CeVIO AI の COM の呼び出し。テストで差し替える (作っただけでは COM に触れない)。
+    /// </summary>
+    public ICevioRemoteService CevioRemote { get; init; } = new CevioRemoteService();
 
     /// <summary>
     /// <see cref="SpeechLock"/> のロックファイル。テストで差し替える (既定はほかのプロセスと共有するもの)。

@@ -187,7 +187,20 @@ public class TextToSpeechProcessorTests
     {
         // 合成を終えたら、再生 (再生デバイスの順番待ちも) の途中でも SpeechLock を手放す。
         // 手放さないと、違うデバイスへの読み上げも先の再生が終わるまで待たされ、同時に鳴らせない
-        await RunWhilePlaybackDeviceBusyAsync([], () => Task.CompletedTask);
+        await Assert.That(await RunWhilePlaybackDeviceBusyAsync([CachedText], () => Task.CompletedTask)).IsTrue();
+    }
+
+    [Test]
+    public async Task ConnectedToCevio_HoldsSpeechLockUntilPlaybackEnds()
+    {
+        // 回帰: CeVIO AI の外部連携は同時に 1 つのアプリしか使えず、接続はプロセスが終わるまで残る。
+        // 再生の途中で SpeechLock を手放すと、その間に始めた次の読み上げの合成が失敗し、CeVIO AI がダイアログを出していた
+        var cevio = new FakeCevioRemoteService();
+        var held = !await RunWhilePlaybackDeviceBusyAsync(
+            ["CeVIO で合成する文です。", "--engine", "cevio", "-s", FakeCevioRemoteService.Cast], () => Task.CompletedTask, cevio);
+
+        await Assert.That(held).IsTrue();
+        await Assert.That(cevio.Talks.Count).IsEqualTo(1);
     }
 
     [Test]
@@ -198,7 +211,7 @@ public class TextToSpeechProcessorTests
         var outPath = Path.Combine(Path.GetTempPath(), $"vrc_out_{Guid.NewGuid():N}.wav");
         try
         {
-            await RunWhilePlaybackDeviceBusyAsync(["--out", outPath], async () => await Assert.That(File.Exists(outPath)).IsTrue());
+            await Assert.That(await RunWhilePlaybackDeviceBusyAsync([CachedText, "--out", outPath], async () => await Assert.That(File.Exists(outPath)).IsTrue())).IsTrue();
         }
         finally
         {
@@ -207,10 +220,11 @@ public class TextToSpeechProcessorTests
     }
 
     /// <summary>
-    /// OS 既定のデバイスで先の読み上げが再生中のときに、キャッシュ済みの文を読み上げる。再生の順番を待っている間に SpeechLock を取り、
-    /// <paramref name="whileSpeechLockHeld"/> を呼ぶ。最後にキャンセルして、音は鳴らさない。
+    /// OS 既定のデバイスで先の読み上げが再生中のときに、<paramref name="args"/> で読み上げる (<see cref="CachedText"/> はキャッシュ済み)。
+    /// 再生の順番を待っている間に SpeechLock を取れたら <paramref name="whileSpeechLockHeld"/> を呼ぶ。最後にキャンセルして、音は鳴らさない。
     /// </summary>
-    private static async Task RunWhilePlaybackDeviceBusyAsync(string[] extraArgs, Func<Task> whileSpeechLockHeld)
+    /// <returns>再生の順番を待っている間に SpeechLock を取れたか</returns>
+    private static async Task<bool> RunWhilePlaybackDeviceBusyAsync(string[] args, Func<Task> whileSpeechLockHeld, FakeCevioRemoteService? cevio = null)
     {
         using var stoppedEngine = new StoppedEngine();
         using var lockFile = new TestLockFile();
@@ -232,13 +246,14 @@ public class TextToSpeechProcessorTests
                 Logger = logger,
                 SpeechLockPath = lockFile.Path,
                 PlaybackLockDirectory = lockDirectory.Path,
+                CevioRemote = cevio ?? new FakeCevioRemoteService(),
             };
             await provider.GetService<AudioCacheManager>().SaveAudioCacheAsync(new VoiceRequest(CachedText, "1"), TestAudio.SineWav(24000, 300));
 
             // OS 既定のデバイスは先の読み上げが再生中 (このテストでは音を鳴らさずに終わらせる。番号はこの PC にあるものしか指定できない)
             using var playing = await lockDirectory.CreatePlaybackLock().AcquireAsync(-1, maxWait: null, TimeSpan.Zero, CancellationToken.None);
             using var cts = new CancellationTokenSource();
-            var speaking = provider.GetService<CommandRouter>().ExecuteCommandAsync([CachedText, "--device", "-1", .. extraArgs], cts.Token);
+            var speaking = provider.GetService<CommandRouter>().ExecuteCommandAsync([.. args, "--device", "-1"], cts.Token);
 
             bool speechLockFree;
             try
@@ -268,8 +283,8 @@ public class TextToSpeechProcessorTests
                 await cts.CancelAsync();
             }
 
-            await Assert.That(speechLockFree).IsTrue();
             await Assert.That(await speaking.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo(ErrorCodes.CancelledExitCode);
+            return speechLockFree;
         }
         finally
         {

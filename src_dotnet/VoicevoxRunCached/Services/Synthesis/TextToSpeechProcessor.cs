@@ -178,6 +178,13 @@ public class TextToSpeechProcessor
 
         var (result, playbackTask) = await SynthesizeAndStartPlaybackAsync(segments, request, options, playback, sharedCts);
         var exportError = await ExportIfRequestedAsync(segments, result, options.OutPath, cancellationToken);
+
+        // CeVIO AI に接続したら、接続はプロセスが終わるまで残る。再生の途中で手放すと、次の読み上げの合成が失敗するので、
+        // 再生が終わるまで SpeechLock を持つ (ISpeechEngine.HoldsConnectionUntilExit)。再生の失敗はロックの外で投げる
+        if (_engines.Get(request.Engine).HoldsConnectionUntilExit)
+        {
+            await Task.WhenAny(playbackTask);
+        }
         return new SynthesisRun(segments, result, playbackTask, totalStartTime, exportError);
     }
 
