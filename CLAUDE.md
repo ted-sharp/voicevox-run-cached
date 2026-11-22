@@ -63,7 +63,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 
 1. `Program.cs` → `ApplicationBootstrap` (設定の読み込み・検証、Serilog) → `CommandRouter.ExecuteCommandAsync` の switch → 各ハンドラ
 2. 読み上げは `TextToSpeechProcessor`: `SpeechLock` の中で、`TextSegmentProcessor` で文に分割 → `AudioCacheManager` でキャッシュ (Opus) を引く
-3. `SegmentProducer` (producer) と `AudioPlayer.PlayStreamingAsync` (consumer。`PlaybackLock` の中) を `Channel<TextSegment>` で並走させる。producer が終われば `SpeechLock` を手放し、再生の終わりはロックの外で待つ。producer はキャッシュ済みを WAV にデコードして流し、未キャッシュ分は `ISpeechEngine` で 1 件ずつ合成して流す
+3. `SegmentProducer` (producer) と `AudioPlayer.PlayStreamingAsync` (consumer。`PlaybackLock` の中) を `Channel<TextSegment>` で並走させる。producer が終われば `SpeechLock` を手放し、再生の終わりはロックの外で待つ (CeVIO に接続したときは再生の終わりまで持つ)。producer はキャッシュ済みを WAV にデコードして流し、未キャッシュ分は `ISpeechEngine` で 1 件ずつ合成して流す
 4. `--out` 指定時は `AudioExportService` が WAV / Opus で保存
 
 ## 守ること

@@ -63,7 +63,9 @@ public class TextToSpeechProcessor
     /// (合成エンジンの呼び出しと起動・キャッシュの読み書きがプロセスをまたいで 1 つずつになる)。
     /// 再生は合成と並走させ、再生デバイスごとの <see cref="PlaybackLock"/> で直列化する。
     /// 合成を終えたら、再生の途中でも <see cref="SpeechLock"/> を手放す。同じデバイスの読み上げは前の再生が終わるまで待ち (音声が重ならない)、
-    /// 違うデバイスの読み上げはその間に合成・再生できる。</para>
+    /// 違うデバイスの読み上げはその間に合成・再生できる。
+    /// ただし、プロセスが終わるまで接続が残るエンジン (<see cref="ISpeechEngine.HoldsConnectionUntilExit"/>。CeVIO AI) に接続したときは、
+    /// 再生が終わるまで手放さない。</para>
     /// <para>待つ上限 (<c>--max-wait</c> / <c>Lock.MaxWaitSeconds</c>) は、2 つのロックを待った時間の合計に掛ける。</para>
     /// <para>ロックを手放した後の再生は、メモリ上の音声だけを使い、エンジン・キャッシュに触れない
     /// (フィラーの読み込みもロックを手放す前に締め切る。<see cref="FillerGate"/>)。</para>
