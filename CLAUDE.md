@@ -204,9 +204,10 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - Serilog は `LoggingManager` がプログラムで構成する (`Serilog:*` は読まない)
 
 ### オーディオデバイス
-- `OutputDevice = -1` で OS 既定、`0+` で WaveOut の index、それ以外の文字列はデバイス名の一部
-- 再生デバイスは `OutputDeviceSelector.Resolve` で決め (`--device` → `Audio.SpeakerDevices` → `OutputDevice`。VOICEPEAK・CeVIO は感情を見ない)、`AudioPlayer` → `AudioDeviceManager` / `WavePlayerManager` に引数で渡す (`AudioSettings.OutputDevice` を直接読まない) — `OutputDeviceSelectorTests`
-- 指定は番号かデバイス名の一部 (`OutputDevice` / `SpeakerDevices[].Device` / `--device` は文字列。書き方は `OutputDeviceSelector.TryValidateSpec`)。WaveOut の index には再生するときにロックの前で `OutputDeviceSelector.ToIndex` が決める (名前全体の一致を優先、複数に合えば `AUDIO_009`、見つからなければ `FallbackDevices` を上から探し、どれも無ければ `AUDIO_008`。複数に合う候補に当たったら次に進まずエラー。`CommandRouter` はスタックトレースなしの Warning) — `OutputDeviceSelectorTests.ToIndex_*`
+- 再生デバイスは候補の一覧で決める。`OutputDeviceSelector.Resolve` が `--device` (無ければ `Audio.SpeakerDevices` の合う項目の `Devices`。VOICEPEAK・CeVIO は感情を見ない) に `Audio.Devices` (空なら `-1` = OS 既定) を続けた候補を作り、`AudioPlayer` → `AudioDeviceManager` / `WavePlayerManager` に決めた index を引数で渡す — `OutputDeviceSelectorTests.Resolve_*`
+- 候補の各要素は番号 (-1 = OS 既定) かデバイス名の一部 (文字列。書き方は `OutputDeviceSelector.TryValidateSpec`)。`SpeakerDevices[].Devices` は空なら設定エラー — `ValidatorsTests.AudioSettings_SpeakerDevicesWithoutDevices_Fails`
+- WaveOut の index は再生するときにロックの前で `OutputDeviceSelector.ToIndex` が決める (候補を上から探す。名前全体の一致を優先、複数に合えば次に進まず `AUDIO_009`、どれも無ければ `AUDIO_008`。`CommandRouter` はスタックトレースなしの Warning) — `OutputDeviceSelectorTests.ToIndex_*`
+- 古い `Audio.OutputDevice` が残っていたら設定エラー (`ApplicationBootstrap.RejectRemovedSettings`) — `ApplicationBootstrapTests.RemovedOutputDevice_IsConfigurationError`
 - バッファは `WavePlayerManager.GetBufferMilliseconds` で換算する。CA1416 を避けるため `Directory.Build.props` で全プロジェクトを Windows 専用と宣言している
 - warm-up は `AudioDeviceManager.StartPreparation` で始める (コンストラクタで始めない)。読み上げは `PlaybackLock` を取った直後に `AudioPlayer.BeginDevicePreparation` (先に始めると同じデバイスの再生に重なる)。デバイスを切り替えるとき前の warm-up を同期で待たない
 
