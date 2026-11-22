@@ -1,6 +1,6 @@
 # VoicevoxRunCached リリースノート
 
-## Unreleased (4.0.0)
+## v4.0.0 - 2026-11-22
 
 - **破壊的変更**:
   - `Audio.OutputDevice` を `Audio.Devices` (再生デバイスの候補の一覧。上から探して最初につながっているデバイスで鳴らす) に変更。`"OutputDevice": -1` が残っていると設定エラー (終了コード 7) になるので、消すか `"Devices": [...]` に書き換える
@@ -10,7 +10,7 @@
   - 使わない再生デバイスを除外できる (`Audio.ExcludedDevices`。OS 既定がそのデバイスのときも鳴らさない)
   - 冒頭が切れるデバイス (Bluetooth など) だけ、始めに無音を足せる (`Audio.DeviceOptions[].LeadingSilenceMs`)
   - `devices --speak` で、各デバイスからその番号を順に読み上げる
-  - 違うデバイスの読み上げは同時に鳴る (同じデバイスは今までどおり順番に鳴る)
+  - 違うデバイスの読み上げは同時に鳴る (同じデバイスと、CeVIO AI で合成した読み上げどうしは今までどおり順番に鳴る)
   - `--max-wait` / `Lock.MaxWaitSeconds` は、合成と再生の順番待ちの合計で数える
 - 改善:
   - 起動した VOICEVOX エンジンがすぐ終了したとき、起動のタイムアウトを待たずにエラーにする
@@ -22,11 +22,10 @@
   - 起動を速くした (鳴り始めが約 0.2 秒早くなる。exe は約 20MB 大きくなる)
   - VOICEPEAK をタイムアウトや Ctrl+C で止めたとき、一時ファイルを残さない
   - Bluetooth のデバイスで、2 文目以降の始めが切れないようにした (読み上げのあいだ再生を止めない)
-- 修正:
-  - CeVIO AI の読み上げが重なると、後の読み上げの合成に失敗し、CeVIO AI にダイアログが出ていた (CeVIO AI の読み上げどうしは順番に鳴る)
 - 開発環境:
   - `_publish.cmd` などのバッチファイルを削除 (Task を使う)
   - `task uninstall` はキャッシュとログも消す。残すなら `task uninstall:keep-data`
+  - `task devices` / `task devices:speak` で再生デバイスの番号を確かめられる
 
 ## v3.1.0 - 2026-11-15
 
