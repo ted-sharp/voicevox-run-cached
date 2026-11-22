@@ -255,7 +255,7 @@ VoicevoxRunCached.exe --init --engine cevio -s "花隈千冬"           # フィ
      "OutputDevice": -1,
      "SpeakerDevices": [
        { "Engine": "Voicevox", "Speaker": "3", "Device": "Jabra" },
-       { "Engine": "Cevio", "Speaker": "花隈千冬", "Device": "Headphones" }
+       { "Engine": "Cevio", "Speaker": "花隈千冬", "Device": "Anker" }
      ]
    }
    ```
@@ -289,8 +289,8 @@ VoicevoxRunCached.exe --init --engine cevio -s "花隈千冬"           # フィ
   ```jsonc
   "Audio": {
     "OutputDevice": "Jabra",
-    "SpeakerDevices": [{ "Engine": "Voicevox", "Speaker": "3", "Device": "DELL" }],
-    "FallbackDevices": ["Headphones", -1]   // 話者 3 は DELL → Headphones → OS 既定、ほかは Jabra → Headphones → OS 既定
+    "SpeakerDevices": [{ "Engine": "Voicevox", "Speaker": "3", "Device": "Anker" }],
+    "FallbackDevices": ["Headphones (Senary", -1]   // 話者 3 は Anker → Senary のヘッドホン → OS 既定、ほかは Jabra → Senary のヘッドホン → OS 既定
   }
   ```
 
