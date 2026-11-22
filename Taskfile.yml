@@ -105,9 +105,14 @@ tasks:
       - powershell -NoProfile -ExecutionPolicy Bypass -File {{.SRC}}/_install.ps1 -SourceDir {{.PUBLISH_DIR}}/VoicevoxRunCached {{if .INSTALL_DIR}}-InstallDir '{{.INSTALL_DIR}}'{{end}}
 
   uninstall:
-    desc: task install で入れた exe と appsettings.json を消す (cache / logs は残す)
+    desc: task install で入れたもの (exe・appsettings.json・cache・logs) を消す
     cmds:
       - powershell -NoProfile -ExecutionPolicy Bypass -File {{.SRC}}/_uninstall.ps1 {{if .INSTALL_DIR}}-InstallDir '{{.INSTALL_DIR}}'{{end}}
+
+  uninstall:keep-data:
+    desc: exe と appsettings.json だけを消す (cache / logs は残す。設定を新しくして入れ直すとき)
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File {{.SRC}}/_uninstall.ps1 -KeepData {{if .INSTALL_DIR}}-InstallDir '{{.INSTALL_DIR}}'{{end}}
 
   clean:
     desc: bin / obj / publish を削除 (キャッシュ・ログは残す)

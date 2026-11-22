@@ -75,7 +75,8 @@ task publish:zip    # 配布用 (バージョン付き ZIP)
 - 入れる場所は `INSTALL_DIR` で変えられる (`task install INSTALL_DIR='C:\Tools\VoicevoxRunCached'`。`task uninstall` にも同じものを渡す)
 - もう一度実行すると exe だけを入れ替え、編集済みの `appsettings.json` と `cache\` / `logs\` は残す。新しい版で設定項目が変わったときは、`src_dotnet/publish/VoicevoxRunCached/appsettings.json` と見比べる
 - PATH は変更しない。入っていなければ、追加するコマンドが表示される
-- `task uninstall` は exe と `appsettings.json` を消し、`cache\` / `logs\` は残す
+- `task uninstall` は入れたもの (exe・`appsettings.json`・`cache\`・`logs\`) を消す。`Cache.Directory` / `Filler.Directory` をインストール先の外にしているときは、その場所は消さずに表示する
+- `task uninstall:keep-data` は exe と `appsettings.json` だけを消し、`cache\` / `logs\` は残す。設定を新しい版のものにして入れ直すときは、これの後に `task install`
 
 出力は .NET ランタイムを含む単一の `VoicevoxRunCached.exe` (約 100MB) と `appsettings.json` で、実行する PC に .NET を入れる必要はない (リリース版の ZIP も同じ)。一緒に出る `VoicevoxRunCached.pdb` はデバッグ用で、実行には要らない。
 

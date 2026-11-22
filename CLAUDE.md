@@ -48,7 +48,8 @@ task devices:speak -- -s 3    # 各デバイスからその番号を読み上げ
 task publish                  # standalone EXE を src_dotnet/publish に出力
 task publish:zip              # 同上 + バージョン付き ZIP
 task install                  # publish して %LOCALAPPDATA%\Programs\VoicevoxRunCached に入れる (INSTALL_DIR=... で変更。設定・cache・logs は残す)
-task uninstall                # 同上の exe と appsettings.json を消す
+task uninstall                # 同上で入れたもの (exe・appsettings.json・cache・logs) を消す
+task uninstall:keep-data      # exe と appsettings.json だけ消す (設定を新しくして入れ直すとき)
 task clean                    # bin / obj / publish を削除
 task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube + ReSharper まで)
 task hooks:install            # コミット時のチェック (.githooks) を有効にする (clone 後に 1 回)

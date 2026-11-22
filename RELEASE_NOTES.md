@@ -21,6 +21,7 @@
   - VOICEPEAK をタイムアウトや Ctrl+C で止めたとき、一時ファイルを残さない
 - 開発環境:
   - `_publish.cmd` などのバッチファイルを削除 (Task を使う)
+  - `task uninstall` はキャッシュとログも消す。残すなら `task uninstall:keep-data`
 
 ## v3.1.0 - 2026-11-15
 
