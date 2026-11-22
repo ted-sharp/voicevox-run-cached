@@ -1,5 +1,7 @@
 # VoicevoxRunCached リリースノート
 
+## Unreleased (4.0.1)
+
 ## v4.0.0 - 2026-11-22
 
 - **破壊的変更**:
