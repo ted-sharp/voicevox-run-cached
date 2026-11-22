@@ -40,7 +40,7 @@ public class PlaybackLockTests
     public async Task MaxWait_CountsTimeAlreadyWaitedForSpeechLock()
     {
         // --max-wait は 2 つのロックを待った時間の合計に掛ける。SpeechLock で上限まで待ったら、再生のロックは待たない。
-        // エラーには残りの秒数でなく、指定した上限を出す
+        // エラーには残りの秒数でなく、指定した上限を出す。合成は済んでいるので「実行しませんでした」でなく「再生しませんでした」
         using var dir = new TempLockDirectory();
         var playbackLock = dir.CreatePlaybackLock();
         using var held = await playbackLock.AcquireAsync(1, maxWait: null, TimeSpan.Zero, CancellationToken.None);
@@ -50,6 +50,7 @@ public class PlaybackLockTests
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Lock.LockWaitTimeout);
         await Assert.That(ex.UserMessage).Contains("30 秒");
+        await Assert.That(ex.UserMessage).Contains("再生しませんでした");
     }
 
     [Test]

@@ -15,6 +15,7 @@ namespace VoicevoxRunCached.Services;
 /// <param name="Refresh">キャッシュを読まずに全部合成し直し、キャッシュを上書きする (辞書登録・エンジン更新の反映用)</param>
 /// <param name="MaxWaitSeconds">先の読み上げが終わるのを待つ上限 (秒、<c>--max-wait</c>)。null なら <c>Lock.MaxWaitSeconds</c> に従う</param>
 /// <param name="Device">再生デバイス (WaveOut の index、<c>--device</c>)。null なら <see cref="OutputDeviceSelector.Resolve"/> が設定から決める</param>
+/// <param name="Quiet">進捗 (<c>Processing segments...</c> など) を表示しない。ほかのコマンドの中から呼ぶとき用で、CLI のオプションは無い</param>
 public record TextToSpeechOptions(
     bool NoCache,
     bool CacheOnly,
@@ -23,7 +24,8 @@ public record TextToSpeechOptions(
     bool NoPlay,
     bool Refresh = false,
     int? MaxWaitSeconds = null,
-    int? Device = null);
+    int? Device = null,
+    bool Quiet = false);
 
 /// <summary>
 /// <c>devices</c> コマンドのオプション

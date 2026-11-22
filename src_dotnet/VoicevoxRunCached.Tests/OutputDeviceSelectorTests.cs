@@ -1,4 +1,5 @@
 ﻿using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Audio;
 
@@ -51,5 +52,32 @@ public class OutputDeviceSelectorTests
         };
 
         await Assert.That(OutputDeviceSelector.Resolve(settings, new VoiceRequest(speaker: "3"), null)).IsEqualTo(4);
+    }
+
+    [Test]
+    [Arguments(-1, 0)]
+    [Arguments(0, 1)]
+    [Arguments(2, 3)]
+    public async Task EnsureExists_ExistingDevice_DoesNotThrow(int device, int deviceCount)
+    {
+        OutputDeviceSelector.EnsureExists(device, deviceCount);
+
+        await Assert.That(device).IsLessThan(deviceCount);
+    }
+
+    [Test]
+    public async Task EnsureExists_MissingDevice_FailsWithAudioExitCode()
+    {
+        // 回帰: 抜き差しで番号がずれると、無い番号が設定に残る。確かめないと合成の後に waveOutOpen で
+        // スタックトレース付きの終了コード 1 になっていた
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+        {
+            OutputDeviceSelector.EnsureExists(3, 3);
+            return Task.CompletedTask;
+        });
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Audio.OutputDeviceNotFound);
+        await Assert.That(ErrorCodes.GetExitCode(ex.ErrorCode)).IsEqualTo(5);
+        await Assert.That(ex.UserMessage).Contains("0〜2");
     }
 }

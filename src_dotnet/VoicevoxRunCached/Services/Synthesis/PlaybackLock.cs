@@ -58,8 +58,9 @@ public class PlaybackLock
         }
         catch (VoicevoxRunCachedException ex) when (ex.ErrorCode == ErrorCodes.Lock.LockWaitTimeout)
         {
-            // 残りの秒数でなく、利用者が指定した上限を伝える
-            throw InterProcessLock.WaitTimeout(path, limit);
+            // 残りの秒数でなく、利用者が指定した上限を伝える。
+            // 合成は済んでいる (エンジンを起動し、キャッシュにも保存した) ので「実行しませんでした」ではなく、鳴らさなかったことを伝える
+            throw InterProcessLock.WaitTimeout(path, limit, "同じ再生デバイスの読み上げが {0} 秒以内に終わらなかったため、再生しませんでした。");
         }
     }
 }

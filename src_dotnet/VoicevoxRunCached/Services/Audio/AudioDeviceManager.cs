@@ -46,7 +46,8 @@ public class AudioDeviceManager : IDisposable
         }
 
         _logger.LogDebug("デバイス事前準備を開始します - デバイス: {Device}", device);
-        CleanupDevicePreparationTask();
+        // 前のデバイスの warm-up は待たない (同期で待つと、呼び出し元が SpeechLock を持ったまま止まる)。
+        // 前の warm-up は自身のタイムアウト (DevicePreparationTimeoutSeconds) で必ず終わり、別のデバイスなので新しい warm-up とぶつからない
         _preparedDevice = device;
         // 失敗は PrewarmAudioDeviceAsync が例外付きの Warning にして握る (warm-up に失敗しても再生は続ける) ので、このタスクは失敗しない
         _devicePreparationTask = Task.Run(() => PrewarmAudioDeviceAsync(device, _settings.PreparationDurationMs));

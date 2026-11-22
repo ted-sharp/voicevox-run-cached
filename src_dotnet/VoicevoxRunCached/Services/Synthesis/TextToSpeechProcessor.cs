@@ -1,6 +1,7 @@
 ﻿using System.Runtime.ExceptionServices;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
+using NAudio.Wave;
 using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
@@ -64,7 +65,10 @@ public class TextToSpeechProcessor
     /// 合成を終えたら、再生の途中でも <see cref="SpeechLock"/> を手放す。同じデバイスの読み上げは前の再生が終わるまで待ち (音声が重ならない)、
     /// 違うデバイスの読み上げはその間に合成・再生できる。</para>
     /// <para>待つ上限 (<c>--max-wait</c> / <c>Lock.MaxWaitSeconds</c>) は、2 つのロックを待った時間の合計に掛ける。</para>
-    /// <para>ロックを手放した後の再生と <c>--out</c> は、メモリ上の音声だけを使い、エンジン・キャッシュに触れない。</para>
+    /// <para>ロックを手放した後の再生は、メモリ上の音声だけを使い、エンジン・キャッシュに触れない
+    /// (フィラーの読み込みもロックを手放す前に締め切る。<see cref="FillerGate"/>)。</para>
+    /// <para><c>--out</c> は合成が終わった時点で、<see cref="SpeechLock"/> の中で保存する (理由は <see cref="AudioExportService"/> の書き込み)。
+    /// 保存の失敗は、再生を終えてから投げる。</para>
     /// </remarks>
     public async Task<int> ProcessTextToSpeechAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken = default)
     {
@@ -74,6 +78,10 @@ public class TextToSpeechProcessor
         }
 
         var device = OutputDeviceSelector.Resolve(_audioSettings, request, options.Device);
+        if (!options.NoPlay)
+        {
+            OutputDeviceSelector.EnsureExists(device, WaveOut.DeviceCount);
+        }
         var maxWait = _speechLock.ResolveMaxWait(options.MaxWaitSeconds);
         var requestedAt = _clock.UtcNow;
 
@@ -90,7 +98,7 @@ public class TextToSpeechProcessor
 
         // producer は終わっているので、ここで失敗しても止めるものは無い
         await run.Playback;
-        return await CompleteAsync(run, options, cancellationToken);
+        return Complete(run, options);
     }
 
     /// <summary>
@@ -101,7 +109,8 @@ public class TextToSpeechProcessor
     /// <summary>
     /// <see cref="SpeechLock"/> の中での処理の結果。<see cref="Playback"/> はまだ終わっていないことがある。
     /// </summary>
-    private sealed record SynthesisRun(List<TextSegment> Segments, SynthesisResult Result, Task Playback, DateTime StartedAt);
+    /// <param name="ExportError"><c>--out</c> の保存の失敗 (再生を終えてから投げる)</param>
+    private sealed record SynthesisRun(List<TextSegment> Segments, SynthesisResult Result, Task Playback, DateTime StartedAt, ExceptionDispatchInfo? ExportError);
 
     /// <summary>
     /// キャッシュ参照と合成を行い、再生を始める。合成が終わったら (再生の途中でも) 戻る。
@@ -115,19 +124,12 @@ public class TextToSpeechProcessor
     {
         var totalStartTime = _clock.UtcNow;
 
-        if (!options.NoPlay)
-        {
-            // デバイスの warm-up (PrepareDevice) はキャッシュ参照・エンジン起動と並行させる
-            // (PlaybackLock を取る前なので、同じデバイスの先の再生に小さな音量で重なることがある)
-            _audioPlayer.BeginDevicePreparation(playback.Device);
-        }
-
         // この話者のフィラーを --init が使っていないものとして消さないようにする
         _fillerManager.MarkUsed(_engines.Get(request.Engine), request.Speaker);
 
         // エンジンの確認・起動はここではしない。合成が必要になったときだけ SegmentProducer が行う。
         // --refresh はキャッシュを読まずに全部合成し直し、保存時に上書きする (--no-cache は読みも書きもしない)
-        var segments = await LoadSegmentsAsync(request, skipLookup: options.NoCache || options.Refresh, cancellationToken);
+        var segments = await LoadSegmentsAsync(request, skipLookup: options.NoCache || options.Refresh, options.Quiet, cancellationToken);
         if (segments.Count == 0)
         {
             throw new VoicevoxRunCachedException(
@@ -151,15 +153,46 @@ public class TextToSpeechProcessor
         }
 
         var (result, playbackTask) = await SynthesizeAndStartPlaybackAsync(segments, request, options, playback, sharedCts);
-        return new SynthesisRun(segments, result, playbackTask, totalStartTime);
+        var exportError = await ExportIfRequestedAsync(segments, result, options.OutPath, cancellationToken);
+        return new SynthesisRun(segments, result, playbackTask, totalStartTime, exportError);
     }
 
     /// <summary>
-    /// 再生が終わった後の判定と <c>--out</c> の保存。
+    /// <c>--out</c> を保存する。失敗は投げずに返す (再生は続けて、終えてから投げる)。
     /// </summary>
-    private async Task<int> CompleteAsync(SynthesisRun run, TextToSpeechOptions options, CancellationToken cancellationToken)
+    /// <remarks>
+    /// 準備の失敗・全部の文の失敗のときは保存しない (<see cref="Complete"/> がエラーにする)。
+    /// 再生より先に保存するので、再生が失敗しても保存したファイルは残る。
+    /// </remarks>
+    private async Task<ExceptionDispatchInfo?> ExportIfRequestedAsync(
+        List<TextSegment> segments, SynthesisResult result, string? outPath, CancellationToken cancellationToken)
     {
-        var (segments, synthesisResult, _, totalStartTime) = run;
+        if (String.IsNullOrWhiteSpace(outPath) || result.PreparationError is not null || result.FailureCount == segments.Count)
+        {
+            return null;
+        }
+
+        try
+        {
+            await _audioExportService.ExportSegmentsAsync(segments, outPath, cancellationToken);
+            return null;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return ExceptionDispatchInfo.Capture(ex);
+        }
+    }
+
+    /// <summary>
+    /// 再生が終わった後の判定 (<c>--out</c> の保存の失敗もここで投げる)。
+    /// </summary>
+    private int Complete(SynthesisRun run, TextToSpeechOptions options)
+    {
+        var (segments, synthesisResult, _, totalStartTime, exportError) = run;
 
         // 準備の失敗 (エンジン無し・話者無し) は、キャッシュ済みの文を鳴らし終えてから投げる (終了コード 3 / 1)。
         // 一部失敗 (8) にはしない (原因がエンジンの設定・入力にあり、文ごとの失敗ではないため)。--out も保存しない
@@ -186,12 +219,9 @@ public class TextToSpeechProcessor
                 $"Warning: {synthesisResult.FailureCount}/{synthesisResult.AttemptedCount} segments failed to synthesize");
         }
 
-        if (!String.IsNullOrWhiteSpace(options.OutPath))
-        {
-            await _audioExportService.ExportSegmentsAsync(segments, options.OutPath, cancellationToken);
-        }
+        exportError?.Throw();
 
-        if (options.NoPlay)
+        if (options.NoPlay && !options.Quiet)
         {
             ConsoleHelper.WriteSuccess("Done (no-play mode)!");
         }
@@ -200,9 +230,12 @@ public class TextToSpeechProcessor
         return hasPartialFailure ? ErrorCodes.PartialFailureExitCode : 0;
     }
 
-    private async Task<List<TextSegment>> LoadSegmentsAsync(VoiceRequest request, bool skipLookup, CancellationToken cancellationToken)
+    private async Task<List<TextSegment>> LoadSegmentsAsync(VoiceRequest request, bool skipLookup, bool quiet, CancellationToken cancellationToken)
     {
-        ConsoleHelper.WriteLine("Processing segments...");
+        if (!quiet)
+        {
+            ConsoleHelper.WriteLine("Processing segments...");
+        }
 
         var segments = await _textProcessor.ProcessTextAsync(request.Text, cancellationToken);
         if (segments.Count == 0)
@@ -252,14 +285,25 @@ public class TextToSpeechProcessor
             SingleReader = true,
         });
 
+        // フィラーはキャッシュのフォルダから読むので、SpeechLock を手放す前に読み込みを締め切る (理由は FillerGate)
+        var engine = _engines.Get(request.Engine);
+        using var fillerGate = new FillerGate(ct => _fillerManager.GetRandomFillerAudioAsync(engine, request.Speaker, request.Volume, ct));
+
         var producerTask = _producer.ProduceAsync(
             segments, channel.Writer, request, saveToCache: !options.NoCache, prepareSynthesis, sharedCts.Token);
         var playbackTask = options.NoPlay
             ? Task.CompletedTask
-            : RunPlaybackAsync(channel.Reader, request, playback, options.Verbose, sharedCts.Token);
+            : RunPlaybackAsync(channel.Reader, playback, fillerGate.GetAsync, engine.FillerSettings.MaxFillersPerWait, options.Verbose, sharedCts.Token);
 
-        await WhenFirstCompletesOrCancelOnFaultAsync(producerTask, playbackTask, sharedCts);
-        return (await producerTask, playbackTask);
+        try
+        {
+            await WhenFirstCompletesOrCancelOnFaultAsync(producerTask, playbackTask, sharedCts);
+            return (await producerTask, playbackTask);
+        }
+        finally
+        {
+            await fillerGate.CloseAsync();
+        }
     }
 
     /// <summary>
@@ -293,20 +337,23 @@ public class TextToSpeechProcessor
     }
 
     /// <remarks>
-    /// <see cref="PlaybackLock"/> は consumer の中で待つ。待っている間も producer は合成を進めるので、前の再生が終わればすぐ鳴らせる。
+    /// <para><see cref="PlaybackLock"/> は consumer の中で待つ。待っている間も producer は合成を進めるので、前の再生が終わればすぐ鳴らせる。</para>
+    /// <para>デバイスの warm-up (<c>Audio.PrepareDevice</c>) は <see cref="PlaybackLock"/> を取ってから始める。先に始めると、
+    /// 同じデバイスで鳴っているほかの読み上げにウォームアップ音が重なり、長く待った後は温めた効果も切れているため。</para>
+    /// <para>フィラーは読み上げと同じ話者の声 (<c>--init -s</c> で話者ごとに生成したもの)・同じ音量にする。文と待ち 1 回の回数はエンジンごと。</para>
     /// </remarks>
-    private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, VoiceRequest request, PlaybackTarget target, bool verbose, CancellationToken cancellationToken)
+    private async Task RunPlaybackAsync(
+        ChannelReader<TextSegment> reader,
+        PlaybackTarget target,
+        Func<CancellationToken, Task<byte[]?>> getFillerAudio,
+        int? maxFillersPerWait,
+        bool verbose,
+        CancellationToken cancellationToken)
     {
         using var playbackLock = await _playbackLock.AcquireAsync(target.Device, target.MaxWait, target.AlreadyWaited, cancellationToken);
+        _audioPlayer.BeginDevicePreparation(target.Device);
         var playbackStartTime = _clock.UtcNow;
-        // フィラーも読み上げと同じ話者の声 (--init -s で話者ごとに生成したもの)・同じ音量にする。文と待ち 1 回の回数はエンジンごと
-        var engine = _engines.Get(request.Engine);
-        await _audioPlayer.PlayStreamingAsync(
-            reader,
-            target.Device,
-            ct => _fillerManager.GetRandomFillerAudioAsync(engine, request.Speaker, request.Volume, ct),
-            engine.FillerSettings.MaxFillersPerWait,
-            cancellationToken);
+        await _audioPlayer.PlayStreamingAsync(reader, target.Device, getFillerAudio, maxFillersPerWait, cancellationToken);
 
         if (verbose)
         {

@@ -63,15 +63,15 @@ public class CommandRouter
         }
         catch (VoicevoxRunCachedException ex)
         {
-            // 利用者の入力ミスはスタックトレースが不要なので Warning で要点だけ残す
-            if (ex.ErrorCode == ErrorCodes.General.InvalidArguments)
+            // 利用者の入力・設定の誤り (無い再生デバイスの番号も) はスタックトレースが不要なので Warning で要点だけ残す
+            if (ex.ErrorCode is ErrorCodes.General.InvalidArguments or ErrorCodes.Audio.OutputDeviceNotFound)
             {
                 _logger.LogWarning("入力が不正です: {Command}, {Message}", command, ex.Message);
             }
             else if (ex.ErrorCode == ErrorCodes.Lock.LockWaitTimeout)
             {
                 // 待つ上限を指定したときの想定内の結果なので、スタックトレースは残さない
-                _logger.LogWarning("ロックを待ちきれなかったため実行しませんでした: {Command}, {Message}", command, ex.Message);
+                _logger.LogWarning("ロックを待ちきれませんでした: {Command}, {Message}", command, ex.Message);
             }
             else
             {

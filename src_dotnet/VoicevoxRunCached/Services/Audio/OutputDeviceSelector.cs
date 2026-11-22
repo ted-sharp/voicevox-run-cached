@@ -1,4 +1,5 @@
 ﻿using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
 namespace VoicevoxRunCached.Services.Audio;
@@ -38,6 +39,29 @@ public static class OutputDeviceSelector
             }
         }
         return settings.OutputDevice;
+    }
+
+    /// <summary>
+    /// <paramref name="device"/> がこの PC にあるか確かめる。無ければ <see cref="ErrorCodes.Audio.OutputDeviceNotFound"/>。
+    /// </summary>
+    /// <param name="device">WaveOut の index (-1 は OS 既定で、常にある)</param>
+    /// <param name="deviceCount">WaveOut のデバイス数 (<c>WaveOut.DeviceCount</c>)</param>
+    /// <remarks>
+    /// USB / Bluetooth のデバイスを抜き差しすると番号がずれるので、設定に書いた番号が無くなることがある。
+    /// 確かめないと、合成した後の waveOutOpen で想定外のエラー (スタックトレース付きの終了コード 1) になるため、ロックを待つ前に止める。
+    /// </remarks>
+    public static void EnsureExists(int device, int deviceCount)
+    {
+        if (device < deviceCount)
+        {
+            return;
+        }
+        var range = deviceCount == 0 ? "-1 (OS 既定) だけ" : $"-1 (OS 既定) か 0〜{deviceCount - 1}";
+        throw new VoicevoxRunCachedException(
+            errorCode: ErrorCodes.Audio.OutputDeviceNotFound,
+            message: $"Output device {device} not found (device count: {deviceCount})",
+            userMessage: $"再生デバイス {device} 番がありません (指定できるのは {range})。",
+            suggestedSolution: "devices --speak で番号を確かめてください。USB や Bluetooth のデバイスを抜き差しすると番号が変わることがあります。");
     }
 
     private static string CharacterOf(string normalizedSpeaker)

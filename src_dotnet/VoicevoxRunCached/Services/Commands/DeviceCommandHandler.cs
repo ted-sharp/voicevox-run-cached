@@ -90,8 +90,11 @@ public class DeviceCommandHandler
     /// </summary>
     /// <remarks>
     /// <para>読み上げと同じ <see cref="TextToSpeechProcessor"/> を通す (ロック・キャッシュ・エンジンの起動もそのまま使う)。</para>
-    /// <para>先に全部の文を再生せずに合成してキャッシュし、それからデバイスごとにキャッシュだけで鳴らす。
-    /// デバイスごとに合成すると、<c>KeepEngineRunning: false</c> ではロックを手放すたびにエンジンが止まり、デバイスの数だけ起動し直すため。</para>
+    /// <para>先に全部の文を再生せずに合成してキャッシュし、それからデバイスごとに鳴らす。
+    /// デバイスごとに合成すると、<c>KeepEngineRunning: false</c> ではロックを手放すたびにエンジンが止まり、デバイスの数だけ起動し直すため。
+    /// デバイスごとの読み上げは <c>--cache-only</c> にしない。その間にほかのプロセスが <c>--clear</c> などでキャッシュを消すことがあり、
+    /// そのときは合成し直して続ける。</para>
+    /// <para>読み上げの進捗 (<c>Processing segments...</c> など) は出さない (デバイスの一覧に混ざるため)。</para>
     /// <para>失敗 (エンジン・デバイスのエラー) はそこで止める。直前に出した番号と名前で、どのデバイスかが分かる。</para>
     /// </remarks>
     private async Task SpeakDeviceNumbersAsync(VoiceRequest voice, IReadOnlyList<WaveOutDeviceInfo> devices, CancellationToken cancellationToken)
@@ -104,12 +107,12 @@ public class DeviceCommandHandler
         ConsoleHelper.WriteLine("");
         ConsoleHelper.WriteLine("Speaking each WaveOut index on its device...");
         var prepare = voice.WithText(AllDeviceNumbersText(devices.Select(d => d.Index)));
-        await RunOrThrowAsync(prepare, new TextToSpeechOptions(NoCache: false, CacheOnly: false, Verbose: false, OutPath: null, NoPlay: true), cancellationToken);
+        await RunOrThrowAsync(prepare, new TextToSpeechOptions(NoCache: false, CacheOnly: false, Verbose: false, OutPath: null, NoPlay: true, Quiet: true), cancellationToken);
 
         foreach (var device in devices)
         {
             ConsoleHelper.WriteLine($"  {device.Index,2}: \"{device.Name}\"");
-            var options = new TextToSpeechOptions(NoCache: false, CacheOnly: true, Verbose: false, OutPath: null, NoPlay: false, Device: device.Index);
+            var options = new TextToSpeechOptions(NoCache: false, CacheOnly: false, Verbose: false, OutPath: null, NoPlay: false, Device: device.Index, Quiet: true);
             await RunOrThrowAsync(voice.WithText(DeviceNumberText(device.Index)), options, cancellationToken);
         }
         _logger.LogInformation("デバイスの番号を読み上げました: {Count} 台", devices.Count);

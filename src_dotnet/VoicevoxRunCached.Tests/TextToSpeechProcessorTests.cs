@@ -187,6 +187,31 @@ public class TextToSpeechProcessorTests
     {
         // 合成を終えたら、再生 (再生デバイスの順番待ちも) の途中でも SpeechLock を手放す。
         // 手放さないと、違うデバイスへの読み上げも先の再生が終わるまで待たされ、同時に鳴らせない
+        await RunWhilePlaybackDeviceBusyAsync([], () => Task.CompletedTask);
+    }
+
+    [Test]
+    public async Task OutFile_IsSavedBeforeReleasingSpeechLock()
+    {
+        // 回帰: --out の保存を SpeechLock の外 (再生の後) で行うと、同じ --out の実行どうしが同時に {out}.tmp に書き、
+        // 片方が失敗したり、もう一方の一時ファイルを消したりする。SpeechLock が空いた時点で保存が済んでいることを確かめる
+        var outPath = Path.Combine(Path.GetTempPath(), $"vrc_out_{Guid.NewGuid():N}.wav");
+        try
+        {
+            await RunWhilePlaybackDeviceBusyAsync(["--out", outPath], async () => await Assert.That(File.Exists(outPath)).IsTrue());
+        }
+        finally
+        {
+            File.Delete(outPath);
+        }
+    }
+
+    /// <summary>
+    /// OS 既定のデバイスで先の読み上げが再生中のときに、キャッシュ済みの文を読み上げる。再生の順番を待っている間に SpeechLock を取り、
+    /// <paramref name="whileSpeechLockHeld"/> を呼ぶ。最後にキャンセルして、音は鳴らさない。
+    /// </summary>
+    private static async Task RunWhilePlaybackDeviceBusyAsync(string[] extraArgs, Func<Task> whileSpeechLockHeld)
+    {
         using var stoppedEngine = new StoppedEngine();
         using var lockFile = new TestLockFile();
         using var lockDirectory = new TempLockDirectory();
@@ -210,17 +235,17 @@ public class TextToSpeechProcessorTests
             };
             await provider.GetService<AudioCacheManager>().SaveAudioCacheAsync(new VoiceRequest(CachedText, "1"), TestAudio.SineWav(24000, 300));
 
-            // デバイス 7 は先の読み上げが再生中 (このテストでは音を鳴らさずに終わらせる)
-            using var playing = await lockDirectory.CreatePlaybackLock().AcquireAsync(7, maxWait: null, TimeSpan.Zero, CancellationToken.None);
+            // OS 既定のデバイスは先の読み上げが再生中 (このテストでは音を鳴らさずに終わらせる。番号はこの PC にあるものしか指定できない)
+            using var playing = await lockDirectory.CreatePlaybackLock().AcquireAsync(-1, maxWait: null, TimeSpan.Zero, CancellationToken.None);
             using var cts = new CancellationTokenSource();
-            var speaking = provider.GetService<CommandRouter>().ExecuteCommandAsync([CachedText, "--device", "7"], cts.Token);
+            var speaking = provider.GetService<CommandRouter>().ExecuteCommandAsync([CachedText, "--device", "-1", .. extraArgs], cts.Token);
 
             bool speechLockFree;
             try
             {
                 var waitingForDevice = Task.Run(async () =>
                 {
-                    while (!logger.Messages.Any(m => m.Contains("VoicevoxRunCached.playback.7.lock", StringComparison.Ordinal)))
+                    while (!logger.Messages.Any(m => m.Contains("VoicevoxRunCached.playback.default.lock", StringComparison.Ordinal)))
                     {
                         await Task.Delay(20);
                     }
@@ -231,6 +256,7 @@ public class TextToSpeechProcessorTests
                 // 手放さない作りなら、再生のロックが空くまで (ここではキャンセルするまで) 取れない
                 using var speechLock = await InterProcessLock.AcquireAsync(lockFile.Path, NullLogger.Instance, TimeSpan.FromSeconds(5));
                 speechLockFree = true;
+                await whileSpeechLockHeld();
             }
             catch (VoicevoxRunCachedException ex) when (ex.ErrorCode == ErrorCodes.Lock.LockWaitTimeout)
             {

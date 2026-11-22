@@ -68,9 +68,11 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 
 ### プロセス間ロック (`SpeechLock` / `PlaybackLock` / `InterProcessLock`)
 - エンジンかキャッシュに触れるコマンド (読み上げ・`--test`・`--init`・`speakers`・`--clear`) は `SpeechLock.RunAsync` で囲む。囲まないのは `devices` (一覧) だけ。`devices --speak` は `TextToSpeechProcessor` を通して囲む
-- `devices --speak` は先に全部の番号をまとめて合成し (`--no-play`)、デバイスごとに `--cache-only` で鳴らす (`DeviceCommandHandler`) — `DeviceCommandHandlerTests.AllDeviceNumbersText_SplitsIntoEachDeviceNumberText`
+- `devices --speak` は先に全部の番号をまとめて合成し (`--no-play`)、デバイスごとに鳴らす (`--cache-only` にしない。進捗は出さない `Quiet`) (`DeviceCommandHandler`) — `DeviceCommandHandlerTests.AllDeviceNumbersText_SplitsIntoEachDeviceNumberText`
 - ロックは `%TEMP%\VoicevoxRunCached.speech.lock` と `%TEMP%\VoicevoxRunCached.playback.{番号|default}.lock` を `FileShare.None` で開くファイルロック。名前付き Mutex は使わない
-- 読み上げは、キャッシュ参照・合成を `SpeechLock` の中で、再生をデバイスごとの `PlaybackLock` の中で行う。producer が終わったら再生の途中でも `SpeechLock` を手放す (`TextToSpeechProcessor`)。ロックの外の再生・`--out` はエンジン・キャッシュに触れない — `TextToSpeechProcessorTests.WaitingForPlaybackDevice_ReleasesSpeechLock`
+- 読み上げは、キャッシュ参照・合成を `SpeechLock` の中で、再生をデバイスごとの `PlaybackLock` の中で行う。producer が終わったら再生の途中でも `SpeechLock` を手放す (`TextToSpeechProcessor`)。ロックの外の再生はエンジン・キャッシュに触れない (フィラーの読み込みは手放す前に `FillerGate.CloseAsync` で締め切る) — `TextToSpeechProcessorTests.WaitingForPlaybackDevice_ReleasesSpeechLock` / `FillerGateTests`
+- `--out` は `SpeechLock` の中で保存する (`{out}.tmp` が固定名のため)。失敗は再生を終えてから投げる — `TextToSpeechProcessorTests.OutFile_IsSavedBeforeReleasingSpeechLock`
+- `PlaybackLock` の待ちきれなかったときの文は「再生しませんでした」(合成は済んでいる) — `PlaybackLockTests.MaxWait_CountsTimeAlreadyWaitedForSpeechLock`
 - 取る順は `SpeechLock` → `PlaybackLock`。`PlaybackLock` は consumer の中で待つ (待つ間も合成を進める)
 - ロックを**解放する前に**全エンジンの `StopIfNotKept` を呼ぶ — 各テストクラスの `EngineStartedByUs_IsStoppedBeforeReleasingLock`
 - `--clear` もロックの中で消す — `CacheCommandHandlerTests`
@@ -201,8 +203,9 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 ### オーディオデバイス
 - `OutputDevice = -1` で OS 既定、`0+` で WaveOut の index
 - 再生デバイスは `OutputDeviceSelector.Resolve` で決め (`--device` → `Audio.SpeakerDevices` → `OutputDevice`。VOICEPEAK・CeVIO は感情を見ない)、`AudioPlayer` → `AudioDeviceManager` / `WavePlayerManager` に引数で渡す (`AudioSettings.OutputDevice` を直接読まない) — `OutputDeviceSelectorTests`
+- 再生するときは、ロックの前に `OutputDeviceSelector.EnsureExists` でデバイスが有るか確かめる (無ければ `AUDIO_008`、終了コード 5。`CommandRouter` はスタックトレースなしの Warning) — `OutputDeviceSelectorTests.EnsureExists_*`
 - バッファは `WavePlayerManager.GetBufferMilliseconds` で換算する。CA1416 を避けるため `Directory.Build.props` で全プロジェクトを Windows 専用と宣言している
-- warm-up は `AudioDeviceManager.StartPreparation` で始める (コンストラクタで始めない)。読み上げは `--no-play` 以外のときロック取得直後に `AudioPlayer.BeginDevicePreparation`
+- warm-up は `AudioDeviceManager.StartPreparation` で始める (コンストラクタで始めない)。読み上げは `PlaybackLock` を取った直後に `AudioPlayer.BeginDevicePreparation` (先に始めると同じデバイスの再生に重なる)。デバイスを切り替えるとき前の warm-up を同期で待たない
 
 ## Project Structure
 

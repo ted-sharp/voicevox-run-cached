@@ -77,13 +77,16 @@ public static class InterProcessLock
     /// <summary>
     /// 上限 <paramref name="limit"/> までにロックを取得できなかったときの例外 (<see cref="ErrorCodes.Lock.LockWaitTimeout"/>)。
     /// </summary>
-    public static VoicevoxRunCachedException WaitTimeout(string lockFilePath, TimeSpan limit)
+    /// <param name="lockFilePath">ロックファイル</param>
+    /// <param name="limit">利用者が指定した上限</param>
+    /// <param name="userMessage">利用者向けの文 (<c>{0}</c> に秒数が入る)。null なら「実行しませんでした」</param>
+    public static VoicevoxRunCachedException WaitTimeout(string lockFilePath, TimeSpan limit, string? userMessage = null)
     {
         var seconds = limit.TotalSeconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
         return new VoicevoxRunCachedException(
             errorCode: ErrorCodes.Lock.LockWaitTimeout,
             message: $"Lock was not acquired within {seconds}s: {lockFilePath}",
-            userMessage: $"別の読み上げなどが {seconds} 秒以内に終わらなかったため、実行しませんでした。",
+            userMessage: String.Format(System.Globalization.CultureInfo.InvariantCulture, userMessage ?? "別の読み上げなどが {0} 秒以内に終わらなかったため、実行しませんでした。", seconds),
             suggestedSolution: "待つ上限は --max-wait か appsettings.json の Lock.MaxWaitSeconds で変えられます。");
     }
 }
