@@ -666,7 +666,8 @@ Options:
   --device <index>         Output device (WaveOut index shown by 'devices'; -1 = OS default)
                            (default: Audio.SpeakerDevices entry for the speaker, else Audio.OutputDevice)
   --verbose                Show playback time and total execution time
-  --max-wait <seconds>     Give up (exit code 9) if another run does not finish within this time
+  --max-wait <seconds>     Give up (exit code 9) if waiting for other runs (synthesis, then playback
+                           on the same device) takes longer than this in total
                            (default: appsettings Lock.MaxWaitSeconds; unset = wait forever, 0 = do not wait)
   --log-level <level>      Log level: trace|debug|info|warn|error|crit|none (default: appsettings Logging.Level)
   --log-format <fmt>       Log format: simple|json (default: appsettings Logging.Format)

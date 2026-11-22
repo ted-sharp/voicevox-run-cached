@@ -5,7 +5,7 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
 - **ワンコマンド**: テキストを渡すだけで API 呼び出し → Opus 化 → 再生まで完結
 - **セグメント単位キャッシュ**: 文の一部だけ変えても変更されていない部分はキャッシュから即再生
 - **ストリーミング再生**: キャッシュ済み部分を再生しつつ未キャッシュ部分をバックグラウンド生成、待機中はフィラー音声で繋ぐ
-- **エンジン自動管理**: VOICEVOX / AIVIS Speech のプロセス起動・常駐・停止を自動化
+- **エンジン自動管理**: VOICEVOX / AivisSpeech のプロセス起動・常駐・停止を自動化
 - **VOICEPEAK・CeVIO AI にも対応**: `--engine voicepeak` / `--engine cevio` で切り替える ([エンジンを切り替える](#エンジンを切り替える))
 - **再生デバイスの使い分け**: 話者ごとに鳴らすデバイスを選べ、違うデバイスなら同時に鳴る ([再生デバイスを選ぶ](#再生デバイスを選ぶ))
 
@@ -39,7 +39,7 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
 ## 必要環境
 
 - **OS**: Windows x64
-- **VOICEVOX エンジン** (デフォルト `http://127.0.0.1:50021`) — [VOICEVOX 公式](https://voicevox.hiroshiba.jp/) からダウンロード。AIVIS Speech にも対応 (設定で切替)
+- **VOICEVOX エンジン** (デフォルト `http://127.0.0.1:50021`) — [VOICEVOX 公式](https://voicevox.hiroshiba.jp/) からダウンロード。AivisSpeech にも対応 ([AivisSpeech を使う](#aivisspeech-を使う))
 - 既定で `AutoStartEngine: true` のためエンジンは自動起動される。外部で起動済みのエンジンにも接続可能
 - **VOICEPEAK** (任意) — `--engine voicepeak` で使う場合のみ。コマンドラインに対応した製品版が必要
 - **CeVIO AI** (任意) — `--engine cevio` で使う場合のみ。使えるのはライセンスのあるキャスト
@@ -120,7 +120,7 @@ VoicevoxRunCached.exe "保存します。" --out out.opus --no-play
 VoicevoxRunCached.exe "既に生成済みのテキスト" --cache-only
 
 # 1 回だけ別の再生デバイスで鳴らす (番号は「再生デバイスを選ぶ」)
-VoicevoxRunCached.exe "こちらのスピーカーで鳴らします。" --device 2
+VoicevoxRunCached.exe "別のデバイスで鳴らします。" --device 2
 ```
 
 オプションの一覧は「[コマンドとオプション](#コマンドとオプション)」。
@@ -147,7 +147,7 @@ VoicevoxRunCached.exe "こちらのスピーカーで鳴らします。" --devic
 }
 ```
 
-`UserPromptSubmit` / `PostToolUse` / `Notification` など他のフックでも同様に呼び出せる。
+パスは展開・インストールした場所に合わせる (`task install` なら `%LOCALAPPDATA%\Programs\VoicevoxRunCached\VoicevoxRunCached.exe`)。`UserPromptSubmit` / `PostToolUse` / `Notification` など他のフックでも同様に呼び出せる。
 
 Claude Code に応答ごとの一言を書かせてキャラクターの声で読み上げる組み込み例 (Stop / Notification / SessionStart のスクリプト・キャラクター別の口調と定型文・ユーザー辞書) は [voicevox-run-cached-claude-hooks](https://github.com/ted-sharp/voicevox-run-cached-claude-hooks) にある。
 
@@ -158,22 +158,25 @@ Claude Code に応答ごとの一言を書かせてキャラクターの声で�
 
 **失敗したとき**
 
-- 失敗しても終了コード 2 は返さないので、Claude Code の動作は止めない (Hooks では 2 がブロッキングエラーで、Stop フックなら Claude の停止が止められる)。失敗は 0 以外の終了コード ([終了コード](#終了コード)) としてユーザーに表示されるだけ。エラーメッセージは stderr に UTF-8 で出るので、その表示で失敗の理由もわかる
+- 失敗しても終了コード 2 は返さないので、Claude Code の動作は止めない。失敗は 0 以外の終了コード ([終了コード](#終了コード)) としてユーザーに表示されるだけ
+- Hooks では 2 がブロッキングエラーで、Stop フックなら Claude の停止が止められてしまうため、2 は使わない
+- エラーメッセージは stderr に UTF-8 で出るので、その表示で失敗の理由もわかる
 
 **続けて発火したとき**
 
-- 複数のフック (複数セッションなど) が同時に発火した場合、同じデバイスで鳴らすものは先の読み上げが終わってから鳴る (音声は重ならない)。違うデバイスで鳴らすもの ([再生デバイスを選ぶ](#再生デバイスを選ぶ)) は同時に鳴る ([同時実行](#同時実行))
+- 複数のフック (複数セッションなど) が同時に発火しても音声は重ならず、順番に鳴る (違うデバイスに分けたものは同時に鳴る。[同時実行](#同時実行))
 - 待ち時間も Hooks の `timeout` に含まれるので、長い文を続けて読ませる場合は `timeout` を長めにする。古い通知を後からまとめて読ませたくなければ `--max-wait` で待つ上限を決める
 
 **通知の遅れ**
 
 - エンジンに接続するのは合成が必要なときだけ。決まった文言の通知は 2 回目以降キャッシュから再生されるので、エンジンが止まっていても起動を待たずにすぐ鳴る
 - キャッシュに無い文を合成するとき、既定 (`AutoStartEngine: true`) ではエンジンが停止していても自動起動されるが、起動を待つ分だけ通知が遅れる。遅延を避けたい場合はエンジンを事前に起動しておく (`KeepEngineRunning: true` (既定) なら一度起動したエンジンは常駐する)
-- `KeepEngineRunning: false` でも、自分が起動したエンジンを止めるのはプロセスが終了処理まで進んだとき (エラー終了・1 回目の Ctrl+C を含む) だけ。Hooks の `timeout` で強制終了されたときや Ctrl+C を 2 回押したときはエンジンが動いたまま残り、以後の実行はそれを外部で起動済みのエンジンとみなして止めない。残ったエンジンは手動で終了する
+- `KeepEngineRunning: false` のとき、自分が起動したエンジンは合成が終わった時点で止める (再生の途中でも。エラー・1 回目の Ctrl+C のときも止める)
+- 合成の途中で Hooks の `timeout` によって強制終了されたときや、Ctrl+C を 2 回押したときはエンジンが動いたまま残る。以後の実行はそれを外部で起動済みのエンジンとみなして止めないので、残ったエンジンは手動で終了する
 
 ### エンジンを切り替える
 
-既定は VOICEVOX。`--engine <name>` を付けるか、`Synthesis.Engine` を変えると既定のエンジンになる。キャッシュのキーにはエンジンと話者が入るので、エンジンを切り替えてもキャッシュは混ざらない。
+既定は VOICEVOX。`--engine <name>` でその実行だけ切り替える。`Synthesis.Engine` を変えると既定のエンジンになる。キャッシュのキーにはエンジンと話者が入るので、エンジンを切り替えてもキャッシュは混ざらない。
 
 #### AivisSpeech を使う
 
@@ -193,10 +196,10 @@ AivisSpeech は VOICEVOX と同じ API なので、`--engine` は `voicevox` の
 VOICEPEAK (製品版) のコマンドライン (`voicepeak.exe`) で合成する。`--engine voicepeak` を付けるか、`Synthesis.Engine` を `"Voicepeak"` にする。設定は `Voicepeak` セクション ([設定](#設定-appsettingsjson))。
 
 ```
-VoicevoxRunCached speakers --engine voicepeak                       # ナレーターと感情の一覧
-VoicevoxRunCached "作業が完了しました。" --engine voicepeak -s "Otomachi Una"
-VoicevoxRunCached "作業が完了しました。" --engine voicepeak -s "Otomachi Una:joy=50,sad=20"
-VoicevoxRunCached --init --engine voicepeak -s "Otomachi Una"       # フィラーも VOICEPEAK の声で生成
+VoicevoxRunCached.exe speakers --engine voicepeak                       # ナレーターと感情の一覧
+VoicevoxRunCached.exe "作業が完了しました。" --engine voicepeak -s "Otomachi Una"
+VoicevoxRunCached.exe "作業が完了しました。" --engine voicepeak -s "Otomachi Una:joy=50,sad=20"
+VoicevoxRunCached.exe --init --engine voicepeak -s "Otomachi Una"       # フィラーも VOICEPEAK の声で生成
 ```
 
 - 話者は `ナレーター名` か `ナレーター名:感情=値,...` (値は 0〜100)。感情が違えば別のキャッシュになる
@@ -209,10 +212,10 @@ VoicevoxRunCached --init --engine voicepeak -s "Otomachi Una"       # フィラ�
 [CeVIO AI](https://cevio.jp/) がインストールされていれば、`--engine cevio` で CeVIO AI のキャストで読み上げられる (外部連携インターフェイス (COM) を使う。ライセンスのあるキャストだけ)。`Synthesis.Engine` を `"Cevio"` にすれば既定のエンジンになる。設定は `Cevio` セクション ([設定](#設定-appsettingsjson))。
 
 ```
-VoicevoxRunCached speakers --engine cevio                       # 使えるキャストと感情
-VoicevoxRunCached "こんにちは" --engine cevio -s "花隈千冬"
-VoicevoxRunCached "こんにちは" --engine cevio -s "花隈千冬:嬉しい=70,普通=30"
-VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラー (話者・感情ごと)
+VoicevoxRunCached.exe speakers --engine cevio                       # 使えるキャストと感情
+VoicevoxRunCached.exe "こんにちは" --engine cevio -s "花隈千冬"
+VoicevoxRunCached.exe "こんにちは" --engine cevio -s "花隈千冬:嬉しい=70,普通=30"
+VoicevoxRunCached.exe --init --engine cevio -s "花隈千冬"           # フィラー (話者・感情ごと)
 ```
 
 - **話者** (`-s`): キャスト名。感情は `キャスト名:感情=値,感情=値` (値は 0〜100 の整数) で指定し、書いていない感情は 0 になる。感情を書かなければキャストの既定値 (多くは `普通=100`)。存在しないキャスト・感情は終了コード 1。`Cevio.DefaultSpeaker` が空なら `--engine cevio` では `-s` が必須
@@ -225,18 +228,24 @@ VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラ�
 
 既定では OS の既定のデバイスで鳴る。別のデバイスで鳴らすときや、話者ごとにデバイスを分けるときは次の順に設定する。
 
-1. **デバイスの番号を確かめる**。`devices --speak` は一覧を出し、各デバイスから「デバイス 0 番です」のようにその番号を順に読み上げる (声は読み上げと同じく `--engine` / `-s` で選べる。初回は合成するので少し待つ)
+1. **デバイスの番号を確かめる**。`devices --speak` は一覧を出し、各デバイスから「デバイス 0 番です」のようにその番号を順に読み上げる
 
    ```
-   > VoicevoxRunCached devices --speak
+   > VoicevoxRunCached.exe devices --speak
    ...
    Audio.OutputDevice (WaveOut index):
      -1: OS default
       0: "スピーカー (Realtek(R) Audio)"
       1: "ヘッドホン (USB Audio)"
+
+   Speaking each WaveOut index on its device...
+      0: "スピーカー (Realtek(R) Audio)"
+      1: "ヘッドホン (USB Audio)"
    ```
 
-   番号だけ見るなら `devices` (読み上げない)
+   - 下段の行が出るたびに、そのデバイスから番号が聞こえる。-1 (OS 既定) は読み上げない
+   - 声は読み上げと同じく `--engine` / `-s` で選べる。初回は合成するので少し待つ
+   - 番号だけ見るなら `devices` (読み上げない)
 
 2. **全部の読み上げを 1 つのデバイスで鳴らす**なら、その番号を `Audio.OutputDevice` に書く
 3. **話者ごとに分ける**なら、`Audio.SpeakerDevices` に話者と番号の対応を書く (対応表に無い話者は `Audio.OutputDevice` で鳴る)
@@ -251,23 +260,25 @@ VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラ�
    }
    ```
 
-4. **試す**。`VoicevoxRunCached "テストです。" -s 3` が番号 1 のデバイスで鳴ればよい。1 回だけ別のデバイスで鳴らすなら `--device <番号>`
+4. **試す**。`VoicevoxRunCached.exe "テストです。" -s 3` が 1 番のデバイスで鳴ればよい。1 回だけ別のデバイスで鳴らすなら `--device <番号>`
 
 **`SpeakerDevices` の書き方**
 
-- `Speaker` は `-s` と同じ書き方。VOICEPEAK・CeVIO は感情 (`:` から後ろ) を見ずにキャラクターで照合する。VOICEVOX はスタイルごとの ID で書く
+- `Speaker` は `-s` と同じ書き方。VOICEPEAK・CeVIO は感情 (`:` から後ろ) を見ずに、ナレーター名・キャスト名で照合する。VOICEVOX はスタイルごとの ID で書く
+- `Engine` は `Voicevox` / `Voicepeak` / `Cevio`。省くと `Voicevox`
 - 合う項目が複数あれば上のものを使う
 - 決まる順は `--device` → `SpeakerDevices` → `OutputDevice`
 - 書き方が不正な項目 (話者が空・エンジン名の間違いなど) は設定エラー (終了コード 7)
 
 **同時に鳴らす**
 
-- 違うデバイスに向けた読み上げは同時に鳴る。同じデバイスの読み上げは順番に鳴る (重ならない)。詳しくは「[同時実行](#同時実行)」
-- OS 既定 (-1) と、それと同じ実体の番号 (たとえば 0) は別のデバイスとして扱うので、重なって鳴る。同時に鳴らさないデバイスは同じ書き方で指定する
+- 違うデバイスに向けた読み上げは同時に鳴り、同じデバイスの読み上げは順番に鳴る。OS 既定 (-1) と番号での指定を混ぜるときの注意は「[同時実行](#同時実行)」
 
 **番号の注意**
 
 - 使う番号は `devices` の「Audio.OutputDevice (WaveOut index)」欄のもの。上段の WASAPI 一覧 (`devices --full` の `[n]`) とは番号が一致しないことがある
+- USB / Bluetooth のデバイスを抜き差しすると、番号が変わることがある。違うデバイスで鳴るようになったら `devices --speak` で確かめ直す
+- 無い番号を指定すると、合成の前にエラー (終了コード 5) になる
 - デバイス名は WinMM の制約で 31 文字までに切られる
 
 ### フィラーで待ち時間を埋める
@@ -305,20 +316,20 @@ VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラ�
 ### コマンドとオプション
 
 ```
-VoicevoxRunCached <text> [options]
-VoicevoxRunCached -- <text> [options]   # <text> がコマンド名 (speakers など) と同じでも本文として読み上げる
-VoicevoxRunCached --test [options]      # appsettings.json の Test.Message で実行
-VoicevoxRunCached speakers [--engine <name>]  # スピーカー一覧
-VoicevoxRunCached devices [--full] [--json]  # オーディオデバイス一覧
-VoicevoxRunCached devices --speak [--engine <name>] [-s <id>]  # 一覧を出し、各デバイスでその番号を順に読み上げる
-VoicevoxRunCached --init [--engine <name>] [-s <id>]  # フィラー音声キャッシュを初期化 (話者ごと。省略時は DefaultSpeaker)
-VoicevoxRunCached --clear               # キャッシュ全削除
+VoicevoxRunCached.exe <text> [options]
+VoicevoxRunCached.exe -- <text> [options]   # <text> がコマンド名 (speakers など) と同じでも本文として読み上げる
+VoicevoxRunCached.exe --test [options]      # appsettings.json の Test.Message で実行
+VoicevoxRunCached.exe speakers [--engine <name>]  # 話者の一覧
+VoicevoxRunCached.exe devices [--full] [--json]  # オーディオデバイス一覧
+VoicevoxRunCached.exe devices --speak [--engine <name>] [-s <id>]  # 一覧を出し、各デバイスでその番号を順に読み上げる
+VoicevoxRunCached.exe --init [--engine <name>] [-s <id>]  # フィラー音声キャッシュを初期化 (話者ごと。省略時は DefaultSpeaker)
+VoicevoxRunCached.exe --clear               # キャッシュ全削除
 ```
 
 | Option | 説明 | デフォルト |
 |---|---|---|
 | `--engine <name>` | 合成エンジン (`voicevox` / `voicepeak` / `cevio`。大文字小文字は区別しない) | `Synthesis.Engine` (`Voicevox`) |
-| `--speaker, -s <id>` | スピーカー。VOICEVOX は ID (0 以上)、VOICEPEAK はナレーター名、CeVIO AI はキャスト名 (どちらも感情付きも可。[エンジンを切り替える](#エンジンを切り替える)) | エンジンの `DefaultSpeaker` (VOICEVOX は `VoiceVox.DefaultSpeaker` = 1) |
+| `--speaker, -s <id>` | 話者。VOICEVOX は ID (0 以上)、VOICEPEAK はナレーター名、CeVIO AI はキャスト名 (どちらも感情付きも可。[エンジンを切り替える](#エンジンを切り替える)) | エンジンの `DefaultSpeaker` (VOICEVOX は `VoiceVox.DefaultSpeaker` = 1) |
 | `--speed <value>` | 速度。0 より大きい値 (目安 0.5–2.0) | 1.0 |
 | `--pitch <value>` | ピッチ (目安 -0.15–0.15) | 0.0 |
 | `--volume <value>` | 合成する音声の音量。0 以上 (目安 0.0–2.0)。キャッシュと `--out` にも反映される (再生時の音量は `Audio.Volume`) | 1.0 |
@@ -327,9 +338,9 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 | `--refresh` | キャッシュを読まずに全部合成し直し、キャッシュを上書きする (`--no-cache` / `--cache-only` とは併用不可) | false |
 | `--out, -o <path>` | ファイル保存 (`.wav` / `.opus` を拡張子で判定。それ以外はエラー)。書き込めない場所 (読み取り専用やほかのアプリが開いているファイルも) なら合成・再生の前にエラー (終了コード 5) | — |
 | `--no-play` | 再生しない (`--out` と併用推奨) | false |
-| `--device <index>` | 再生デバイス (`devices` の WaveOut index。-1 は OS 既定。[再生デバイスを選ぶ](#再生デバイスを選ぶ)) | `Audio.SpeakerDevices` で話者に合う項目、無ければ `Audio.OutputDevice` |
+| `--device <index>` | 再生デバイスの番号 (`devices` の WaveOut index。-1 は OS 既定。[再生デバイスを選ぶ](#再生デバイスを選ぶ)) | `Audio.SpeakerDevices` で話者に合う項目、無ければ `Audio.OutputDevice` |
 | `--verbose` | 再生時間と総実行時間を表示 | false |
-| `--max-wait <seconds>` | 先に動いている読み上げなどを待つ上限 (秒、0 以上。[同時実行](#同時実行)) | `Lock.MaxWaitSeconds` (未設定なら上限なし) |
+| `--max-wait <seconds>` | 合成と再生の順番待ちを合わせて待つ上限 (秒、0 以上。[同時実行](#同時実行)) | `Lock.MaxWaitSeconds` (未設定なら上限なし) |
 | `--log-level <level>` | `trace`/`debug`/`info`/`warn`/`error`/`crit`/`none` (`none` はログを一切出さない) | info |
 | `--log-format <fmt>` | `simple` / `json` (`json` は 1 イベント 1 行の JSON。ファイル出力も同じ書式) | simple |
 | `--help, -h` | ヘルプ表示 (引数のどこにあっても表示し、読み上げ・コマンドは実行しない) | — |
@@ -337,7 +348,8 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 **値の扱い**
 
 - `--speed` / `--pitch` / `--volume` は小数第 2 位に丸めて使われる (キャッシュキーも丸めた値で作る)
-- 「目安」は VOICEVOX エディタの調整範囲。本ツールが検証するのは、数値であること・speed が 0 より大きいこと・volume と speaker が 0 以上であることだけ。不正な値はエラーで終了する
+- 「目安」は VOICEVOX エディタの調整範囲。VOICEVOX で本ツールが検証するのは、数値であること・speed が 0 より大きいこと・volume と speaker が 0 以上であることだけ。不正な値はエラーで終了する
+- VOICEPEAK・CeVIO は話速・音高の範囲も検証する ([エンジンを切り替える](#エンジンを切り替える))
 
 **引数の書き方**
 
@@ -345,7 +357,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 - 本文に空白を含めるときは全体を引用符で囲む
 - コマンド名は大文字小文字を区別する (`Speakers` は本文として読む)
 - 本文の前に `--` を置くと、次のような文もそのまま読み上げる
-  - コマンドやオプションと同じ文字列 (`VoicevoxRunCached -- speakers`)
+  - コマンドやオプションと同じ文字列 (`VoicevoxRunCached.exe -- speakers`)
   - オプションの形をした文 (`--refresh` のように `--` の直後が英字で空白を含まないもの、`-s` / `-o`)。本文の位置にあると本文の書き忘れとしてエラーにする。`--- 完了 ---` のような文は `--` なしで読む
 - `appsettings.json` の値は `--Section:Key=値` でその実行だけ上書きできる (例: `--Lock:MaxWaitSeconds=60`)
 
@@ -357,11 +369,11 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 | 1 | 一般エラー (不正な引数・想定外の例外など) |
 | 3 | エンジンエラー (エンジンの起動失敗・エンジンに接続できない・エンジンが 500/503 を返した) |
 | 4 | キャッシュエラー (`--clear` で削除できなかった等) |
-| 5 | 音声エラー (全セグメント (`--init` では全フィラー) の合成失敗・音声形式の不正・`--out` の保存失敗) |
+| 5 | 音声エラー (全セグメント (`--init` では全フィラー) の合成失敗・音声形式の不正・`--out` の保存失敗・無い再生デバイスの番号) |
 | 6 | API エラー (タイムアウト・不正なリクエスト/レスポンス・レート制限など) |
 | 7 | 設定エラー (`appsettings.json` が無い・JSON の書式が不正・値の型や範囲が不正) |
 | 8 | 一部のセグメントだけ合成に失敗 (再生・保存は成功した分だけ行われる。`--init` では一部のフィラーだけ生成に失敗) |
-| 9 | 先に動いている読み上げなどが待つ上限 (`--max-wait` / `Lock.MaxWaitSeconds`) までに終わらなかったので、実行しなかった (読み上げでは鳴らさなかった) |
+| 9 | 順番待ちが上限 (`--max-wait` / `Lock.MaxWaitSeconds`) を超えたので、実行しなかった (読み上げでは鳴らさなかった) |
 | 130 | Ctrl+C でキャンセル (後片付けが終わらないときにもう一度 Ctrl+C を押すと強制終了する。その場合の終了コードは OS 既定の値) |
 
 2 は使わない (Claude Code の Hooks では終了コード 2 がブロッキングエラーとして扱われるため。[Claude Code Hooks から通知を読み上げる](#claude-code-hooks-から通知を読み上げる) を参照)。
@@ -375,78 +387,20 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 
 ### 設定 (`appsettings.json`)
 
-各項目の意味は下のコメントのとおり。使い方の説明がある項目は、その節を挙げている。値が不正なら起動時に設定エラー (終了コード 7) になる。
+各項目の意味は、exe と一緒に置く `appsettings.json` ([リポジトリの同じファイル](./src_dotnet/VoicevoxRunCached/appsettings.json)) にコメントで書いてある。値が不正なら起動時に設定エラー (終了コード 7) になる。値は `--Section:Key=値` でその実行だけ上書きできる ([コマンドとオプション](#コマンドとオプション))。
 
-```jsonc
-{
-  "Synthesis": {
-    "Engine": "Voicevox"          // 既定の合成エンジン。--engine で上書き
-  },
-  "VoiceVox": {
-    "EngineType": "VOICEVOX",     // VOICEVOX | AivisSpeech (AivisSpeech を使うの節)
-    "BaseUrl": "http://127.0.0.1:50021",  // localhost より 127.0.0.1 推奨 (DNS 解決遅延回避)
-    "EngineArguments": "--host 127.0.0.1 --port 50021",
-    "DefaultSpeaker": 1,
-    "EnginePath": "",             // 空ならインストール場所から自動検出 (VOICEVOX 0.26 以降の %APPDATA%\voicevox\vvpp-engines\ も探す)
-    "ConnectionTimeout": 30,      // 秒。HTTP リクエスト 1 回の上限 (タイムアウトはリトライしない)。話者の初期化 (モデルの読み込み) は完了まで待つ
-    "AutoStartEngine": true,
-    "StartupTimeoutSeconds": 30,
-    "KeepEngineRunning": true,    // false ならアプリ終了時にエンジンも停止 (強制終了時を除く。Hooks の節の「通知の遅れ」)
-    "FillerTexts": [],            // このエンジンのフィラーの文 (フィラー音声の節)
-    // "MaxFillersPerWait": 1     // 待ち 1 回に鳴らすフィラーの上限 (フィラー音声の節)
-  },
-  "Cache": {
-    "Directory": "./cache/audio/",
-    "UseExecutableBaseDirectory": true,  // 相対パスを exe 基準で解決 (ファイルの場所の節)
-    "ExpirationDays": 30,         // 最後に使ってからこの日数を過ぎたキャッシュを削除 (使うたびに延長)
-    "MaxSizeGB": 1.0,             // 上限超過時は最後に使ったのが古い順に削除
-    "OpusBitrateKbps": 32         // Opus のビットレート 12-128。キャッシュ・フィラー・--out .opus 共通 (キーに含まれないので既存キャッシュは流用)
-  },
-  "Audio": {
-    "OutputDevice": -1,           // -1 = OS デフォルト, 0+ = WaveOut index (再生デバイスを選ぶの節)
-    "SpeakerDevices": [],         // 話者ごとの再生デバイス (再生デバイスを選ぶの節)
-    "Volume": 1.0,                // 再生時の音量 0.0-1.0 (WaveOut の上限が 1.0)。キャッシュ・--out には影響しない。音声そのものの音量は --volume
-    "PrepareDevice": false,       // true で再生前に小音量の音を流してデバイスを温める (読み上げで再生するときだけ)
-    "PreparationDurationMs": 200,
-    "PreparationVolume": 0.01,
-    "DesiredLatency": 100,        // WaveOut の希望レイテンシ (ms。全バッファの合計)
-    "NumberOfBuffers": 3          // WaveOut のバッファ数
-  },
-  "Filler": {
-    "Enabled": false,             // true で生成待機中に相槌音声を再生して無音を回避 (先に --init。フィラーで待ち時間を埋めるの節)
-    "Directory": "./cache/filler/",  // Cache.Directory と同じにはできない (設定エラー)
-    "UseExecutableBaseDirectory": true,
-    "FillerTexts": ["えーっと、", "あのー、", "あのう、", "ええと、", "ええっと、", "えとえと、"]
-  },
-  "Lock": {
-    // "MaxWaitSeconds": 10       // 先の読み上げなどを待つ上限 (秒)。未設定なら上限なし (同時実行の節)
-  },
-  "Logging": {
-    "Level": "info",              // trace|debug|info|warn|error|crit|none
-    "Format": "simple",           // simple | json (1 イベント 1 行の JSON。コンソール・ファイル共通)
-    "EnableFileLogging": false,   // true でファイル出力を有効化 (ファイルの場所の節)
-    "MaxFileSizeMb": 10,          // ログファイル単体の最大サイズ (MB)
-    "MaxFileCount": 5             // ローテーションで保持するファイル数
-  },
-  "Test": { "Message": "..." },   // --test で読み上げる文
-  "Voicepeak": {
-    "ExePath": "",                // 空なら %ProgramFiles%\VOICEPEAK\voicepeak.exe
-    "DefaultSpeaker": "",         // 例: "Otomachi Una" / "Otomachi Una:joy=50"。空なら --engine voicepeak では -s が必須
-    "TimeoutSeconds": 60,         // voicepeak.exe 1 回 (1 文) を待つ上限 (秒、10-600)
-    "FillerTexts": ["えーっと、ちょっと待ってくださいね、", "少々お待ちください、", "..."],  // 1 文 10 秒ほどかかるので長めのフィラー
-    "MaxFillersPerWait": 2        // 待ち 1 回に鳴らすフィラーの上限 (フィラー音声の節)
-  },
-  "Cevio": {
-    "DefaultSpeaker": "",         // -s を省略したときのキャスト (感情も書ける)。空なら --engine cevio では -s が必須
-    "AutoStartHost": true,        // 起動していなければ起動する
-    "HostPath": "",               // CeVIO AI.exe。空なら %ProgramFiles%\CeVIO\CeVIO AI\CeVIO AI.exe
-    "StartupTimeoutSeconds": 60,
-    "KeepHostRunning": true,      // 自分で起動した CeVIO AI を残す
-    "SynthesisTimeoutSeconds": 30,  // 1 文の合成・閉じるなどを待つ上限 (秒)
-    "FillerTexts": []             // CeVIO 用のフィラー。MaxFillersPerWait も書ける (フィラー音声の節)
-  }
-}
-```
+| セクション | 内容 | 使い方を説明している節 |
+|---|---|---|
+| `Synthesis` | 既定の合成エンジン | [エンジンを切り替える](#エンジンを切り替える) |
+| `VoiceVox` | VOICEVOX の接続先・既定の話者・エンジンの自動起動と常駐 | [はじめに](#はじめに)・[AivisSpeech を使う](#aivisspeech-を使う)・[Hooks](#claude-code-hooks-から通知を読み上げる) の「通知の遅れ」 |
+| `Voicepeak` | VOICEPEAK の exe・既定の話者・タイムアウト | [VOICEPEAK を使う](#voicepeak-を使う) |
+| `Cevio` | CeVIO AI の既定の話者・起動と終了・タイムアウト | [CeVIO AI を使う](#cevio-ai-を使う) |
+| `Cache` | キャッシュの保存先・期限・容量・ビットレート | [キャッシュを作り直す](#キャッシュを作り直す)・[ファイルの場所](#ファイルの場所) |
+| `Audio` | 再生デバイス・再生時の音量・ウォームアップ・バッファ | [再生デバイスを選ぶ](#再生デバイスを選ぶ)・[トラブルシューティング](#トラブルシューティング) |
+| `Filler` | フィラーの有効化・保存先・文 (エンジンごとの文と回数は各エンジンのセクション) | [フィラーで待ち時間を埋める](#フィラーで待ち時間を埋める)・[フィラー音声](#フィラー音声) |
+| `Lock` | 順番待ちの上限 | [同時実行](#同時実行) |
+| `Logging` | ログのレベル・書式・ファイル出力 | [ファイルの場所](#ファイルの場所) |
+| `Test` | `--test` で読み上げる文 | [はじめに](#はじめに) |
 
 ### ファイルの場所
 
@@ -530,7 +484,7 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 - 同時に起動すると、後から来た方は先の合成が終わるまで待つ。エンジンへの API 呼び出しや自動起動は 1 つずつになる (読み上げ中に `speakers` を実行すると、その読み上げの合成が終わるまで待つ)
 - 合成が終わったら、再生の途中でも合成のロックを手放す。**同じデバイス**の読み上げは先の再生が終わるまで待ち (音声は重ならない)、**違うデバイス**の読み上げは同時に鳴る ([再生デバイスを選ぶ](#再生デバイスを選ぶ))
 - 再生の順番を待っている間も合成は進めるので、先の再生が終わればすぐ鳴り始める
-- OS 既定 (-1) と、それと同じ実体の番号 (たとえば 0) は別のデバイスとして扱うので、重なって鳴る
+- OS 既定 (-1) と、それと同じ実体の番号 (たとえば 0) は別のデバイスとして扱うので、重なって鳴る。重ねたくない読み上げどうしは、-1 か番号のどちらかにそろえる
 - 待っているものが 2 つ以上あるとき、どれが次に実行されるかは来た順とは限らない
 - Ctrl+C で待機を中止できる。プロセスが強制終了されてもロックは OS が解放する
 - `KeepEngineRunning: false` のときは、自分が起動したエンジンを合成のロックを解放する前に止める。待っていた後続の処理は、必要ならエンジンを起動し直す
@@ -538,17 +492,18 @@ VoicevoxRunCached.exe "おはようございます。今日は雨が降ってい
 **待つ上限** (`Lock.MaxWaitSeconds`、読み上げ・`--test` では `--max-wait` で上書き)
 
 - 上限までに先の処理が終わらなければ、実行せずに終了コード 9 で終わる。未設定なら上限なし、0 なら待たない
-- 読み上げでは、合成のロックと再生のロックを待った時間の合計に掛ける (合成にかかった時間は数えない)。再生のロックを待ちきれなかったときは、合成した分はキャッシュに残るが鳴らさない
+- 読み上げでは、合成のロックと再生のロックを待った時間の合計で数える (合成にかかった時間は数えない)
+- 再生のロックを待ちきれなかったときは、鳴らさずに終わる。合成した分はキャッシュに残り、`--out` も保存する
 - Hooks が続けて発火したとき、古い通知を後からまとめて読み上げないようにしたい場合に使う
-- `--init` / `--clear` / `speakers` は `--max-wait` を取らない。上限を変えるときは `VoicevoxRunCached --clear --Lock:MaxWaitSeconds=60` のように設定の上書きで指定する
+- `--init` / `--clear` / `speakers` / `devices --speak` は `--max-wait` を取らない。上限を変えるときは `VoicevoxRunCached.exe --clear --Lock:MaxWaitSeconds=60` のように設定の上書きで指定する
 
 ## トラブルシューティング
 
 **「VOICEVOXエンジンが利用できません。」と表示される**
 → エンジンが起動しているか、`appsettings.json` の `BaseUrl` が正しいか確認。`AutoStartEngine: true` の場合は `EnginePath` 自動検出が失敗していないかも確認。起動したエンジンがすぐ終了したとき (`EnginePath` の間違いなど) は、`StartupTimeoutSeconds` を待たずにこのエラーになる。
 
-**音声が再生されない**
-→ まず `Audio.OutputDevice = -1` (OS デフォルト) を試す。特定のデバイスで鳴らす手順は「[再生デバイスを選ぶ](#再生デバイスを選ぶ)」。
+**音声が再生されない・違うデバイスで鳴る**
+→ まず `Audio.OutputDevice = -1` (OS デフォルト) を試す。番号で指定しているときは、デバイスの抜き差しで番号が変わっていないか `devices --speak` で確かめる ([再生デバイスを選ぶ](#再生デバイスを選ぶ))。
 
 **音声の冒頭が途切れる (USB / Bluetooth デバイスで多発)**
 → `Audio.PrepareDevice: true` にして `PreparationDurationMs` を 300–500 に増やす。
