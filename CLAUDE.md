@@ -197,6 +197,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 
 ### オーディオデバイス
 - `OutputDevice = -1` で OS 既定、`0+` で WaveOut の index
+- 再生デバイスは `OutputDeviceSelector.Resolve` で決め (`--device` → `Audio.SpeakerDevices` → `OutputDevice`。VOICEPEAK・CeVIO は感情を見ない)、`AudioPlayer` → `AudioDeviceManager` / `WavePlayerManager` に引数で渡す (`AudioSettings.OutputDevice` を直接読まない) — `OutputDeviceSelectorTests`
 - バッファは `WavePlayerManager.GetBufferMilliseconds` で換算する。CA1416 を避けるため `Directory.Build.props` で全プロジェクトを Windows 専用と宣言している
 - warm-up は `AudioDeviceManager.StartPreparation` で始める (コンストラクタで始めない)。読み上げは `--no-play` 以外のときロック取得直後に `AudioPlayer.BeginDevicePreparation`
 

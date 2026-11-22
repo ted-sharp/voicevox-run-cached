@@ -1,4 +1,5 @@
-﻿using VoicevoxRunCached.Exceptions;
+﻿using VoicevoxRunCached.Configuration;
+using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Services.Infrastructure;
 
 namespace VoicevoxRunCached.Tests;
@@ -88,6 +89,30 @@ public class ApplicationBootstrapTests
             var settings = ApplicationBootstrap.LoadSettings(["text", .. extraArgs], dir);
 
             await Assert.That(settings.Lock.MaxWaitSeconds).IsEqualTo(expected);
+        }
+        finally
+        {
+            Directory.Delete(dir, true);
+        }
+    }
+
+    [Test]
+    public async Task SpeakerDevices_IsLoaded()
+    {
+        var dir = CreateConfigDirectory("""
+            { "Audio": { "SpeakerDevices": [
+                { "Engine": "Voicevox", "Speaker": "3", "Device": 1 },
+                { "Engine": "voicepeak", "Speaker": "Frimomen", "Device": 2 }
+            ] } }
+            """);
+        try
+        {
+            var settings = ApplicationBootstrap.LoadSettings(["text"], dir);
+
+            await Assert.That(settings.Audio.SpeakerDevices.Length).IsEqualTo(2);
+            await Assert.That(settings.Audio.SpeakerDevices[0].Speaker).IsEqualTo("3");
+            await Assert.That(settings.Audio.SpeakerDevices[0].Device).IsEqualTo(1);
+            await Assert.That(settings.Audio.SpeakerDevices[1].Engine).IsEqualTo(SpeechEngineKind.Voicepeak);
         }
         finally
         {

@@ -13,6 +13,7 @@ public class WavePlayerManager : IDisposable
     private readonly ILogger _logger;
     private bool _disposed;
     private IWavePlayer? _wavePlayer;
+    private int _wavePlayerDevice;
 
     public WavePlayerManager(AudioSettings settings, ILogger logger)
     {
@@ -38,12 +39,23 @@ public class WavePlayerManager : IDisposable
         _disposed = true;
     }
 
-    public IWavePlayer GetOrCreateSharedWavePlayer()
+    /// <summary>
+    /// <paramref name="device"/> で鳴らす共有 WavePlayer を返す。前回と違うデバイスなら作り直す
+    /// (<c>devices --speak</c> は 1 回の実行でデバイスを順に替えて鳴らす)。
+    /// </summary>
+    /// <param name="device">WaveOut の index (-1 は OS 既定)</param>
+    public IWavePlayer GetOrCreateSharedWavePlayer(int device)
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(WavePlayerManager));
 
-        _wavePlayer ??= CreateWavePlayer();
+        if (_wavePlayer != null && _wavePlayerDevice != device)
+        {
+            _wavePlayer.Dispose();
+            _wavePlayer = null;
+        }
+        _wavePlayerDevice = device;
+        _wavePlayer ??= CreateWavePlayer(device);
         return _wavePlayer;
     }
 
@@ -70,7 +82,7 @@ public class WavePlayerManager : IDisposable
         return (settings.DesiredLatency + settings.NumberOfBuffers - 1) / settings.NumberOfBuffers;
     }
 
-    private IWavePlayer CreateWavePlayer()
+    private IWavePlayer CreateWavePlayer(int device)
     {
         var waveOut = new WaveOut
         {
@@ -78,16 +90,16 @@ public class WavePlayerManager : IDisposable
             NumberOfBuffers = _settings.NumberOfBuffers
         };
 
-        if (_settings.OutputDevice >= 0)
+        if (device >= 0)
         {
-            waveOut.DeviceNumber = _settings.OutputDevice;
+            waveOut.DeviceNumber = device;
         }
 
         // 範囲 (0.0-1.0) は AudioSettingsValidator で保証済み
         waveOut.Volume = (float)_settings.Volume;
 
         _logger.LogDebug("WavePlayer を作成しました - デバイス: {Device}, ボリューム: {Volume}",
-            _settings.OutputDevice, _settings.Volume);
+            device, _settings.Volume);
 
         return waveOut;
     }

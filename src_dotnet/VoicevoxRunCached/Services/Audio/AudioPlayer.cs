@@ -47,13 +47,15 @@ public class AudioPlayer : IDisposable
     /// 再生デバイスの warm-up (<c>Audio.PrepareDevice</c>) をバックグラウンドで始める。
     /// 再生することが決まった時点で呼ぶと、合成待ちなどと並行して温められる。呼ばなくても再生開始時に始まる。
     /// </summary>
-    public void BeginDevicePreparation() => _deviceManager.StartPreparation();
+    /// <param name="device">WaveOut の index (-1 は OS 既定)</param>
+    public void BeginDevicePreparation(int device) => _deviceManager.StartPreparation(device);
 
     /// <summary>
     /// セグメントが届くたびに順次再生する。次のセグメントが <see cref="AudioConstants.FillerStartDelayMs"/>
     /// 以内に届かない場合はフィラー音声で隙間を埋める。
     /// </summary>
     /// <param name="reader">再生するセグメントの channel</param>
+    /// <param name="device">再生デバイス (WaveOut の index。-1 は OS 既定)</param>
     /// <param name="getFillerAudio">フィラー音声 (Ogg Opus か WAV。<see cref="AudioFormatDetector.CreateWaveStream"/> で読む) を返す。無効・未生成なら null を返す。null ならフィラーを挟まない</param>
     /// <param name="maxFillersPerWait">
     /// 次のセグメントを待つ 1 回のあいだに鳴らすフィラーの上限 (エンジンの <c>MaxFillersPerWait</c>)。null なら上限なし、0 なら鳴らさない
@@ -65,6 +67,7 @@ public class AudioPlayer : IDisposable
     /// </remarks>
     public async Task PlayStreamingAsync(
         ChannelReader<TextSegment> reader,
+        int device,
         Func<CancellationToken, Task<byte[]?>>? getFillerAudio = null,
         int? maxFillersPerWait = null,
         CancellationToken cancellationToken = default)
@@ -72,14 +75,14 @@ public class AudioPlayer : IDisposable
         if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
-        _logger.LogDebug("PlayStreamingAsync 開始 - フィラー: {HasFiller}, 待ち 1 回の上限: {MaxFillersPerWait}",
-            getFillerAudio != null, maxFillersPerWait);
+        _logger.LogDebug("PlayStreamingAsync 開始 - デバイス: {Device}, フィラー: {HasFiller}, 待ち 1 回の上限: {MaxFillersPerWait}",
+            device, getFillerAudio != null, maxFillersPerWait);
 
-        await _deviceManager.EnsureDeviceReadyAsync();
+        await _deviceManager.EnsureDeviceReadyAsync(device);
 
         try
         {
-            var wavePlayer = _wavePlayerManager.GetOrCreateSharedWavePlayer();
+            var wavePlayer = _wavePlayerManager.GetOrCreateSharedWavePlayer(device);
 
             bool isFirstPlayback = true;
             int playedCount = 0;

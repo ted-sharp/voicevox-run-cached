@@ -1,6 +1,7 @@
 ﻿using System.Runtime.ExceptionServices;
 using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
+using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 
@@ -25,6 +26,7 @@ public class TextToSpeechProcessor
     private readonly SegmentProducer _producer;
     private readonly SpeechLock _speechLock;
     private readonly IClock _clock;
+    private readonly AudioSettings _audioSettings;
 
     public TextToSpeechProcessor(
         SpeechEngineProvider engines,
@@ -35,6 +37,7 @@ public class TextToSpeechProcessor
         FillerManager fillerManager,
         SegmentProducer producer,
         SpeechLock speechLock,
+        AudioSettings audioSettings,
         IClock clock,
         ILogger logger)
     {
@@ -46,6 +49,7 @@ public class TextToSpeechProcessor
         _fillerManager = fillerManager ?? throw new ArgumentNullException(nameof(fillerManager));
         _producer = producer ?? throw new ArgumentNullException(nameof(producer));
         _speechLock = speechLock ?? throw new ArgumentNullException(nameof(speechLock));
+        _audioSettings = audioSettings ?? throw new ArgumentNullException(nameof(audioSettings));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -68,11 +72,12 @@ public class TextToSpeechProcessor
     private async Task<int> ProcessLockedAsync(VoiceRequest request, TextToSpeechOptions options, CancellationToken cancellationToken)
     {
         var totalStartTime = _clock.UtcNow;
+        var device = OutputDeviceSelector.Resolve(_audioSettings, request, options.Device);
 
         if (!options.NoPlay)
         {
             // デバイスの warm-up (PrepareDevice) はキャッシュ参照・エンジン起動と並行させる
-            _audioPlayer.BeginDevicePreparation();
+            _audioPlayer.BeginDevicePreparation(device);
         }
 
         // この話者のフィラーを --init が使っていないものとして消さないようにする
@@ -103,7 +108,7 @@ public class TextToSpeechProcessor
             }
         }
 
-        var synthesisResult = await SynthesizeAndPlayAsync(segments, request, options, cancellationToken);
+        var synthesisResult = await SynthesizeAndPlayAsync(segments, request, options, device, cancellationToken);
 
         // 準備の失敗 (エンジン無し・話者無し) は、キャッシュ済みの文を鳴らし終えてから投げる (終了コード 3 / 1)。
         // 一部失敗 (8) にはしない (原因がエンジンの設定・入力にあり、文ごとの失敗ではないため)。--out も保存しない
@@ -177,6 +182,7 @@ public class TextToSpeechProcessor
         List<TextSegment> segments,
         VoiceRequest request,
         TextToSpeechOptions options,
+        int device,
         CancellationToken cancellationToken)
     {
         // エンジンの準備 (ISpeechEngine.PrepareAsync) は producer が最初に合成が必要になったときに 1 回だけ呼ぶ (理由は SegmentProducer)。
@@ -198,7 +204,7 @@ public class TextToSpeechProcessor
             segments, channel.Writer, request, saveToCache: !options.NoCache, prepareSynthesis, sharedCts.Token);
         var playbackTask = options.NoPlay
             ? Task.CompletedTask
-            : RunPlaybackAsync(channel.Reader, request, options.Verbose, sharedCts.Token);
+            : RunPlaybackAsync(channel.Reader, request, device, options.Verbose, sharedCts.Token);
 
         await WhenAllOrCancelOnFaultAsync(producerTask, playbackTask, sharedCts);
         return await producerTask;
@@ -233,13 +239,14 @@ public class TextToSpeechProcessor
         }
     }
 
-    private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, VoiceRequest request, bool verbose, CancellationToken cancellationToken)
+    private async Task RunPlaybackAsync(ChannelReader<TextSegment> reader, VoiceRequest request, int device, bool verbose, CancellationToken cancellationToken)
     {
         var playbackStartTime = _clock.UtcNow;
         // フィラーも読み上げと同じ話者の声 (--init -s で話者ごとに生成したもの)・同じ音量にする。文と待ち 1 回の回数はエンジンごと
         var engine = _engines.Get(request.Engine);
         await _audioPlayer.PlayStreamingAsync(
             reader,
+            device,
             ct => _fillerManager.GetRandomFillerAudioAsync(engine, request.Speaker, request.Volume, ct),
             engine.FillerSettings.MaxFillersPerWait,
             cancellationToken);

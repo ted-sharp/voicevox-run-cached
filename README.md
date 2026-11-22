@@ -23,6 +23,7 @@ VOICEVOX REST API のラッパー。テキストを文単位で分割し、SHA25
 - [設定 (`appsettings.json`)](#設定-appsettingsjson)
   - [VOICEPEAK を使う](#voicepeak-を使う)
   - [CeVIO AI を使う](#cevio-ai-を使う)
+  - [再生デバイスを話者で分ける](#再生デバイスを話者で分ける)
 - [仕組み](#仕組み)
   - [セグメント単位キャッシュ](#セグメント単位キャッシュ)
   - [フィラー音声](#フィラー音声)
@@ -126,6 +127,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
 | `--refresh` | キャッシュを読まずに全部合成し直し、キャッシュを上書きする (`--no-cache` / `--cache-only` とは併用不可) | false |
 | `--out, -o <path>` | ファイル保存 (`.wav` / `.opus` を拡張子で判定。それ以外はエラー)。書き込めない場所 (読み取り専用やほかのアプリが開いているファイルも) なら合成・再生の前にエラー (終了コード 5) | — |
 | `--no-play` | 再生しない (`--out` と併用推奨) | false |
+| `--device <index>` | 再生デバイス (`devices` の WaveOut index。-1 は OS 既定。[再生デバイスを話者で分ける](#再生デバイスを話者で分ける)) | `Audio.SpeakerDevices` で話者に合う項目、無ければ `Audio.OutputDevice` |
 | `--verbose` | 再生時間と総実行時間を表示 | false |
 | `--max-wait <seconds>` | 先に動いている読み上げなどを待つ上限 (秒、0 以上。[同時実行](#同時実行)) | `Lock.MaxWaitSeconds` (未設定なら上限なし) |
 | `--log-level <level>` | `trace`/`debug`/`info`/`warn`/`error`/`crit`/`none` (`none` はログを一切出さない) | info |
@@ -201,6 +203,7 @@ VoicevoxRunCached --clear               # キャッシュ全削除
   },
   "Audio": {
     "OutputDevice": -1,           // -1 = OS デフォルト, 0+ = WaveOut index
+    "SpeakerDevices": [],         // 話者ごとの再生デバイス (再生デバイスを話者で分けるの節)
     "Volume": 1.0,                // 再生時の音量 0.0-1.0 (WaveOut の上限が 1.0)。キャッシュ・--out には影響しない。音声そのものの音量は --volume
     "PrepareDevice": false,       // true で再生前に小音量の音を流してデバイスを温める (読み上げで再生するときだけ)
     "PreparationDurationMs": 200,
@@ -281,6 +284,25 @@ VoicevoxRunCached --init --engine cevio -s "花隈千冬"           # フィラ�
   "FillerTexts": []              // CeVIO 用のフィラー。MaxFillersPerWait も書ける (フィラー音声の節)
 }
 ```
+
+### 再生デバイスを話者で分ける
+
+`Audio.SpeakerDevices` に話者と再生デバイスの対応を書くと、話者ごとに別のデバイスで鳴らせる。
+
+```jsonc
+"Audio": {
+  "OutputDevice": -1,            // 対応表に無い話者はここ
+  "SpeakerDevices": [
+    { "Engine": "Voicevox", "Speaker": "3", "Device": 1 },
+    { "Engine": "Cevio", "Speaker": "花隈千冬", "Device": 2 }
+  ]
+}
+```
+
+- **デバイスの番号**: `devices` の「Audio.OutputDevice (WaveOut index)」欄の番号 (-1 は OS 既定)
+- **話者**: `-s` と同じ書き方。VOICEPEAK・CeVIO は感情 (`:` から後ろ) を見ずにキャラクターで照合する。VOICEVOX はスタイルごとの ID で書く。合う項目が複数あれば上のものを使う
+- **優先順**: `--device` → `SpeakerDevices` → `OutputDevice`
+- 書き方が不正な項目 (話者が空・エンジン名の間違いなど) は設定エラー (終了コード 7)
 
 ## 仕組み
 

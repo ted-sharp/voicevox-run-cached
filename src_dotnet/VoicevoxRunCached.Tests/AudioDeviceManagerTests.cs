@@ -33,8 +33,8 @@ public class AudioDeviceManagerTests
         var logger = new RecordingLogger();
         using var manager = new AudioDeviceManager(new AudioSettings { PrepareDevice = false }, logger);
 
-        manager.StartPreparation();
-        await manager.EnsureDeviceReadyAsync();
+        manager.StartPreparation(-1);
+        await manager.EnsureDeviceReadyAsync(-1);
 
         await Assert.That(logger.Messages).DoesNotContain(StartMessage);
     }

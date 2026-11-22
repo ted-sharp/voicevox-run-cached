@@ -238,6 +238,17 @@ public class ArgumentParserTests
     }
 
     [Test]
+    [Arguments("text", null)]
+    [Arguments("text --device 2", 2)]
+    [Arguments("text --device -1 --no-play", -1)]
+    public async Task Parse_Device(string commandLine, int? expected)
+    {
+        var (_, options) = ArgumentParser.Parse(commandLine.Split(' '), DefaultSettings());
+
+        await Assert.That(options.Device).IsEqualTo(expected);
+    }
+
+    [Test]
     public async Task ParseTestCommand_MaxWait()
     {
         var (_, options) = ArgumentParser.ParseTestCommand("テスト", ["--max-wait", "3"], DefaultSettings());
@@ -257,6 +268,9 @@ public class ArgumentParserTests
     [Arguments("--max-wait", "-1")]
     [Arguments("--max-wait", "1.5")]
     [Arguments("--max-wait", "--no-play")]
+    [Arguments("--device", "-2")]
+    [Arguments("--device", "a")]
+    [Arguments("--device", "--no-play")]
     public async Task Parse_InvalidOptionValue_Throws(string option, string value)
     {
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>

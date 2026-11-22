@@ -122,6 +122,31 @@ public class AudioSettingsValidator : AbstractValidator<AudioSettings>
 
         RuleFor(x => x.NumberOfBuffers)
             .InclusiveBetween(1, 10).WithMessage("NumberOfBuffersは1-10の範囲である必要があります");
+
+        RuleForEach(x => x.SpeakerDevices).SetValidator(new SpeakerDeviceSettingsValidator());
+    }
+}
+
+// Audio.SpeakerDevices の 1 項目のバリデーター
+public class SpeakerDeviceSettingsValidator : AbstractValidator<SpeakerDeviceSettings>
+{
+    public SpeakerDeviceSettingsValidator()
+    {
+        RuleFor(x => x.Engine)
+            .IsInEnum().WithMessage($"SpeakerDevicesのEngineは {String.Join(" / ", Enum.GetNames<SpeechEngineKind>())} のどれかである必要があります");
+
+        // 書き間違いで黙って OutputDevice に鳴らさないよう、--speaker と同じ検証をする
+        RuleFor(x => x.Speaker).Custom((speaker, context) =>
+        {
+            var entry = context.InstanceToValidate;
+            if (Enum.IsDefined(entry.Engine) && SpeechEngineProvider.NormalizeSpeaker(entry.Engine, speaker ?? "", out var error) == null)
+            {
+                context.AddFailure($"SpeakerDevicesのSpeakerの指定が不正です: {error}");
+            }
+        });
+
+        RuleFor(x => x.Device)
+            .GreaterThanOrEqualTo(-1).WithMessage("SpeakerDevicesのDeviceは-1以上である必要があります");
     }
 }
 

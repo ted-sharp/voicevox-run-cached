@@ -120,7 +120,7 @@ public class AppServiceProviderTests
             provider.Dispose();
 
             var reader = Channel.CreateUnbounded<TextSegment>().Reader;
-            await Assert.ThrowsAsync<ObjectDisposedException>(() => player.PlayStreamingAsync(reader));
+            await Assert.ThrowsAsync<ObjectDisposedException>(() => player.PlayStreamingAsync(reader, -1));
         }
         finally
         {

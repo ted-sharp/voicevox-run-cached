@@ -147,6 +147,31 @@ public class AudioSettings
     public double PreparationVolume { get; set; } = 0.01;
     public int DesiredLatency { get; set; } = 100; // 100ms
     public int NumberOfBuffers { get; set; } = 3;
+
+    /// <summary>
+    /// 話者ごとの再生デバイス。合う項目が無ければ <see cref="OutputDevice"/>。<c>--device</c> を指定すればそちらが優先。
+    /// </summary>
+    /// <remarks>
+    /// 辞書にしないのは、設定のキーでは <c>:</c> が階層の区切りになり、<c>"voicepeak:Frimomen"</c> のようなキーを書けないため。
+    /// 初期値を入れてはいけない (ConfigurationBinder が既存の要素に追記するため。<see cref="FillerSettings.FillerTexts"/> と同じ)。
+    /// </remarks>
+    public SpeakerDeviceSettings[] SpeakerDevices { get; set; } = [];
+}
+
+// 話者と再生デバイスの対応 (Audio.SpeakerDevices の 1 項目)
+public class SpeakerDeviceSettings
+{
+    public SpeechEngineKind Engine { get; set; } = SpeechEngineKind.Voicevox;
+
+    /// <summary>
+    /// 話者。<c>--speaker</c> と同じ書き方。VOICEPEAK・CeVIO の感情 (<c>:</c> から後ろ) は照合に使わない。
+    /// </summary>
+    public string Speaker { get; set; } = "";
+
+    /// <summary>
+    /// WaveOut の index (<see cref="AudioSettings.OutputDevice"/> と同じ。-1 は OS 既定)。
+    /// </summary>
+    public int Device { get; set; } = -1;
 }
 
 // Filler sound settings

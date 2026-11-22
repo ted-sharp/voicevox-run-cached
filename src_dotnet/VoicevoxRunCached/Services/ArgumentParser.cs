@@ -14,6 +14,7 @@ namespace VoicevoxRunCached.Services;
 /// <param name="NoCache">キャッシュを読みも書きもしない</param>
 /// <param name="Refresh">キャッシュを読まずに全部合成し直し、キャッシュを上書きする (辞書登録・エンジン更新の反映用)</param>
 /// <param name="MaxWaitSeconds">先の読み上げが終わるのを待つ上限 (秒、<c>--max-wait</c>)。null なら <c>Lock.MaxWaitSeconds</c> に従う</param>
+/// <param name="Device">再生デバイス (WaveOut の index、<c>--device</c>)。null なら <see cref="OutputDeviceSelector.Resolve"/> が設定から決める</param>
 public record TextToSpeechOptions(
     bool NoCache,
     bool CacheOnly,
@@ -21,7 +22,8 @@ public record TextToSpeechOptions(
     string? OutPath,
     bool NoPlay,
     bool Refresh = false,
-    int? MaxWaitSeconds = null);
+    int? MaxWaitSeconds = null,
+    int? Device = null);
 
 public static class ArgumentParser
 {
@@ -367,7 +369,7 @@ public static class ArgumentParser
     {
         bool noCache = false, cacheOnly = false, verbose = false, noPlay = false, refresh = false;
         string? outPath = null;
-        int? maxWaitSeconds = null;
+        int? maxWaitSeconds = null, device = null;
         var engine = settings.Synthesis.Engine;
         (string Option, string Value)? speakerArg = null;
 
@@ -420,6 +422,10 @@ public static class ArgumentParser
                     maxWaitSeconds = ReadInt(processedArgs, i, min: 0);
                     i += 2;
                     break;
+                case "--device":
+                    device = ReadInt(processedArgs, i, min: -1);
+                    i += 2;
+                    break;
                 default:
                     if (arg.StartsWith("--out=", StringComparison.Ordinal))
                     {
@@ -449,7 +455,7 @@ public static class ArgumentParser
             throw InvalidOption(invalid.Option, invalid.Reason);
         }
 
-        return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay, refresh, maxWaitSeconds);
+        return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay, refresh, maxWaitSeconds, device);
     }
 
     /// <summary>
@@ -616,6 +622,8 @@ Options:
   --refresh                Re-synthesize all segments and overwrite the cache
   --out, -o <path>         Save output audio to file (.wav or .opus)
   --no-play                Do not play audio (useful with --out)
+  --device <index>         Output device (WaveOut index shown by 'devices'; -1 = OS default)
+                           (default: Audio.SpeakerDevices entry for the speaker, else Audio.OutputDevice)
   --verbose                Show playback time and total execution time
   --max-wait <seconds>     Give up (exit code 9) if another run does not finish within this time
                            (default: appsettings Lock.MaxWaitSeconds; unset = wait forever, 0 = do not wait)
