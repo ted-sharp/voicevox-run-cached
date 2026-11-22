@@ -100,7 +100,7 @@ public class ApplicationBootstrapTests
     public async Task SpeakerDevices_IsLoaded()
     {
         var dir = CreateConfigDirectory("""
-            { "Audio": { "Devices": ["Headphones (Senary", -1], "SpeakerDevices": [
+            { "Audio": { "Devices": ["Headphones (Senary", -1], "DeviceOptions": [{ "Device": "Anker", "LeadingSilenceMs": 800 }], "SpeakerDevices": [
                 { "Engine": "Voicevox", "Speaker": "3", "Devices": [1] },
                 { "Engine": "voicepeak", "Speaker": "Frimomen", "Devices": ["Jabra", "Anker"] }
             ] } }
@@ -116,6 +116,8 @@ public class ApplicationBootstrapTests
             await Assert.That(settings.Audio.SpeakerDevices[1].Engine).IsEqualTo(SpeechEngineKind.Voicepeak);
             await Assert.That(settings.Audio.SpeakerDevices[1].Devices).IsEquivalentTo(["Jabra", "Anker"]);
             await Assert.That(settings.Audio.Devices).IsEquivalentTo(["Headphones (Senary", "-1"]);
+            await Assert.That(settings.Audio.DeviceOptions.Single().Device).IsEqualTo("Anker");
+            await Assert.That(settings.Audio.DeviceOptions.Single().LeadingSilenceMs).IsEqualTo(800);
         }
         finally
         {

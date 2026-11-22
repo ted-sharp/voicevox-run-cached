@@ -223,9 +223,29 @@ public class OutputDeviceSelectorTests
     [Arguments("2", false)]
     [Arguments("-1", false)]
     [Arguments("", false)]
-    public async Task TryValidateExcludedSpec(string spec, bool expected)
+    public async Task TryValidateNameSpec(string spec, bool expected)
     {
         // 番号は抜き差しでずれて別のデバイスを除外してしまうので、名前だけ
-        await Assert.That(OutputDeviceSelector.TryValidateExcludedSpec(spec, out _)).IsEqualTo(expected);
+        await Assert.That(OutputDeviceSelector.TryValidateNameSpec(spec, out _)).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments("Headphones (Anker SoundCore)", 800)]
+    // 最初に合う項目を使う
+    [Arguments("スピーカー (Senary Audio)", 300)]
+    [Arguments("スピーカー (Jabra SPEAK 510 USB)", 100)]
+    [Arguments("1 - DELL S3422DWG (AMD High Def", null)]
+    // OS 既定の名前が取れなかった (-1 で鳴らす) ときは何もしない
+    [Arguments(null, null)]
+    public async Task FindOptions_MatchesDeviceName(string? deviceName, int? expectedSilenceMs)
+    {
+        DeviceOptionSettings[] options =
+        [
+            new() { Device = "anker", LeadingSilenceMs = 800 },
+            new() { Device = "Senary", LeadingSilenceMs = 300 },
+            new() { Device = "スピーカー", LeadingSilenceMs = 100 },
+        ];
+
+        await Assert.That(OutputDeviceSelector.FindOptions(deviceName, options)?.LeadingSilenceMs).IsEqualTo(expectedSilenceMs);
     }
 }

@@ -130,9 +130,22 @@ public class AudioSettingsValidator : AbstractValidator<AudioSettings>
 
         RuleForEach(x => x.SpeakerDevices).SetValidator(new SpeakerDeviceSettingsValidator());
 
+        RuleForEach(x => x.DeviceOptions).ChildRules(option =>
+        {
+            option.RuleFor(x => x.Device).Custom((device, context) =>
+            {
+                if (!OutputDeviceSelector.TryValidateNameSpec(device, out var error))
+                {
+                    context.AddFailure($"DeviceOptionsのDeviceの指定が不正です: {error}");
+                }
+            });
+            option.RuleFor(x => x.LeadingSilenceMs)
+                .InclusiveBetween(0, 5000).WithMessage("DeviceOptionsのLeadingSilenceMsは0-5000ミリ秒の範囲である必要があります");
+        });
+
         RuleForEach(x => x.ExcludedDevices).Custom((device, context) =>
         {
-            if (!OutputDeviceSelector.TryValidateExcludedSpec(device, out var error))
+            if (!OutputDeviceSelector.TryValidateNameSpec(device, out var error))
             {
                 context.AddFailure($"ExcludedDevicesの指定が不正です: {error}");
             }

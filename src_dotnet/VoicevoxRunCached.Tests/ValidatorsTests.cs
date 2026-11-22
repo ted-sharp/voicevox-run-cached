@@ -227,6 +227,21 @@ public class ValidatorsTests
     }
 
     [Test]
+    [Arguments("Anker", 800, true)]
+    [Arguments("Anker", 0, true)]
+    [Arguments("Anker", -1, false)]
+    [Arguments("Anker", 5001, false)]
+    // 番号は抜き差しでずれるので書けない
+    [Arguments("1", 800, false)]
+    [Arguments("", 800, false)]
+    public async Task AudioSettings_DeviceOptions(string device, int leadingSilenceMs, bool expected)
+    {
+        var validator = new AudioSettingsValidator();
+        var settings = new AudioSettings { DeviceOptions = [new DeviceOptionSettings { Device = device, LeadingSilenceMs = leadingSilenceMs }] };
+        await Assert.That(validator.Validate(settings).IsValid).IsEqualTo(expected);
+    }
+
+    [Test]
     public async Task AudioSettings_SpeakerDevicesWithoutDevices_Fails()
     {
         // Devices を Device と単数で書き間違えると空になる。話者を書いた意味が無いので設定エラーにする

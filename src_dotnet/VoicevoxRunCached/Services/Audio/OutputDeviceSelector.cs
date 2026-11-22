@@ -79,9 +79,9 @@ public static class OutputDeviceSelector
     }
 
     /// <summary>
-    /// 除外デバイスの書き方を確かめる。空と整数は不正。
+    /// 名前だけで書く指定 (除外デバイス・デバイスごとの設定) の書き方を確かめる。空と整数は不正。
     /// </summary>
-    public static bool TryValidateExcludedSpec(string? spec, out string? error)
+    public static bool TryValidateNameSpec(string? spec, out string? error)
     {
         if (String.IsNullOrWhiteSpace(spec))
         {
@@ -104,8 +104,20 @@ public static class OutputDeviceSelector
     {
         ArgumentNullException.ThrowIfNull(deviceName);
         ArgumentNullException.ThrowIfNull(excludedDevices);
-        return excludedDevices.Any(e => deviceName.Contains(e.Trim(), StringComparison.OrdinalIgnoreCase));
+        return excludedDevices.Any(e => NameMatches(deviceName, e));
     }
+
+    /// <summary>
+    /// 鳴らすデバイスに合う <see cref="AudioSettings.DeviceOptions"/> の最初の項目。無ければ null。
+    /// </summary>
+    /// <param name="deviceName">鳴らすデバイスの名前 (-1 なら OS 既定のデバイス名)。取れなければ null</param>
+    public static DeviceOptionSettings? FindOptions(string? deviceName, IReadOnlyList<DeviceOptionSettings> deviceOptions)
+    {
+        ArgumentNullException.ThrowIfNull(deviceOptions);
+        return deviceName == null ? null : deviceOptions.FirstOrDefault(o => NameMatches(deviceName, o.Device));
+    }
+
+    private static bool NameMatches(string deviceName, string spec) => deviceName.Contains(spec.Trim(), StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// 候補 <paramref name="candidates"/> を上から順に探し、最初に見つかったデバイスの WaveOut の index を返す。

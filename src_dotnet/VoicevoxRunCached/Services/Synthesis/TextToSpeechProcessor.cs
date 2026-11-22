@@ -77,7 +77,7 @@ public class TextToSpeechProcessor
             AudioExportService.EnsureWritableOutput(options.OutPath);
         }
 
-        var device = options.NoPlay ? -1 : ChooseDevice(request, options.Device);
+        var device = options.NoPlay ? new PlaybackDevice(-1, TimeSpan.Zero) : ChooseDevice(request, options.Device);
         var maxWait = _speechLock.ResolveMaxWait(options.MaxWaitSeconds);
         var requestedAt = _clock.UtcNow;
 
@@ -101,26 +101,34 @@ public class TextToSpeechProcessor
     /// 再生デバイスを決める (候補を上から順に探す。<see cref="OutputDeviceSelector"/>)。
     /// ロックを待つ前に呼ぶ (理由は <see cref="OutputDeviceSelector.ToIndex"/>)。
     /// </summary>
-    private int ChooseDevice(VoiceRequest request, string? deviceOverride)
+    private PlaybackDevice ChooseDevice(VoiceRequest request, string? deviceOverride)
     {
         var candidates = OutputDeviceSelector.Resolve(_audioSettings, request, deviceOverride);
         var names = WaveOutDevices.List().Select(d => d.Name).ToList();
         var excluded = _audioSettings.ExcludedDevices;
-        // 除外が無ければ OS 既定の名前は要らない (Core Audio を呼ばずに済ませる)
-        var osDefaultName = excluded.Length > 0 ? WaveOutDevices.OsDefaultName() : null;
+        // 除外もデバイスごとの設定も無ければ OS 既定の名前は要らない (Core Audio を呼ばずに済ませる)
+        var osDefaultName = excluded.Length > 0 || _audioSettings.DeviceOptions.Length > 0 ? WaveOutDevices.OsDefaultName() : null;
         var choice = OutputDeviceSelector.ToIndex(candidates, names, excluded, osDefaultName);
         if (!choice.IsFirstCandidate)
         {
             _logger.LogWarning("再生デバイス {Device} が見つからない (または除外している) ため、代わりのデバイス {Fallback} で鳴らします",
                 OutputDeviceSelector.DescribeSpec(candidates[0]), OutputDeviceSelector.DescribeSpec(choice.UsedSpec));
         }
-        return choice.Index;
+        var deviceName = choice.Index < 0 ? osDefaultName : names[choice.Index];
+        var silenceMs = OutputDeviceSelector.FindOptions(deviceName, _audioSettings.DeviceOptions)?.LeadingSilenceMs ?? 0;
+        return new PlaybackDevice(choice.Index, TimeSpan.FromMilliseconds(silenceMs));
     }
+
+    /// <summary>
+    /// 鳴らすデバイスと、最初の音の前に足す無音 (<see cref="DeviceOptionSettings.LeadingSilenceMs"/>)。
+    /// </summary>
+    /// <param name="Index">WaveOut の index (-1 は OS 既定)</param>
+    private sealed record PlaybackDevice(int Index, TimeSpan LeadingSilence);
 
     /// <summary>
     /// 再生するデバイスと、<see cref="PlaybackLock"/> を待つ上限 (<see cref="SpeechLock"/> を待った時間を引いて使う)。
     /// </summary>
-    private sealed record PlaybackTarget(int Device, TimeSpan? MaxWait, TimeSpan AlreadyWaited);
+    private sealed record PlaybackTarget(PlaybackDevice Device, TimeSpan? MaxWait, TimeSpan AlreadyWaited);
 
     /// <summary>
     /// <see cref="SpeechLock"/> の中での処理の結果。<see cref="Playback"/> はまだ終わっていないことがある。
@@ -366,10 +374,11 @@ public class TextToSpeechProcessor
         bool verbose,
         CancellationToken cancellationToken)
     {
-        using var playbackLock = await _playbackLock.AcquireAsync(target.Device, target.MaxWait, target.AlreadyWaited, cancellationToken);
-        _audioPlayer.BeginDevicePreparation(target.Device);
+        using var playbackLock = await _playbackLock.AcquireAsync(target.Device.Index, target.MaxWait, target.AlreadyWaited, cancellationToken);
+        _audioPlayer.BeginDevicePreparation(target.Device.Index);
         var playbackStartTime = _clock.UtcNow;
-        await _audioPlayer.PlayStreamingAsync(reader, target.Device, getFillerAudio, maxFillersPerWait, cancellationToken);
+        await _audioPlayer.PlayStreamingAsync(
+            reader, target.Device.Index, getFillerAudio, maxFillersPerWait, target.Device.LeadingSilence, cancellationToken);
 
         if (verbose)
         {

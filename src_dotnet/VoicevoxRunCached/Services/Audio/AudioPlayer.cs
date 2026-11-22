@@ -1,6 +1,7 @@
 ﻿using System.Threading.Channels;
 using Microsoft.Extensions.Logging;
 using NAudio.Wave;
+using NAudio.Wave.SampleProviders;
 using VoicevoxRunCached.Constants;
 using VoicevoxRunCached.Models;
 
@@ -60,6 +61,7 @@ public class AudioPlayer : IDisposable
     /// <param name="maxFillersPerWait">
     /// 次のセグメントを待つ 1 回のあいだに鳴らすフィラーの上限 (エンジンの <c>MaxFillersPerWait</c>)。null なら上限なし、0 なら鳴らさない
     /// </param>
+    /// <param name="leadingSilence">最初の音 (本編かフィラー) の前に足す無音 (<see cref="Configuration.DeviceOptionSettings.LeadingSilenceMs"/>)</param>
     /// <param name="cancellationToken">キャンセル</param>
     /// <remarks>
     /// 呼び出し元 (producer) が <see cref="ChannelWriter{T}.Complete"/> するまでループする。
@@ -70,13 +72,14 @@ public class AudioPlayer : IDisposable
         int device,
         Func<CancellationToken, Task<byte[]?>>? getFillerAudio = null,
         int? maxFillersPerWait = null,
+        TimeSpan leadingSilence = default,
         CancellationToken cancellationToken = default)
     {
         if (_disposed)
             throw new ObjectDisposedException(nameof(AudioPlayer));
 
-        _logger.LogDebug("PlayStreamingAsync 開始 - デバイス: {Device}, フィラー: {HasFiller}, 待ち 1 回の上限: {MaxFillersPerWait}",
-            device, getFillerAudio != null, maxFillersPerWait);
+        _logger.LogDebug("PlayStreamingAsync 開始 - デバイス: {Device}, フィラー: {HasFiller}, 待ち 1 回の上限: {MaxFillersPerWait}, 冒頭の無音: {LeadingSilenceMs}ms",
+            device, getFillerAudio != null, maxFillersPerWait, leadingSilence.TotalMilliseconds);
 
         await _deviceManager.EnsureDeviceReadyAsync(device);
 
@@ -109,7 +112,7 @@ public class AudioPlayer : IDisposable
                     _logger.LogDebug("セグメント {Index} を再生中 (size: {Size} bytes): \"{Text}\"",
                         playedCount, segment.AudioData.Length, segment.Text);
 
-                    await PlaySharedSegmentAsync(wavePlayer, segment.AudioData, isFirstPlayback, cancellationToken);
+                    await PlaySharedSegmentAsync(wavePlayer, segment.AudioData, isFirstPlayback, leadingSilence, cancellationToken);
                     isFirstPlayback = false;
                     continue;
                 }
@@ -132,7 +135,7 @@ public class AudioPlayer : IDisposable
                 }
                 if (waitOutcome == NextSegmentWait.FillerTimeout)
                 {
-                    var filler = await TryPlayFillerAsync(wavePlayer, fillerSource, isFirstPlayback, cancellationToken);
+                    var filler = await TryPlayFillerAsync(wavePlayer, fillerSource, isFirstPlayback, leadingSilence, cancellationToken);
                     if (filler == FillerOutcome.Played)
                     {
                         isFirstPlayback = false;
@@ -220,6 +223,7 @@ public class AudioPlayer : IDisposable
         IWavePlayer wavePlayer,
         Func<CancellationToken, Task<byte[]?>> getFillerAudio,
         bool isFirstPlayback,
+        TimeSpan leadingSilence,
         CancellationToken cancellationToken)
     {
         try
@@ -230,7 +234,7 @@ public class AudioPlayer : IDisposable
                 return FillerOutcome.Skipped;
             }
             _logger.LogDebug("フィラー音声を挿入 (size: {Size} bytes)", fillerAudio.Length);
-            await PlaySharedSegmentAsync(wavePlayer, fillerAudio, isFirstPlayback, cancellationToken);
+            await PlaySharedSegmentAsync(wavePlayer, fillerAudio, isFirstPlayback, leadingSilence, cancellationToken);
             return FillerOutcome.Played;
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -244,7 +248,8 @@ public class AudioPlayer : IDisposable
         }
     }
 
-    private Task PlaySharedSegmentAsync(IWavePlayer wavePlayer, byte[] audioData, bool isFirstSegment, CancellationToken cancellationToken)
+    private Task PlaySharedSegmentAsync(
+        IWavePlayer wavePlayer, byte[] audioData, bool isFirstSegment, TimeSpan leadingSilence, CancellationToken cancellationToken)
     {
         var leadingDelayMs = isFirstSegment
             ? AudioConstants.FirstSegmentDelayMs
@@ -257,6 +262,7 @@ public class AudioPlayer : IDisposable
             audioData,
             wavePlayer,
             leadingDelayMs,
+            isFirstSegment ? leadingSilence : TimeSpan.Zero,
             trailingDelayMs,
             cancellationToken);
     }
@@ -268,6 +274,7 @@ public class AudioPlayer : IDisposable
         byte[] audioData,
         IWavePlayer wavePlayer,
         int leadingDelayMs,
+        TimeSpan leadingSilence,
         int trailingDelayMs,
         CancellationToken cancellationToken)
     {
@@ -295,14 +302,22 @@ public class AudioPlayer : IDisposable
             reader = _formatDetector.CreateWaveStream(audioData);
 
             // セグメントごとに Init し直すので、サンプルレートの違う音声 (合成 24kHz・キャッシュ 48kHz) が混在してよい
-            wavePlayer.Init(reader);
+            if (leadingSilence > TimeSpan.Zero)
+            {
+                // 無音は本編と同じ流れで送る (別に鳴らすと、本編を開くまでの間に Bluetooth がまた休む。DeviceOptionSettings.LeadingSilenceMs)
+                wavePlayer.Init(new OffsetSampleProvider(reader.ToSampleProvider()) { DelayBy = leadingSilence });
+            }
+            else
+            {
+                wavePlayer.Init(reader);
+            }
             await Task.Delay(leadingDelayMs, cancellationToken);
 
             cancellationToken.ThrowIfCancellationRequested();
             wavePlayer.Play();
 
             // WaitAsync はキャンセルなら OperationCanceledException、時間切れなら TimeoutException を投げ、どちらでもタイマーを破棄する
-            var timeout = reader.TotalTime + TimeSpan.FromMilliseconds(AudioConstants.PlaybackTimeoutMarginMs);
+            var timeout = leadingSilence + reader.TotalTime + TimeSpan.FromMilliseconds(AudioConstants.PlaybackTimeoutMarginMs);
             try
             {
                 await tcs.Task.WaitAsync(timeout, cancellationToken);
