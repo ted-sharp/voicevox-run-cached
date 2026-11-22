@@ -105,10 +105,13 @@ public class TextToSpeechProcessor
     {
         var candidates = OutputDeviceSelector.Resolve(_audioSettings, request, deviceOverride);
         var names = WaveOutDevices.List().Select(d => d.Name).ToList();
-        var choice = OutputDeviceSelector.ToIndex(candidates, names);
+        var excluded = _audioSettings.ExcludedDevices;
+        // 除外が無ければ OS 既定の名前は要らない (Core Audio を呼ばずに済ませる)
+        var osDefaultName = excluded.Length > 0 ? WaveOutDevices.OsDefaultName() : null;
+        var choice = OutputDeviceSelector.ToIndex(candidates, names, excluded, osDefaultName);
         if (!choice.IsFirstCandidate)
         {
-            _logger.LogWarning("再生デバイス {Device} が見つからないため、代わりのデバイス {Fallback} で鳴らします",
+            _logger.LogWarning("再生デバイス {Device} が見つからない (または除外している) ため、代わりのデバイス {Fallback} で鳴らします",
                 OutputDeviceSelector.DescribeSpec(candidates[0]), OutputDeviceSelector.DescribeSpec(choice.UsedSpec));
         }
         return choice.Index;

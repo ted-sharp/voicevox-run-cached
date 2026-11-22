@@ -25,7 +25,11 @@ public class OutputDeviceSelectorTests
         "Headphones (Anker SoundCore)",
         "スピーカー (Senary Audio)",
         "スピーカー (Jabra SPEAK 510 USB)",
+        "1 - DELL S3422DWG (AMD High Def",
     ];
+
+    // OS 既定の名前 (Core Audio の名前は切られていない)
+    private const string DellOsDefault = "1 - DELL S3422DWG (AMD High Definition Audio Device)";
 
     [Test]
     [Arguments(SpeechEngineKind.Voicevox, "3", new[] { "1", "Jabra", "-1" })]
@@ -94,7 +98,7 @@ public class OutputDeviceSelectorTests
     [Arguments("スピーカー (Senary Audio)", 2)]
     public async Task ToIndex_FindsDevice(string spec, int expected)
     {
-        var choice = OutputDeviceSelector.ToIndex([spec], Names);
+        var choice = OutputDeviceSelector.ToIndex([spec], Names, [], null);
 
         await Assert.That(choice).IsEqualTo(new DeviceChoice(expected, spec, IsFirstCandidate: true));
     }
@@ -102,14 +106,14 @@ public class OutputDeviceSelectorTests
     [Test]
     public async Task ToIndex_OsDefault_ExistsWithoutDevices()
     {
-        await Assert.That(OutputDeviceSelector.ToIndex(["-1"], []).Index).IsEqualTo(-1);
+        await Assert.That(OutputDeviceSelector.ToIndex(["-1"], [], [], null).Index).IsEqualTo(-1);
     }
 
     [Test]
     public async Task ToIndex_TriesCandidatesInOrder()
     {
         // 見つからない候補は飛ばし、上から探して最初に見つかったものを使う
-        var choice = OutputDeviceSelector.ToIndex(["nothing", "9", "anker", "jabra"], Names);
+        var choice = OutputDeviceSelector.ToIndex(["nothing", "9", "anker", "jabra"], Names, [], null);
 
         await Assert.That(choice).IsEqualTo(new DeviceChoice(1, "anker", IsFirstCandidate: false));
     }
@@ -118,7 +122,7 @@ public class OutputDeviceSelectorTests
     public async Task ToIndex_OsDefaultAsLastCandidate_IsUsedWhenNothingElseFound()
     {
         // -1 は常にあるので、最後に書けばどれも無いとき OS 既定で鳴る
-        var choice = OutputDeviceSelector.ToIndex(["nothing", "usb headset", "-1"], Names);
+        var choice = OutputDeviceSelector.ToIndex(["nothing", "usb headset", "-1"], Names, [], null);
 
         await Assert.That(choice).IsEqualTo(new DeviceChoice(-1, "-1", IsFirstCandidate: false));
     }
@@ -132,7 +136,7 @@ public class OutputDeviceSelectorTests
         // スタックトレース付きの終了コード 1 になっていた
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
         {
-            OutputDeviceSelector.ToIndex([spec, "usb headset"], Names);
+            OutputDeviceSelector.ToIndex([spec, "usb headset"], Names, [], null);
             return Task.CompletedTask;
         });
 
@@ -152,12 +156,76 @@ public class OutputDeviceSelectorTests
         // どれを鳴らすか決められないのは書き方の問題なので、ほかのデバイスに逃がさずエラーにする
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
         {
-            OutputDeviceSelector.ToIndex(candidateList.Split('|'), Names);
+            OutputDeviceSelector.ToIndex(candidateList.Split('|'), Names, [], null);
             return Task.CompletedTask;
         });
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Audio.OutputDeviceAmbiguous);
         await Assert.That(ErrorCodes.GetExitCode(ex.ErrorCode)).IsEqualTo(5);
         await Assert.That(ex.UserMessage).Contains("に合う再生デバイスが複数あります: 0: \"Headphones (Senary Audio)\"");
+    }
+
+    [Test]
+    [Arguments("4")]
+    [Arguments("dell")]
+    public async Task ToIndex_ExcludedDevice_IsSkipped(string spec)
+    {
+        // つながっていても鳴らないデバイス (モニターなど) は、番号でも名前でも、つながっていないものとして次の候補に進む
+        var choice = OutputDeviceSelector.ToIndex([spec, "jabra"], Names, ["DELL"], null);
+
+        await Assert.That(choice).IsEqualTo(new DeviceChoice(3, "jabra", IsFirstCandidate: false));
+    }
+
+    [Test]
+    public async Task ToIndex_OsDefaultExcluded_IsSkipped()
+    {
+        // OS がモニターを既定に切り替えると、-1 で鳴らしても聞こえない
+        var choice = OutputDeviceSelector.ToIndex(["-1", "jabra"], Names, ["DELL"], DellOsDefault);
+
+        await Assert.That(choice).IsEqualTo(new DeviceChoice(3, "jabra", IsFirstCandidate: false));
+    }
+
+    [Test]
+    public async Task ToIndex_OsDefaultExcludedAsLastCandidate_Fails()
+    {
+        // 聞こえないデバイスで鳴らすより、エラーで気づけるようにする
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+        {
+            OutputDeviceSelector.ToIndex(["nothing", "-1"], Names, ["DELL"], DellOsDefault);
+            return Task.CompletedTask;
+        });
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Audio.OutputDeviceNotFound);
+        await Assert.That(ex.UserMessage).Contains("除外: -1 (OS 既定 = \"" + DellOsDefault + "\"), 4: \"1 - DELL S3422DWG (AMD High Def\"");
+        await Assert.That(ex.UserMessage).DoesNotContain("使えるのは -1");
+    }
+
+    [Test]
+    public async Task ToIndex_OsDefaultNameUnknown_UsesOsDefault()
+    {
+        // OS 既定の名前が取れなければ、除外かどうか分からないので -1 を使う
+        var choice = OutputDeviceSelector.ToIndex(["-1"], Names, ["DELL"], null);
+
+        await Assert.That(choice.Index).IsEqualTo(-1);
+    }
+
+    [Test]
+    public async Task ToIndex_ExcludedDevicesAreNotCountedAsMatches()
+    {
+        // "senary" は 0 と 2 に合うが、2 を除外すれば 1 台に絞れる
+        var choice = OutputDeviceSelector.ToIndex(["senary"], Names, ["スピーカー (senary"], null);
+
+        await Assert.That(choice.Index).IsEqualTo(0);
+    }
+
+    [Test]
+    [Arguments("DELL", true)]
+    [Arguments("2", false)]
+    [Arguments("-1", false)]
+    [Arguments("", false)]
+    public async Task TryValidateExcludedSpec(string spec, bool expected)
+    {
+        // 番号は抜き差しでずれて別のデバイスを除外してしまうので、名前だけ
+        await Assert.That(OutputDeviceSelector.TryValidateExcludedSpec(spec, out _)).IsEqualTo(expected);
     }
 }

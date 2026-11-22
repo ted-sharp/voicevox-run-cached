@@ -217,6 +217,16 @@ public class ValidatorsTests
     }
 
     [Test]
+    [Arguments("DELL", true)]
+    [Arguments("2", false)]
+    [Arguments("", false)]
+    public async Task AudioSettings_ExcludedDevices(string device, bool expected)
+    {
+        var validator = new AudioSettingsValidator();
+        await Assert.That(validator.Validate(new AudioSettings { ExcludedDevices = [device] }).IsValid).IsEqualTo(expected);
+    }
+
+    [Test]
     public async Task AudioSettings_SpeakerDevicesWithoutDevices_Fails()
     {
         // Devices を Device と単数で書き間違えると空になる。話者を書いた意味が無いので設定エラーにする

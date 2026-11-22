@@ -1,4 +1,6 @@
-﻿using System.Text.Json.Serialization;
+﻿using System.Runtime.InteropServices;
+using System.Text.Json.Serialization;
+using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
 namespace VoicevoxRunCached.Services.Audio;
@@ -22,4 +24,26 @@ public static class WaveOutDevices
 {
     public static IReadOnlyList<WaveOutDeviceInfo> List()
         => [.. Enumerable.Range(0, WaveOut.DeviceCount).Select(i => new WaveOutDeviceInfo(i, WaveOut.GetCapabilities(i).ProductName))];
+
+    /// <summary>
+    /// OS 既定の再生デバイスの名前 (-1 で鳴るデバイス)。取れなければ null。
+    /// </summary>
+    /// <remarks>
+    /// WaveOut の -1 (WAVE_MAPPER) は index を持たず名前も取れないので、Core Audio の既定のエンドポイントから取る。
+    /// 名前は切られていない (WaveOut の名前はこの先頭 31 文字)。
+    /// 再生デバイスが 1 つも無いときなどは COMException になる。除外を確かめられないだけなので null を返す。
+    /// </remarks>
+    public static string? OsDefaultName()
+    {
+        try
+        {
+            using var enumerator = new MMDeviceEnumerator();
+            using var device = enumerator.GetDefaultAudioEndpoint(DataFlow.Render, Role.Multimedia);
+            return device.FriendlyName;
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+    }
 }

@@ -129,6 +129,14 @@ public class AudioSettingsValidator : AbstractValidator<AudioSettings>
             .InclusiveBetween(1, 10).WithMessage("NumberOfBuffersは1-10の範囲である必要があります");
 
         RuleForEach(x => x.SpeakerDevices).SetValidator(new SpeakerDeviceSettingsValidator());
+
+        RuleForEach(x => x.ExcludedDevices).Custom((device, context) =>
+        {
+            if (!OutputDeviceSelector.TryValidateExcludedSpec(device, out var error))
+            {
+                context.AddFailure($"ExcludedDevicesの指定が不正です: {error}");
+            }
+        });
     }
 }
 

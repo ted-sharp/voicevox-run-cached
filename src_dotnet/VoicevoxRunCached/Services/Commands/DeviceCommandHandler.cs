@@ -4,6 +4,7 @@ using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using NAudio.CoreAudioApi;
 using NAudio.Wave;
+using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Utilities;
@@ -33,10 +34,12 @@ internal sealed record AudioDeviceListPayload(
 public class DeviceCommandHandler
 {
     private readonly TextToSpeechProcessor _ttsProcessor;
+    private readonly AudioSettings _audioSettings;
     private readonly ILogger _logger;
 
-    public DeviceCommandHandler(TextToSpeechProcessor ttsProcessor, ILogger logger)
+    public DeviceCommandHandler(TextToSpeechProcessor ttsProcessor, AudioSettings audioSettings, ILogger logger)
     {
+        _audioSettings = audioSettings ?? throw new ArgumentNullException(nameof(audioSettings));
         _ttsProcessor = ttsProcessor ?? throw new ArgumentNullException(nameof(ttsProcessor));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -58,12 +61,14 @@ public class DeviceCommandHandler
             }
 
             OutputConsole(defaultName, defaultId, deviceList, options.Full);
-            OutputWaveOutDevices(waveOutDevices);
+            OutputWaveOutDevices(waveOutDevices, _audioSettings.ExcludedDevices);
         }
 
         if (options.Speak is { } voice)
         {
-            await SpeakDeviceNumbersAsync(voice, waveOutDevices, cancellationToken);
+            // 除外デバイスは鳴らしても聞こえないので読み上げない
+            var speakable = waveOutDevices.Where(d => !OutputDeviceSelector.IsExcluded(d.Name, _audioSettings.ExcludedDevices)).ToList();
+            await SpeakDeviceNumbersAsync(voice, speakable, cancellationToken);
         }
         return 0;
     }
@@ -215,14 +220,15 @@ public class DeviceCommandHandler
         }
     }
 
-    private static void OutputWaveOutDevices(IReadOnlyList<WaveOutDeviceInfo> waveOutDevices)
+    private static void OutputWaveOutDevices(IReadOnlyList<WaveOutDeviceInfo> waveOutDevices, IReadOnlyList<string> excludedDevices)
     {
         ConsoleHelper.WriteLine("");
         ConsoleHelper.WriteLine("Audio.Devices (WaveOut index):");
         ConsoleHelper.WriteLine("  -1: OS default");
         foreach (var d in waveOutDevices)
         {
-            ConsoleHelper.WriteLine($"  {d.Index,2}: \"{d.Name}\"");
+            var mark = OutputDeviceSelector.IsExcluded(d.Name, excludedDevices) ? " (excluded)" : "";
+            ConsoleHelper.WriteLine($"  {d.Index,2}: \"{d.Name}\"{mark}");
         }
     }
 }

@@ -149,6 +149,16 @@ public class AudioSettings
     /// </remarks>
     public string[] Devices { get; set; } = [];
 
+    /// <summary>
+    /// 使わないデバイス (デバイス名の一部)。候補に当たっても、つながっていないものとして次の候補に進む。
+    /// OS 既定 (-1) がこれに合うときも飛ばす。<c>devices --speak</c> でも読み上げない。
+    /// </summary>
+    /// <remarks>
+    /// 番号は書けない (抜き差しでずれて、別のデバイスを除外してしまうため)。
+    /// 初期値を入れてはいけない (ConfigurationBinder が既存の要素に追記するため)。
+    /// </remarks>
+    public string[] ExcludedDevices { get; set; } = [];
+
     public double Volume { get; set; } = 1.0;
     public bool PrepareDevice { get; set; } = false;
     public int PreparationDurationMs { get; set; } = 200;
