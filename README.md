@@ -282,7 +282,17 @@ VoicevoxRunCached.exe --init --engine cevio -s "花隈千冬"           # フィ
   - 複数のデバイスに合うとエラー (終了コード 5)。合ったデバイスが表示されるので、1 台に絞れるよう長く書く (`"Senary"` が 2 台に合うなら `"Headphones (Senary"` のように)
   - デバイス名は WinMM の制約で 31 文字までに切られているので、その範囲で書く
 - **番号で書く**: 同じ欄の番号。-1 は OS 既定。上段の WASAPI 一覧 (`devices --full` の `[n]`) とは番号が一致しないことがある
-- **見つからないとき** (抜いている・無い番号): 合成の前にエラー (終了コード 5) になり、つながっているデバイスが表示される。`Audio.FallbackToDefaultDevice` を `true` にすると、エラーにせず OS 既定で鳴らす (Warning のログが出る)
+- **見つからないとき** (抜いている・無い番号): `Audio.FallbackDevices` に書いた代わりのデバイスを上から探し、最初に見つかったデバイスで鳴らす (Warning のログが出る)。書き方は `Device` と同じ
+  - 最後に `-1` を書くと、どれもつながっていないとき OS 既定で鳴る
+  - 代わりのデバイスも見つからない (または書いていない) ときは、合成の前にエラー (終了コード 5) になり、つながっているデバイスが表示される
+
+  ```jsonc
+  "Audio": {
+    "OutputDevice": "Jabra",
+    "SpeakerDevices": [{ "Engine": "Voicevox", "Speaker": "3", "Device": "DELL" }],
+    "FallbackDevices": ["Headphones", -1]   // 話者 3 は DELL → Headphones → OS 既定、ほかは Jabra → Headphones → OS 既定
+  }
+  ```
 
 ### フィラーで待ち時間を埋める
 
