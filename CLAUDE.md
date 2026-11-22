@@ -15,7 +15,7 @@ VOICEVOX REST API のラッパー C# Console アプリ (VOICEPEAK・CeVIO AI に
 | CLAUDE.md (この文書) | 守ること (壊すと困る約束) を 1 項目 1〜2 行で。対象のクラスと、回帰を検知するテスト名を添える | 理由の詳しい説明・経緯・使い方 |
 | コードのコメント (XML doc の `<remarks>`・行コメント) | なぜそうしたか。読む人がその場所で必要とする理由 (実機で確かめた挙動・やめた案と理由も) | 経緯 (いつ・誰が・何を直したか) |
 | テストのコメント | 何の回帰を検知するか (`// 回帰: …`) | |
-| README.md | 利用者向け: 使い方・オプション・設定・終了コード・仕組み・トラブルシューティング | 実装の詳細 |
+| README.md | 利用者向け。読む順に、はじめに → 用途別ガイド (やりたいことごとの手順) → リファレンス (オプション・終了コード・設定・ファイルの場所) → 仕組み → トラブルシューティング。手順はガイド、規則は仕組みに置き、ほかからはリンクする | 実装の詳細 |
 | RELEASE_NOTES.md | 1 項目 1 行・利用者から見た変化だけ | 経緯・実装の詳細 |
 | doc/RELEASE.md | リリース手順 | |
 | git log | 経緯 (何を・なぜ変えたか) | |
@@ -24,7 +24,7 @@ VOICEVOX REST API のラッパー C# Console アプリ (VOICEPEAK・CeVIO AI に
 
 1. コードのコメント (理由)
 2. CLAUDE.md の「守ること」とテスト名 (約束を足した・変えたとき)
-3. README.md (利用者から見えるとき。オプション表・終了コード表・設定例のコメントも)
+3. README.md (利用者から見えるとき。用途別ガイドの手順・オプション表・終了コード表・設定例のコメントも)
 4. RELEASE_NOTES.md の Unreleased (利用者から見えるとき)
 
 CLAUDE.md に理由を書きたくなったら、そのクラスのコメントに書いて、ここにはクラス名を書く。特定のクラスに属さない規則 (全体に掛かるコーディング規約など) だけは、ここに理由を一言添える。
@@ -53,7 +53,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 
 - テストは .NET 11 + Microsoft.Testing.Platform のため `dotnet test` では動かない (`task test` を使う)。1 クラスだけなら `dotnet run --project src_dotnet/VoicevoxRunCached.Tests -- --treenode-filter "/*/*/クラス名/*"`
 - リリース手順は `doc/RELEASE.md`
-- コマンドとオプションは README の「コマンドリファレンス」と `--help` (`ArgumentParser.ShowUsage`)
+- コマンドとオプションは README の「コマンドとオプション」と `--help` (`ArgumentParser.ShowUsage`)
 
 ## Request Flow
 
