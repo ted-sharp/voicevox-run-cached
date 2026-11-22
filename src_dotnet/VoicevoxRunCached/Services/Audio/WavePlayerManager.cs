@@ -72,6 +72,11 @@ public class WavePlayerManager : IDisposable
     }
 
     /// <summary>
+    /// 出力のバッファ全体の長さ。デバイスが読んだ音は、この分だけ後に鳴り終わる。
+    /// </summary>
+    public TimeSpan OutputLatency => TimeSpan.FromMilliseconds(GetBufferMilliseconds(_settings) * _settings.NumberOfBuffers);
+
+    /// <summary>
     /// 設定の DesiredLatency (全バッファ合計の遅延) を <see cref="WaveOut.BufferMilliseconds"/> (バッファ 1 本の長さ) に換算する。
     /// </summary>
     /// <remarks>
