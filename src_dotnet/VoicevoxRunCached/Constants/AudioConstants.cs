@@ -12,14 +12,14 @@ public static class AudioConstants
     public const int PlaybackTimeoutMarginMs = 30000;
 
     /// <summary>
-    /// 最初のセグメント再生前の遅延時間（ミリ秒）
+    /// 読み上げの最初の音の前に流す無音 (ミリ秒)。デバイスごとの <c>LeadingSilenceMs</c> はこの後に足す。
     /// </summary>
-    public const int FirstSegmentDelayMs = 200;
+    public const int StartSilenceMs = 200;
 
     /// <summary>
-    /// 後続セグメント再生前の遅延時間（ミリ秒）
+    /// 音 (本編・フィラー) と音の間に流す無音 (ミリ秒)。文ごとに再生を止めていたときの間合い (約 0.12〜0.17 秒) に合わせる。
     /// </summary>
-    public const int SubsequentSegmentDelayMs = 20;
+    public const int GapSilenceMs = 120;
 
     /// <summary>
     /// ストリーミング再生で次のセグメントが届かないままこの時間を超えたらフィラー音声を挿入する（ミリ秒）。
@@ -27,14 +27,9 @@ public static class AudioConstants
     public const int FillerStartDelayMs = 800;
 
     /// <summary>
-    /// 最初のセグメント再生完了後の遅延時間（ミリ秒）
+    /// 最後の音をデバイスが読み終えてから止めるまでに、出力のバッファの分に足して流す無音 (ミリ秒)。最後の音を切らないため。
     /// </summary>
-    public const int FirstSegmentTrailingDelayMs = 150;
-
-    /// <summary>
-    /// 後続セグメント再生完了後の遅延時間（ミリ秒）
-    /// </summary>
-    public const int SubsequentSegmentTrailingDelayMs = 100;
+    public const int TrailingSilenceMs = 150;
 
     /// <summary>
     /// Opus エンコード時の既定ビットレート (kbps, VBR)。音声合成の 24kHz mono なら 32kbps で MP3 64kbps 相当以上。

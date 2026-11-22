@@ -185,10 +185,71 @@ public class ValidatorsTests
     }
 
     [Test]
-    public async Task AudioSettings_OutputDeviceMinus2_Fails()
+    [Arguments("-1", true)]
+    [Arguments("3", true)]
+    [Arguments("Jabra", true)]
+    [Arguments("-2", false)]
+    [Arguments("", false)]
+    public async Task AudioSettings_Devices(string device, bool expected)
     {
         var validator = new AudioSettingsValidator();
-        var result = validator.Validate(new AudioSettings { OutputDevice = -2 });
+        await Assert.That(validator.Validate(new AudioSettings { Devices = ["Jabra", device] }).IsValid).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments(SpeechEngineKind.Voicevox, "3", "1", true)]
+    [Arguments(SpeechEngineKind.Voicepeak, "Frimomen:happy=50", "-1", true)]
+    [Arguments(SpeechEngineKind.Voicevox, "3", "Jabra", true)]
+    [Arguments(SpeechEngineKind.Voicevox, "abc", "1", false)]
+    [Arguments(SpeechEngineKind.Voicevox, "", "1", false)]
+    [Arguments(SpeechEngineKind.Voicevox, "3", "-2", false)]
+    [Arguments(SpeechEngineKind.Voicevox, "3", "", false)]
+    [Arguments((SpeechEngineKind)99, "3", "1", false)]
+    public async Task AudioSettings_SpeakerDevices(SpeechEngineKind engine, string speaker, string device, bool expected)
+    {
+        // 書き間違えた項目を黙って無視すると、その話者が Audio.Devices で鳴って気づきにくいので設定エラーにする
+        var validator = new AudioSettingsValidator();
+        var result = validator.Validate(new AudioSettings
+        {
+            SpeakerDevices = [new SpeakerDeviceSettings { Engine = engine, Speaker = speaker, Devices = [device] }],
+        });
+        await Assert.That(result.IsValid).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments("DELL", true)]
+    [Arguments("2", false)]
+    [Arguments("", false)]
+    public async Task AudioSettings_ExcludedDevices(string device, bool expected)
+    {
+        var validator = new AudioSettingsValidator();
+        await Assert.That(validator.Validate(new AudioSettings { ExcludedDevices = [device] }).IsValid).IsEqualTo(expected);
+    }
+
+    [Test]
+    [Arguments("Anker", 800, true)]
+    [Arguments("Anker", 0, true)]
+    [Arguments("Anker", -1, false)]
+    [Arguments("Anker", 5001, false)]
+    // 番号は抜き差しでずれるので書けない
+    [Arguments("1", 800, false)]
+    [Arguments("", 800, false)]
+    public async Task AudioSettings_DeviceOptions(string device, int leadingSilenceMs, bool expected)
+    {
+        var validator = new AudioSettingsValidator();
+        var settings = new AudioSettings { DeviceOptions = [new DeviceOptionSettings { Device = device, LeadingSilenceMs = leadingSilenceMs }] };
+        await Assert.That(validator.Validate(settings).IsValid).IsEqualTo(expected);
+    }
+
+    [Test]
+    public async Task AudioSettings_SpeakerDevicesWithoutDevices_Fails()
+    {
+        // Devices を Device と単数で書き間違えると空になる。話者を書いた意味が無いので設定エラーにする
+        var validator = new AudioSettingsValidator();
+        var result = validator.Validate(new AudioSettings
+        {
+            SpeakerDevices = [new SpeakerDeviceSettings { Engine = SpeechEngineKind.Voicevox, Speaker = "3" }],
+        });
         await Assert.That(result.IsValid).IsFalse();
     }
 

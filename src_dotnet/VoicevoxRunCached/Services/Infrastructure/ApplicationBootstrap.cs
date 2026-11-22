@@ -97,6 +97,8 @@ public static class ApplicationBootstrap
     /// </summary>
     private static AppSettings BuildAppSettings(IConfiguration configuration)
     {
+        RejectRemovedSettings(configuration);
+
         var settings = new AppSettings();
         configuration.GetSection("Synthesis").Bind(settings.Synthesis);
         configuration.GetSection("VoiceVox").Bind(settings.VoiceVox);
@@ -119,6 +121,25 @@ public static class ApplicationBootstrap
         settings.VoiceVox.BaseUrl = settings.VoiceVox.BaseUrl.TrimEnd('/');
 
         return settings;
+    }
+
+    /// <summary>
+    /// 名前を変えた設定が残っていたら <see cref="ConfigurationException"/> にする。
+    /// </summary>
+    /// <remarks>
+    /// <c>Audio.OutputDevice</c> は 4.0.0 で <c>Audio.Devices</c> (候補の一覧) に変えた。ConfigurationBinder は知らないキーを無視するので、
+    /// そのままでは書いていたデバイスが黙って使われなくなり、OS 既定で鳴る。
+    /// </remarks>
+    private static void RejectRemovedSettings(IConfiguration configuration)
+    {
+        if (configuration.GetSection("Audio:OutputDevice").Exists())
+        {
+            throw new ConfigurationException(
+                ErrorCodes.Configuration.InvalidSettings,
+                "Audio.OutputDevice was renamed to Audio.Devices",
+                "Audio.OutputDevice は Audio.Devices (再生デバイスの候補の一覧) に変わりました。",
+                suggestedSolution: "appsettings.json の \"OutputDevice\": -1 を消すか、\"Devices\": [\"Jabra\", -1] のように候補を書いてください (空なら OS 既定)。");
+        }
     }
 
     private static string ResolvePath(string path, bool useExecutableBaseDirectory)

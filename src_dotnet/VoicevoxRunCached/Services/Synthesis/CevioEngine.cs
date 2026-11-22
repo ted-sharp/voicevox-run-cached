@@ -57,6 +57,7 @@ public class CevioEngine : ISpeechEngine
     public async Task PrepareAsync(string speaker, CancellationToken cancellationToken)
     {
         var parsed = ParseSpeaker(speaker);
+        _connected = true;
         await _hostManager.EnsureRunningOrThrowAsync(cancellationToken);
 
         await RunComAsync(() =>
@@ -89,6 +90,7 @@ public class CevioEngine : ISpeechEngine
 
     public async Task<IReadOnlyList<SpeakerInfo>> GetSpeakersAsync(CancellationToken cancellationToken)
     {
+        _connected = true;
         await _hostManager.EnsureRunningOrThrowAsync(cancellationToken);
         return await RunComAsync(() => _remote.GetCasts()
             .Select(cast => ToSpeakerInfo(cast, _remote.GetComponents(cast)))
@@ -103,6 +105,19 @@ public class CevioEngine : ISpeechEngine
         => ex is VoicevoxRunCachedException { ErrorCode: ErrorCodes.Engine.EngineNotAvailable or ErrorCodes.Api.ApiTimeout };
 
     public void StopIfNotKept() => _hostManager.StopHostIfNotKept();
+
+    /// <summary>
+    /// このプロセスが CeVIO AI に接続したか (<see cref="PrepareAsync"/> か <see cref="GetSpeakersAsync"/> を呼んだか)。
+    /// </summary>
+    /// <remarks>
+    /// <para>CeVIO AI の外部連携は同時に 1 つのアプリしか使えず、接続はプロセスが終わるまで残る。
+    /// COM オブジェクトを解放しても切れず、かえって次のプロセスの呼び出しが戻らなくなった (実機で確かめた)。</para>
+    /// <para>接続が残っている間にほかのプロセスが合成すると、CeVIO AI がダイアログ (OK を押すまで残る) を出し、
+    /// <c>OutputWaveToFile</c> は WAV を書かずに true を返す。そのため、接続したプロセスは再生を終えるまで <see cref="SpeechLock"/> を持ち続ける。</para>
+    /// </remarks>
+    public bool HoldsConnectionUntilExit => _connected;
+
+    private bool _connected;
 
     /// <summary>
     /// <c>--speaker</c> の値を検証して正規化する (前後の空白を除き、感情を名前順に並べ、値を整数の表記にそろえる)。
@@ -314,6 +329,15 @@ public class CevioEngine : ISpeechEngine
                         message: $"CeVIO AI failed to synthesize: {text}",
                         userMessage: "CeVIO AI で音声を合成できませんでした。")
                     : HostClosed();
+            }
+            if (!File.Exists(path))
+            {
+                // ほかのアプリが外部連携を使っていると、WAV を書かずに true を返す (HoldsConnectionUntilExit)。残りの文も同じなので止める
+                throw new VoicevoxRunCachedException(
+                    errorCode: ErrorCodes.Engine.EngineNotAvailable,
+                    message: $"CeVIO AI reported success but did not write the WAV: {text}",
+                    userMessage: "CeVIO AI が音声を書き出しませんでした。ほかのアプリが CeVIO AI の外部連携を使っている可能性があります。",
+                    suggestedSolution: "CeVIO AI にダイアログが出ていれば OK を押し、ほかのアプリの読み上げが終わってから、もう一度実行してください。");
             }
             return File.ReadAllBytes(path);
         }

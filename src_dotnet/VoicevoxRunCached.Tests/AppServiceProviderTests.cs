@@ -47,6 +47,15 @@ public class AppServiceProviderTests
     }
 
     [Test]
+    public async Task PlaybackLock_UsesSharedLockDirectoryByDefault()
+    {
+        // 同じデバイスの再生がプロセスをまたいで重ならないよう、既定ではほかのプロセスと同じ一時フォルダのロックファイルを使う
+        using var provider = new AppServiceProvider { Settings = new AppSettings(), Logger = NullLogger.Instance };
+
+        await Assert.That(provider.GetService<PlaybackLock>().LockDirectory).IsEqualTo(Path.GetTempPath());
+    }
+
+    [Test]
     public async Task CommandRouter_CanBeResolved()
     {
         var (provider, dir) = CreateProvider();
@@ -120,7 +129,7 @@ public class AppServiceProviderTests
             provider.Dispose();
 
             var reader = Channel.CreateUnbounded<TextSegment>().Reader;
-            await Assert.ThrowsAsync<ObjectDisposedException>(() => player.PlayStreamingAsync(reader));
+            await Assert.ThrowsAsync<ObjectDisposedException>(() => player.PlayStreamingAsync(reader, -1));
         }
         finally
         {

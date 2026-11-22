@@ -63,6 +63,9 @@ public class VoicevoxEngine : ISpeechEngine
 
     public void StopIfNotKept() => _engineManager.StopEngineIfNotKept();
 
+    /// <remarks>HTTP の呼び出しごとに完結するので、接続を持ち続けない。</remarks>
+    public bool HoldsConnectionUntilExit => false;
+
     /// <summary>
     /// <c>--speaker</c> の値を検証して正規化する (<c>01</c> → <c>1</c>。キャッシュキーが変わらないように)。
     /// </summary>

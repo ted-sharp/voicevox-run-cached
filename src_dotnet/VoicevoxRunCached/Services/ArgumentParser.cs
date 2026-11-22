@@ -14,6 +14,8 @@ namespace VoicevoxRunCached.Services;
 /// <param name="NoCache">キャッシュを読みも書きもしない</param>
 /// <param name="Refresh">キャッシュを読まずに全部合成し直し、キャッシュを上書きする (辞書登録・エンジン更新の反映用)</param>
 /// <param name="MaxWaitSeconds">先の読み上げが終わるのを待つ上限 (秒、<c>--max-wait</c>)。null なら <c>Lock.MaxWaitSeconds</c> に従う</param>
+/// <param name="Device">再生デバイス (WaveOut の index かデバイス名の一部、<c>--device</c>)。null なら <see cref="OutputDeviceSelector.Resolve"/> が設定から決める</param>
+/// <param name="Quiet">進捗 (<c>Processing segments...</c> など) を表示しない。ほかのコマンドの中から呼ぶとき用で、CLI のオプションは無い</param>
 public record TextToSpeechOptions(
     bool NoCache,
     bool CacheOnly,
@@ -21,7 +23,17 @@ public record TextToSpeechOptions(
     string? OutPath,
     bool NoPlay,
     bool Refresh = false,
-    int? MaxWaitSeconds = null);
+    int? MaxWaitSeconds = null,
+    string? Device = null,
+    bool Quiet = false);
+
+/// <summary>
+/// <c>devices</c> コマンドのオプション
+/// </summary>
+/// <param name="Json"><c>--json</c></param>
+/// <param name="Full"><c>--full</c></param>
+/// <param name="Speak"><c>--speak</c> のときに番号を読み上げる声 (<see cref="VoiceRequest.Text"/> は空)。指定が無ければ null</param>
+public sealed record DevicesOptions(bool Json, bool Full, VoiceRequest? Speak);
 
 public static class ArgumentParser
 {
@@ -41,6 +53,7 @@ public static class ArgumentParser
         "--no-play",
         "--json",
         "--full",
+        "--speak",
         "--help",
         "-h"
     }.ToFrozenSet();
@@ -187,20 +200,24 @@ public static class ArgumentParser
     }
 
     /// <summary>
-    /// <c>devices</c> の引数から <c>--json</c> / <c>--full</c> を読む。
+    /// <c>devices</c> の引数から <c>--json</c> / <c>--full</c> / <c>--speak</c> と、<c>--speak</c> の声 (<c>--engine</c> / <c>--speaker</c>) を読む。
     /// </summary>
     /// <remarks>
     /// それ以外は <see cref="ErrorCodes.General.InvalidArguments"/> にする (<c>devices --jsn</c> のような打ち間違いで、
     /// JSON のつもりの stdout に人向けの一覧を出して成功しないように)。ログ・設定の上書きは <see cref="ParseInitOptions"/> と同じく読み飛ばす。
+    /// <c>--speak</c> は stdout に人向けの行を出すので <c>--json</c> とは併用できない。<c>--engine</c> / <c>--speaker</c> は <c>--speak</c> のときだけ。
     /// </remarks>
-    public static (bool Json, bool Full) ParseDevicesOptions(string[] args)
+    public static DevicesOptions ParseDevicesOptions(string[] args, AppSettings settings)
     {
         var processedArgs = PreprocessArgs(args);
-        bool json = false, full = false;
+        bool json = false, full = false, speak = false;
+        SpeechEngineKind? engineArg = null;
+        (string Option, string Value)? speakerArg = null;
         int i = 0;
         while (i < processedArgs.Length)
         {
-            switch (processedArgs[i])
+            var arg = processedArgs[i];
+            switch (arg)
             {
                 case "--json":
                     json = ReadFlag(processedArgs, ref i);
@@ -208,15 +225,40 @@ public static class ArgumentParser
                 case "--full":
                     full = ReadFlag(processedArgs, ref i);
                     break;
+                case "--speak":
+                    speak = ReadFlag(processedArgs, ref i);
+                    break;
+                case "--engine":
+                    engineArg = ReadEngine(processedArgs, i);
+                    i += 2;
+                    break;
+                case "--speaker" or "-s":
+                    speakerArg = (arg, ReadValue(processedArgs, i));
+                    i += 2;
+                    break;
                 default:
                     if (!TrySkipConfigurationArgs(processedArgs, ref i))
                     {
-                        throw UnexpectedArgument(processedArgs[i]);
+                        throw UnexpectedArgument(arg);
                     }
                     break;
             }
         }
-        return (json, full);
+
+        if (!speak)
+        {
+            if (engineArg != null || speakerArg != null)
+            {
+                throw InvalidOption(engineArg != null ? "--engine" : speakerArg!.Value.Option, "--speak と一緒に指定してください。");
+            }
+            return new DevicesOptions(json, full, Speak: null);
+        }
+        if (json)
+        {
+            throw InvalidOption("--speak", "--json と同時には指定できません。");
+        }
+        var engine = engineArg ?? settings.Synthesis.Engine;
+        return new DevicesOptions(json, full, new VoiceRequest { Engine = engine, Speaker = ResolveSpeaker(engine, speakerArg, settings) });
     }
 
     /// <summary>
@@ -368,6 +410,7 @@ public static class ArgumentParser
         bool noCache = false, cacheOnly = false, verbose = false, noPlay = false, refresh = false;
         string? outPath = null;
         int? maxWaitSeconds = null;
+        string? device = null;
         var engine = settings.Synthesis.Engine;
         (string Option, string Value)? speakerArg = null;
 
@@ -420,6 +463,10 @@ public static class ArgumentParser
                     maxWaitSeconds = ReadInt(processedArgs, i, min: 0);
                     i += 2;
                     break;
+                case "--device":
+                    device = ReadDevice(processedArgs, i);
+                    i += 2;
+                    break;
                 default:
                     if (arg.StartsWith("--out=", StringComparison.Ordinal))
                     {
@@ -449,7 +496,7 @@ public static class ArgumentParser
             throw InvalidOption(invalid.Option, invalid.Reason);
         }
 
-        return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay, refresh, maxWaitSeconds);
+        return new TextToSpeechOptions(noCache, cacheOnly, verbose, outPath, noPlay, refresh, maxWaitSeconds, device);
     }
 
     /// <summary>
@@ -546,6 +593,19 @@ public static class ArgumentParser
                 userMessage: $"appsettings.json の {engine}.DefaultSpeaker が不正です: {defaultError}");
     }
 
+    /// <summary>
+    /// <c>--device</c> の値を読む (index かデバイス名の一部。どのデバイスかは鳴らす直前に決める)。
+    /// </summary>
+    private static string ReadDevice(string[] args, int optionIndex)
+    {
+        var raw = ReadValue(args, optionIndex);
+        if (!OutputDeviceSelector.TryValidateSpec(raw, out var error))
+        {
+            throw InvalidOption(args[optionIndex], error!);
+        }
+        return raw;
+    }
+
     private static int ReadInt(string[] args, int optionIndex, int min)
     {
         var raw = ReadValue(args, optionIndex);
@@ -599,6 +659,7 @@ Usage:
   VoicevoxRunCached --test [options]
   VoicevoxRunCached speakers [--engine <name>]
   VoicevoxRunCached devices [--full] [--json]
+  VoicevoxRunCached devices --speak [--engine <name>] [--speaker <id>]
   VoicevoxRunCached --init [--engine <name>] [--speaker <id>]
   VoicevoxRunCached --clear
 
@@ -616,8 +677,12 @@ Options:
   --refresh                Re-synthesize all segments and overwrite the cache
   --out, -o <path>         Save output audio to file (.wav or .opus)
   --no-play                Do not play audio (useful with --out)
+  --device <index|name>    Output device: WaveOut index shown by 'devices' (-1 = OS default) or part of its name
+                           (if not found, continues with Audio.Devices; default: Audio.SpeakerDevices entry
+                           for the speaker, then Audio.Devices)
   --verbose                Show playback time and total execution time
-  --max-wait <seconds>     Give up (exit code 9) if another run does not finish within this time
+  --max-wait <seconds>     Give up (exit code 9) if waiting for other runs (synthesis, then playback
+                           on the same device) takes longer than this in total
                            (default: appsettings Lock.MaxWaitSeconds; unset = wait forever, 0 = do not wait)
   --log-level <level>      Log level: trace|debug|info|warn|error|crit|none (default: appsettings Logging.Level)
   --log-format <fmt>       Log format: simple|json (default: appsettings Logging.Format)
@@ -626,6 +691,7 @@ Options:
 Commands:
   speakers                 List available speakers of the engine
   devices                  List audio output devices
+                           (--speak: say each WaveOut index on that device, in order)
   --test                   Play the configured test message (Test.Message)
   --init                   Initialize filler audio cache for the speaker of the engine
   --clear                  Clear audio and filler cache files

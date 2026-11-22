@@ -5,6 +5,7 @@ using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services;
 using VoicevoxRunCached.Services.Audio;
 using VoicevoxRunCached.Services.Cache;
+using VoicevoxRunCached.Services.Infrastructure;
 
 namespace VoicevoxRunCached.Tests;
 
@@ -179,6 +180,119 @@ public class TextToSpeechProcessorTests
             prepareCache: path => File.WriteAllBytesAsync(path, [1, 2, 3, 4]));
 
         await Assert.That(run.ExitCode).IsEqualTo(ErrorCodes.GetExitCode(ErrorCodes.Audio.AudioGenerationFailed));
+    }
+
+    [Test]
+    public async Task WaitingForPlaybackDevice_ReleasesSpeechLock()
+    {
+        // 合成を終えたら、再生 (再生デバイスの順番待ちも) の途中でも SpeechLock を手放す。
+        // 手放さないと、違うデバイスへの読み上げも先の再生が終わるまで待たされ、同時に鳴らせない
+        await Assert.That(await RunWhilePlaybackDeviceBusyAsync([CachedText], () => Task.CompletedTask)).IsTrue();
+    }
+
+    [Test]
+    public async Task ConnectedToCevio_HoldsSpeechLockUntilPlaybackEnds()
+    {
+        // 回帰: CeVIO AI の外部連携は同時に 1 つのアプリしか使えず、接続はプロセスが終わるまで残る。
+        // 再生の途中で SpeechLock を手放すと、その間に始めた次の読み上げの合成が失敗し、CeVIO AI がダイアログを出していた
+        var cevio = new FakeCevioRemoteService();
+        var held = !await RunWhilePlaybackDeviceBusyAsync(
+            ["CeVIO で合成する文です。", "--engine", "cevio", "-s", FakeCevioRemoteService.Cast], () => Task.CompletedTask, cevio);
+
+        await Assert.That(held).IsTrue();
+        await Assert.That(cevio.Talks.Count).IsEqualTo(1);
+    }
+
+    [Test]
+    public async Task OutFile_IsSavedBeforeReleasingSpeechLock()
+    {
+        // 回帰: --out の保存を SpeechLock の外 (再生の後) で行うと、同じ --out の実行どうしが同時に {out}.tmp に書き、
+        // 片方が失敗したり、もう一方の一時ファイルを消したりする。SpeechLock が空いた時点で保存が済んでいることを確かめる
+        var outPath = Path.Combine(Path.GetTempPath(), $"vrc_out_{Guid.NewGuid():N}.wav");
+        try
+        {
+            await Assert.That(await RunWhilePlaybackDeviceBusyAsync([CachedText, "--out", outPath], async () => await Assert.That(File.Exists(outPath)).IsTrue())).IsTrue();
+        }
+        finally
+        {
+            File.Delete(outPath);
+        }
+    }
+
+    /// <summary>
+    /// OS 既定のデバイスで先の読み上げが再生中のときに、<paramref name="args"/> で読み上げる (<see cref="CachedText"/> はキャッシュ済み)。
+    /// 再生の順番を待っている間に SpeechLock を取れたら <paramref name="whileSpeechLockHeld"/> を呼ぶ。最後にキャンセルして、音は鳴らさない。
+    /// </summary>
+    /// <returns>再生の順番を待っている間に SpeechLock を取れたか</returns>
+    private static async Task<bool> RunWhilePlaybackDeviceBusyAsync(string[] args, Func<Task> whileSpeechLockHeld, FakeCevioRemoteService? cevio = null)
+    {
+        using var stoppedEngine = new StoppedEngine();
+        using var lockFile = new TestLockFile();
+        using var lockDirectory = new TempLockDirectory();
+        var dir = Path.Combine(Path.GetTempPath(), "vrc_tts_" + Guid.NewGuid().ToString("N"));
+        var settings = new AppSettings
+        {
+            VoiceVox = new VoiceVoxSettings { BaseUrl = stoppedEngine.BaseUrl, AutoStartEngine = false, DefaultSpeaker = 1 },
+            Audio = new AudioSettings { PrepareDevice = false },
+            Cache = new CacheSettings { Directory = Path.Combine(dir, "audio"), UseExecutableBaseDirectory = false },
+            Filler = new FillerSettings { Directory = Path.Combine(dir, "filler"), UseExecutableBaseDirectory = false },
+        };
+        var logger = new RecordingLogger();
+        try
+        {
+            using var provider = new AppServiceProvider
+            {
+                Settings = settings,
+                Logger = logger,
+                SpeechLockPath = lockFile.Path,
+                PlaybackLockDirectory = lockDirectory.Path,
+                CevioRemote = cevio ?? new FakeCevioRemoteService(),
+            };
+            await provider.GetService<AudioCacheManager>().SaveAudioCacheAsync(new VoiceRequest(CachedText, "1"), TestAudio.SineWav(24000, 300));
+
+            // OS 既定のデバイスは先の読み上げが再生中 (このテストでは音を鳴らさずに終わらせる。番号はこの PC にあるものしか指定できない)
+            using var playing = await lockDirectory.CreatePlaybackLock().AcquireAsync(-1, maxWait: null, TimeSpan.Zero, CancellationToken.None);
+            using var cts = new CancellationTokenSource();
+            var speaking = provider.GetService<CommandRouter>().ExecuteCommandAsync([.. args, "--device", "-1"], cts.Token);
+
+            bool speechLockFree;
+            try
+            {
+                var waitingForDevice = Task.Run(async () =>
+                {
+                    while (!logger.Messages.Any(m => m.Contains("VoicevoxRunCached.playback.default.lock", StringComparison.Ordinal)))
+                    {
+                        await Task.Delay(20);
+                    }
+                });
+                await waitingForDevice.WaitAsync(TimeSpan.FromSeconds(10));
+
+                // 再生を待ち始めた時点では、まだ producer が終わっていない (SpeechLock を持っている) ことがあるので少し待つ。
+                // 手放さない作りなら、再生のロックが空くまで (ここではキャンセルするまで) 取れない
+                using var speechLock = await InterProcessLock.AcquireAsync(lockFile.Path, NullLogger.Instance, TimeSpan.FromSeconds(5));
+                speechLockFree = true;
+                await whileSpeechLockHeld();
+            }
+            catch (VoicevoxRunCachedException ex) when (ex.ErrorCode == ErrorCodes.Lock.LockWaitTimeout)
+            {
+                speechLockFree = false;
+            }
+            finally
+            {
+                // 音を鳴らさずに終わらせる (ロックファイルを消す前に)
+                await cts.CancelAsync();
+            }
+
+            await Assert.That(await speaking.WaitAsync(TimeSpan.FromSeconds(10))).IsEqualTo(ErrorCodes.CancelledExitCode);
+            return speechLockFree;
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, true);
+            }
+        }
     }
 
     [Test]

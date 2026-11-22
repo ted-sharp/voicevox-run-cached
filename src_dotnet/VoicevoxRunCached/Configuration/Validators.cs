@@ -104,8 +104,13 @@ public class AudioSettingsValidator : AbstractValidator<AudioSettings>
 {
     public AudioSettingsValidator()
     {
-        RuleFor(x => x.OutputDevice)
-            .GreaterThanOrEqualTo(-1).WithMessage("OutputDeviceは-1以上である必要があります");
+        RuleForEach(x => x.Devices).Custom((device, context) =>
+        {
+            if (!OutputDeviceSelector.TryValidateSpec(device, out var error))
+            {
+                context.AddFailure($"Devicesの指定が不正です: {error}");
+            }
+        });
 
         RuleFor(x => x.Volume)
             .InclusiveBetween(0.0, 1.0).WithMessage("Volumeは0.0-1.0の範囲である必要があります");
@@ -122,6 +127,61 @@ public class AudioSettingsValidator : AbstractValidator<AudioSettings>
 
         RuleFor(x => x.NumberOfBuffers)
             .InclusiveBetween(1, 10).WithMessage("NumberOfBuffersは1-10の範囲である必要があります");
+
+        RuleForEach(x => x.SpeakerDevices).SetValidator(new SpeakerDeviceSettingsValidator());
+
+        RuleForEach(x => x.DeviceOptions).ChildRules(option =>
+        {
+            option.RuleFor(x => x.Device).Custom((device, context) =>
+            {
+                if (!OutputDeviceSelector.TryValidateNameSpec(device, out var error))
+                {
+                    context.AddFailure($"DeviceOptionsのDeviceの指定が不正です: {error}");
+                }
+            });
+            option.RuleFor(x => x.LeadingSilenceMs)
+                .InclusiveBetween(0, 5000).WithMessage("DeviceOptionsのLeadingSilenceMsは0-5000ミリ秒の範囲である必要があります");
+        });
+
+        RuleForEach(x => x.ExcludedDevices).Custom((device, context) =>
+        {
+            if (!OutputDeviceSelector.TryValidateNameSpec(device, out var error))
+            {
+                context.AddFailure($"ExcludedDevicesの指定が不正です: {error}");
+            }
+        });
+    }
+}
+
+// Audio.SpeakerDevices の 1 項目のバリデーター
+public class SpeakerDeviceSettingsValidator : AbstractValidator<SpeakerDeviceSettings>
+{
+    public SpeakerDeviceSettingsValidator()
+    {
+        RuleFor(x => x.Engine)
+            .IsInEnum().WithMessage($"SpeakerDevicesのEngineは {String.Join(" / ", Enum.GetNames<SpeechEngineKind>())} のどれかである必要があります");
+
+        // 書き間違いで黙って Audio.Devices に鳴らさないよう、--speaker と同じ検証をする
+        RuleFor(x => x.Speaker).Custom((speaker, context) =>
+        {
+            var entry = context.InstanceToValidate;
+            if (Enum.IsDefined(entry.Engine) && SpeechEngineProvider.NormalizeSpeaker(entry.Engine, speaker ?? "", out var error) == null)
+            {
+                context.AddFailure($"SpeakerDevicesのSpeakerの指定が不正です: {error}");
+            }
+        });
+
+        // 空だと話者を書いた意味が無い (Device と単数で書き間違えたときもここに来る)
+        RuleFor(x => x.Devices)
+            .NotEmpty().WithMessage("SpeakerDevicesのDevicesにデバイスを1つ以上書いてください");
+
+        RuleForEach(x => x.Devices).Custom((device, context) =>
+        {
+            if (!OutputDeviceSelector.TryValidateSpec(device, out var error))
+            {
+                context.AddFailure($"SpeakerDevicesのDevicesの指定が不正です: {error}");
+            }
+        });
     }
 }
 

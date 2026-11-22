@@ -70,5 +70,7 @@ internal sealed class StubSpeechEngine(SpeechEngineKind kind, string[]? fillerTe
     {
     }
 
+    public bool HoldsConnectionUntilExit => false;
+
     private sealed record StubFillerSettings(string[] FillerTexts, int? MaxFillersPerWait) : IEngineFillerSettings;
 }

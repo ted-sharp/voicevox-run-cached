@@ -238,6 +238,19 @@ public class ArgumentParserTests
     }
 
     [Test]
+    [Arguments("text", null)]
+    [Arguments("text --device 2", "2")]
+    [Arguments("text --device -1 --no-play", "-1")]
+    // 名前の一部でも指定できる (どのデバイスかは鳴らす直前に決める)
+    [Arguments("text --device Jabra", "Jabra")]
+    public async Task Parse_Device(string commandLine, string? expected)
+    {
+        var (_, options) = ArgumentParser.Parse(commandLine.Split(' '), DefaultSettings());
+
+        await Assert.That(options.Device).IsEqualTo(expected);
+    }
+
+    [Test]
     public async Task ParseTestCommand_MaxWait()
     {
         var (_, options) = ArgumentParser.ParseTestCommand("テスト", ["--max-wait", "3"], DefaultSettings());
@@ -257,6 +270,9 @@ public class ArgumentParserTests
     [Arguments("--max-wait", "-1")]
     [Arguments("--max-wait", "1.5")]
     [Arguments("--max-wait", "--no-play")]
+    [Arguments("--device", "-2")]
+    [Arguments("--device", "")]
+    [Arguments("--device", "--no-play")]
     public async Task Parse_InvalidOptionValue_Throws(string option, string value)
     {
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
@@ -624,23 +640,45 @@ public class ArgumentParserTests
     [Arguments("", false, false)]
     [Arguments("--json", true, false)]
     [Arguments("--full --json", true, true)]
-    [Arguments("--full --log-level debug --Audio:OutputDevice=1", false, true)]
+    [Arguments("--full --log-level debug --Audio:Devices:0=1", false, true)]
     public async Task ParseDevicesOptions_ReadsFlags(string args, bool json, bool full)
     {
-        var options = ArgumentParser.ParseDevicesOptions(args.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        var options = ArgumentParser.ParseDevicesOptions(args.Split(' ', StringSplitOptions.RemoveEmptyEntries), DefaultSettings());
 
-        await Assert.That(options).IsEqualTo((json, full));
+        await Assert.That((options.Json, options.Full)).IsEqualTo((json, full));
+        await Assert.That(options.Speak).IsNull();
+    }
+
+    [Test]
+    [Arguments("--speak", SpeechEngineKind.Voicevox, "1")]
+    [Arguments("--speak -s 3", SpeechEngineKind.Voicevox, "3")]
+    [Arguments("--speaker Frimomen --engine voicepeak --speak --full", SpeechEngineKind.Voicepeak, "Frimomen")]
+    public async Task ParseDevicesOptions_Speak(string args, SpeechEngineKind engine, string speaker)
+    {
+        var options = ArgumentParser.ParseDevicesOptions(args.Split(' '), DefaultSettings());
+
+        await Assert.That(options.Speak).IsNotNull();
+        await Assert.That(options.Speak!.Engine).IsEqualTo(engine);
+        await Assert.That(options.Speak.Speaker).IsEqualTo(speaker);
     }
 
     [Test]
     [Arguments("--jsn")]
     [Arguments("--json extra")]
     [Arguments("--log-level")]
+    // --speak の声の指定は --speak のときだけ (一覧だけ出して黙って無視しない)
+    [Arguments("-s 3")]
+    [Arguments("--engine voicepeak")]
+    // --speak は stdout に人向けの行を出すので、JSON のつもりの stdout を壊さない
+    [Arguments("--speak --json")]
+    [Arguments("--speak -s abc")]
+    // VOICEPEAK は DefaultSpeaker が空なので -s が必須
+    [Arguments("--speak --engine voicepeak")]
     public async Task ParseDevicesOptions_UnexpectedArgument_ThrowsInvalidArguments(string args)
     {
         // 回帰: 不明な引数を読み飛ばしていたため、devices --jsn で JSON のつもりの stdout に人向けの一覧を出して成功していた
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
-            Task.FromResult(ArgumentParser.ParseDevicesOptions(args.Split(' '))));
+            Task.FromResult(ArgumentParser.ParseDevicesOptions(args.Split(' '), DefaultSettings())));
 
         await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.General.InvalidArguments);
     }

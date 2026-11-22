@@ -184,8 +184,11 @@ public class AudioExportService
         suggestedSolution);
 
     /// <remarks>
-    /// 一時ファイル (<see cref="DiskCacheStore.TemporarySuffix"/>) に書いてから置き換える。直接書くと、途中で失敗・中断したときに
-    /// 途中までのファイルが残り、既存のファイルも壊れる。一時ファイルは失敗しても残さない。
+    /// <para>一時ファイル (<see cref="DiskCacheStore.TemporarySuffix"/>) に書いてから置き換える。直接書くと、途中で失敗・中断したときに
+    /// 途中までのファイルが残り、既存のファイルも壊れる。一時ファイルは失敗しても残さない。</para>
+    /// <para>一時ファイルの名前は固定なので、呼び出し元は <see cref="SpeechLock"/> の中で呼ぶ (<see cref="TextToSpeechProcessor"/>)。
+    /// 同じ <c>--out</c> の実行どうしが同時に保存すると、互いの一時ファイルを壊したり消したりする。
+    /// 名前を実行ごとに変えても、同じファイルへの置き換え (<see cref="File.Move(string, string, bool)"/>) が同時だと失敗する。</para>
     /// </remarks>
     private async Task WriteOutputFileAsync(byte[] audioData, string outPath, CancellationToken cancellationToken)
     {

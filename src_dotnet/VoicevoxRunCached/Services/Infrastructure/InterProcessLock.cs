@@ -19,7 +19,7 @@ namespace VoicevoxRunCached.Services.Infrastructure;
 public static class InterProcessLock
 {
     /// <summary>
-    /// 読み上げ (キャッシュ参照・合成・再生・<c>--out</c>) を直列化するロックファイル。
+    /// エンジン・キャッシュに触れる処理 (読み上げのキャッシュ参照・合成、<c>--init</c> など) を直列化するロックファイル。再生は <see cref="Synthesis.PlaybackLock"/>。
     /// ユーザーごとの一時フォルダに置くので、別の場所にインストールしたものとも共有される。
     /// </summary>
     public static string SpeechLockPath { get; } = Path.Combine(Path.GetTempPath(), "VoicevoxRunCached.speech.lock");
@@ -74,13 +74,19 @@ public static class InterProcessLock
     private static bool IsLockConflict(IOException ex)
         => (ex.HResult & 0xFFFF) is ErrorSharingViolation or ErrorLockViolation;
 
-    private static VoicevoxRunCachedException WaitTimeout(string lockFilePath, TimeSpan limit)
+    /// <summary>
+    /// 上限 <paramref name="limit"/> までにロックを取得できなかったときの例外 (<see cref="ErrorCodes.Lock.LockWaitTimeout"/>)。
+    /// </summary>
+    /// <param name="lockFilePath">ロックファイル</param>
+    /// <param name="limit">利用者が指定した上限</param>
+    /// <param name="userMessage">利用者向けの文 (<c>{0}</c> に秒数が入る)。null なら「実行しませんでした」</param>
+    public static VoicevoxRunCachedException WaitTimeout(string lockFilePath, TimeSpan limit, string? userMessage = null)
     {
         var seconds = limit.TotalSeconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
         return new VoicevoxRunCachedException(
             errorCode: ErrorCodes.Lock.LockWaitTimeout,
             message: $"Lock was not acquired within {seconds}s: {lockFilePath}",
-            userMessage: $"別の読み上げなどが {seconds} 秒以内に終わらなかったため、実行しませんでした。",
+            userMessage: String.Format(System.Globalization.CultureInfo.InvariantCulture, userMessage ?? "別の読み上げなどが {0} 秒以内に終わらなかったため、実行しませんでした。", seconds),
             suggestedSolution: "待つ上限は --max-wait か appsettings.json の Lock.MaxWaitSeconds で変えられます。");
     }
 }

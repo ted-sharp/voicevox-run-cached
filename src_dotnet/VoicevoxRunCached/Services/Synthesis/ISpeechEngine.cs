@@ -49,6 +49,12 @@ public interface ISpeechEngine
     void StopIfNotKept();
 
     /// <summary>
+    /// このプロセスがエンジンへの接続を持っていて、プロセスが終わるまで手放せないか。
+    /// true なら、読み上げは再生が終わるまで <see cref="SpeechLock"/> を手放さない (<see cref="TextToSpeechProcessor"/>)。
+    /// </summary>
+    bool HoldsConnectionUntilExit { get; }
+
+    /// <summary>
     /// このエンジンのフィラーの文と回数 (エンジンのセクションの <c>FillerTexts</c> / <c>MaxFillersPerWait</c>)。
     /// </summary>
     IEngineFillerSettings FillerSettings { get; }

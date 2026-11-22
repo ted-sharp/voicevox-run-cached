@@ -140,13 +140,84 @@ public class CacheSettings
 // Audio output settings
 public class AudioSettings
 {
-    public int OutputDevice { get; set; } = -1;
+    /// <summary>
+    /// 再生デバイスの候補 (上から順に、つながっている最初のデバイスで鳴らす)。各要素は WaveOut の index (-1 は OS 既定) か、
+    /// デバイス名の一部 (<see cref="OutputDeviceSelector"/>)。空なら OS 既定。JSON の数値 (<c>-1</c>) も文字列として読まれる。
+    /// </summary>
+    /// <remarks>
+    /// 初期値を入れてはいけない (ConfigurationBinder が既存の要素に追記するため)。
+    /// </remarks>
+    public string[] Devices { get; set; } = [];
+
+    /// <summary>
+    /// 使わないデバイス (デバイス名の一部)。候補に当たっても、つながっていないものとして次の候補に進む。
+    /// OS 既定 (-1) がこれに合うときも飛ばす。<c>devices --speak</c> でも読み上げない。
+    /// </summary>
+    /// <remarks>
+    /// 番号は書けない (抜き差しでずれて、別のデバイスを除外してしまうため)。
+    /// 初期値を入れてはいけない (ConfigurationBinder が既存の要素に追記するため)。
+    /// </remarks>
+    public string[] ExcludedDevices { get; set; } = [];
+
+    /// <summary>
+    /// デバイスごとの設定。鳴らすデバイスの名前に合う最初の項目を使う (-1 で鳴らすときは OS 既定のデバイス名と照合する)。
+    /// </summary>
+    /// <remarks>
+    /// 初期値を入れてはいけない (ConfigurationBinder が既存の要素に追記するため)。
+    /// </remarks>
+    public DeviceOptionSettings[] DeviceOptions { get; set; } = [];
+
     public double Volume { get; set; } = 1.0;
     public bool PrepareDevice { get; set; } = false;
     public int PreparationDurationMs { get; set; } = 200;
     public double PreparationVolume { get; set; } = 0.01;
     public int DesiredLatency { get; set; } = 100; // 100ms
     public int NumberOfBuffers { get; set; } = 3;
+
+    /// <summary>
+    /// 話者ごとの再生デバイスの候補。合う項目の候補を探し、見つからなければ <see cref="Devices"/> に続ける。
+    /// <c>--device</c> を指定すれば、話者の候補の代わりにそれを探す。
+    /// </summary>
+    /// <remarks>
+    /// 辞書にしないのは、設定のキーでは <c>:</c> が階層の区切りになり、<c>"voicepeak:Frimomen"</c> のようなキーを書けないため。
+    /// 初期値を入れてはいけない (ConfigurationBinder が既存の要素に追記するため。<see cref="FillerSettings.FillerTexts"/> と同じ)。
+    /// </remarks>
+    public SpeakerDeviceSettings[] SpeakerDevices { get; set; } = [];
+}
+
+// 話者と再生デバイスの対応 (Audio.SpeakerDevices の 1 項目)
+public class SpeakerDeviceSettings
+{
+    public SpeechEngineKind Engine { get; set; } = SpeechEngineKind.Voicevox;
+
+    /// <summary>
+    /// 話者。<c>--speaker</c> と同じ書き方。VOICEPEAK・CeVIO の感情 (<c>:</c> から後ろ) は照合に使わない。
+    /// </summary>
+    public string Speaker { get; set; } = "";
+
+    /// <summary>
+    /// 再生デバイスの候補 (上から順)。書き方は <see cref="AudioSettings.Devices"/> と同じ。1 つ以上書く。
+    /// </summary>
+    public string[] Devices { get; set; } = [];
+}
+
+// 再生デバイスごとの設定 (Audio.DeviceOptions の 1 項目)
+public class DeviceOptionSettings
+{
+    /// <summary>
+    /// 対象のデバイス (デバイス名の一部。番号は抜き差しでずれるので書けない)。
+    /// </summary>
+    public string Device { get; set; } = "";
+
+    /// <summary>
+    /// 再生の最初の音の前に足す無音 (ミリ秒)。
+    /// </summary>
+    /// <remarks>
+    /// Bluetooth のデバイスは、音が来ない間は送信を休み、再開するまでに届いた冒頭の音を捨てる。
+    /// 同じ流れで無音を先に送ると、本編が届く前に再開する (Anker SoundCore では 300ms では足りず 800ms で切れなかった)。
+    /// 別の流れで先に鳴らす warm-up (<see cref="AudioSettings.PrepareDevice"/>) では、本編を開くまでの間にまた休むので効かなかった。
+    /// </remarks>
+    public int LeadingSilenceMs { get; set; }
 }
 
 // Filler sound settings

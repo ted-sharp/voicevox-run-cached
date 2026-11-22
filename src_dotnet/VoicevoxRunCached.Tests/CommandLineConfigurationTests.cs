@@ -44,6 +44,16 @@ public class CommandLineConfigurationTests
     }
 
     [Test]
+    public async Task SpeakFlag_DoesNotConsumeFollowingOption()
+    {
+        // devices --speak も値を取らないので FlagArgs に入れる (無いと直後の --log-level が --speak の値になる)
+        var configuration = ConfigurationManager.BuildConfigurationWithCommandLine(
+            ["devices", "--speak", "--log-level", "debug"]);
+
+        await Assert.That(configuration["Logging:Level"]).IsEqualTo("debug");
+    }
+
+    [Test]
     [Arguments("--log-level")]
     [Arguments("--Logging:Level=error")]
     [Arguments("--init")]

@@ -26,6 +26,12 @@ internal sealed class FakeCevioRemoteService : ICevioRemoteService
     public bool OutputResult { get; set; } = true;
 
     /// <summary>
+    /// true なら、<see cref="OutputWaveToFile"/> は WAV を書かずに <see cref="OutputResult"/> を返す
+    /// (ほかのアプリが外部連携を使っているときの CeVIO AI を再現する)。
+    /// </summary>
+    public bool SkipWrite { get; set; }
+
+    /// <summary>
     /// <see cref="OutputWaveToFile"/> が書く WAV のサンプル値 (16bit)。
     /// </summary>
     public short SampleValue { get; set; } = 10000;
@@ -73,9 +79,9 @@ internal sealed class FakeCevioRemoteService : ICevioRemoteService
         {
             throw error;
         }
-        if (!OutputResult)
+        if (!OutputResult || SkipWrite)
         {
-            return false;
+            return OutputResult;
         }
         using var writer = new WaveFileWriter(path, new WaveFormat(48000, 16, 1));
         for (var i = 0; i < 480; i++)

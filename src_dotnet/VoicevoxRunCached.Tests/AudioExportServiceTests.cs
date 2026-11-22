@@ -4,6 +4,7 @@ using VoicevoxRunCached.Configuration;
 using VoicevoxRunCached.Exceptions;
 using VoicevoxRunCached.Models;
 using VoicevoxRunCached.Services.Audio;
+using VoicevoxRunCached.Services.Cache;
 using VoicevoxRunCached.Services.Synthesis;
 
 namespace VoicevoxRunCached.Tests;
@@ -120,13 +121,16 @@ public class AudioExportServiceTests
             await CreateService().ExportSegmentsAsync([Segment(TestAudio.SineWav(24000, 300))], outPath);
 
             await Assert.That(AudioFormatDetector.DetectFormat(await File.ReadAllBytesAsync(outPath))).IsEqualTo(AudioFormat.Wav);
-            await Assert.That(File.Exists(outPath + ".tmp")).IsFalse();
+            await Assert.That(TemporaryFilesOf(outPath)).IsEmpty();
         }
         finally
         {
             File.Delete(outPath);
         }
     }
+
+    private static string[] TemporaryFilesOf(string outPath)
+        => Directory.GetFiles(Path.GetDirectoryName(outPath)!, Path.GetFileName(outPath) + "*" + DiskCacheStore.TemporarySuffix);
 
     [Test]
     public async Task EnsureWritableOutput_FolderUnderFile_Throws()

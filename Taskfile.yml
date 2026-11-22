@@ -69,6 +69,16 @@ tasks:
     cmds:
       - dotnet run --project {{.PROJ}} -- --test {{.CLI_ARGS}}
 
+  devices:
+    desc: 再生デバイスの番号の一覧
+    cmds:
+      - dotnet run --project {{.PROJ}} -- devices {{.CLI_ARGS}}
+
+  devices:speak:
+    desc: 各デバイスからその番号を読み上げる (例 task devices:speak -- -s 3)
+    cmds:
+      - dotnet run --project {{.PROJ}} -- devices --speak {{.CLI_ARGS}}
+
   publish:
     desc: standalone EXE を src_dotnet/publish/VoicevoxRunCached に出力
     cmds:
@@ -95,9 +105,14 @@ tasks:
       - powershell -NoProfile -ExecutionPolicy Bypass -File {{.SRC}}/_install.ps1 -SourceDir {{.PUBLISH_DIR}}/VoicevoxRunCached {{if .INSTALL_DIR}}-InstallDir '{{.INSTALL_DIR}}'{{end}}
 
   uninstall:
-    desc: task install で入れた exe と appsettings.json を消す (cache / logs は残す)
+    desc: task install で入れたもの (exe・appsettings.json・cache・logs) を消す
     cmds:
       - powershell -NoProfile -ExecutionPolicy Bypass -File {{.SRC}}/_uninstall.ps1 {{if .INSTALL_DIR}}-InstallDir '{{.INSTALL_DIR}}'{{end}}
+
+  uninstall:keep-data:
+    desc: exe と appsettings.json だけを消す (cache / logs は残す。設定を新しくして入れ直すとき)
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File {{.SRC}}/_uninstall.ps1 -KeepData {{if .INSTALL_DIR}}-InstallDir '{{.INSTALL_DIR}}'{{end}}
 
   clean:
     desc: bin / obj / publish を削除 (キャッシュ・ログは残す)

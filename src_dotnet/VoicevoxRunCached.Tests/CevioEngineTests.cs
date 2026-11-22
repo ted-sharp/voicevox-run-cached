@@ -228,6 +228,33 @@ public class CevioEngineTests
     }
 
     [Test]
+    public async Task Synthesize_ReportedSuccessWithoutWav_IsEngineUnavailable()
+    {
+        // 回帰: ほかのプロセスが外部連携を使っていると、CeVIO AI は WAV を書かずに true を返す。
+        // 読もうとして FileNotFoundException (スタックトレース付きの想定外のエラー) になり、残りの文も 1 件ずつ試していた
+        var remote = new FakeCevioRemoteService { SkipWrite = true };
+        var engine = TestEngines.Cevio(remote);
+        await engine.PrepareAsync(Cast, CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() => engine.SynthesizeAsync(Request(Cast), CancellationToken.None));
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Engine.EngineNotAvailable);
+        await Assert.That(engine.IsEngineUnavailable(ex)).IsTrue();
+    }
+
+    [Test]
+    public async Task HoldsConnectionUntilExit_OnlyAfterConnecting()
+    {
+        // キャッシュだけで鳴らす読み上げは CeVIO AI に接続しないので、再生を待たずに SpeechLock を手放してよい
+        var engine = TestEngines.Cevio(new FakeCevioRemoteService());
+        await Assert.That(engine.HoldsConnectionUntilExit).IsFalse();
+
+        await engine.PrepareAsync(Cast, CancellationToken.None);
+
+        await Assert.That(engine.HoldsConnectionUntilExit).IsTrue();
+    }
+
+    [Test]
     public async Task Synthesize_OutputFailsAfterHostClosed_IsEngineUnavailable()
     {
         // CeVIO AI が閉じられたら、残りの文を 1 件ずつ試さずに止める

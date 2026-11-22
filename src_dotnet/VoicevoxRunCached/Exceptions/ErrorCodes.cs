@@ -66,6 +66,8 @@ public static class ErrorCodes
             Audio.AudioGenerationFailed => "音声の生成に失敗しました",
             Audio.AudioFormatError => "音声フォーマットが無効です",
             Audio.AudioFileExportFailed => "音声ファイルの出力に失敗しました",
+            Audio.OutputDeviceNotFound => "再生デバイスが見つかりません",
+            Audio.OutputDeviceAmbiguous => "再生デバイスの名前が複数のデバイスに合います",
 
             // Lock
             Lock.LockWaitTimeout => "他の処理が終わるのを待ちきれませんでした",
@@ -113,6 +115,8 @@ public static class ErrorCodes
         public const string AudioGenerationFailed = "AUDIO_001";
         public const string AudioFormatError = "AUDIO_003";
         public const string AudioFileExportFailed = "AUDIO_007";
+        public const string OutputDeviceNotFound = "AUDIO_008";
+        public const string OutputDeviceAmbiguous = "AUDIO_009";
     }
 
     // API関連のエラーコード

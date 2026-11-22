@@ -15,7 +15,8 @@ VOICEVOX REST API のラッパー C# Console アプリ (VOICEPEAK・CeVIO AI に
 | CLAUDE.md (この文書) | 守ること (壊すと困る約束) を 1 項目 1〜2 行で。対象のクラスと、回帰を検知するテスト名を添える | 理由の詳しい説明・経緯・使い方 |
 | コードのコメント (XML doc の `<remarks>`・行コメント) | なぜそうしたか。読む人がその場所で必要とする理由 (実機で確かめた挙動・やめた案と理由も) | 経緯 (いつ・誰が・何を直したか) |
 | テストのコメント | 何の回帰を検知するか (`// 回帰: …`) | |
-| README.md | 利用者向け: 使い方・オプション・設定・終了コード・仕組み・トラブルシューティング | 実装の詳細 |
+| appsettings.json (同梱) | 各設定項目の意味をコメントで (README には書かず、節へのリンクだけ) | |
+| README.md | 利用者向け。読む順に、はじめに → 用途別ガイド (やりたいことごとの手順) → リファレンス (オプション・終了コード・設定・ファイルの場所) → 仕組み → トラブルシューティング。手順はガイド、規則は仕組みに置き、ほかからはリンクする | 実装の詳細 |
 | RELEASE_NOTES.md | 1 項目 1 行・利用者から見た変化だけ | 経緯・実装の詳細 |
 | doc/RELEASE.md | リリース手順 | |
 | git log | 経緯 (何を・なぜ変えたか) | |
@@ -24,7 +25,7 @@ VOICEVOX REST API のラッパー C# Console アプリ (VOICEPEAK・CeVIO AI に
 
 1. コードのコメント (理由)
 2. CLAUDE.md の「守ること」とテスト名 (約束を足した・変えたとき)
-3. README.md (利用者から見えるとき。オプション表・終了コード表・設定例のコメントも)
+3. README.md と appsettings.json のコメント (利用者から見えるとき。用途別ガイドの手順・オプション表・終了コード表も)
 4. RELEASE_NOTES.md の Unreleased (利用者から見えるとき)
 
 CLAUDE.md に理由を書きたくなったら、そのクラスのコメントに書いて、ここにはクラス名を書く。特定のクラスに属さない規則 (全体に掛かるコーディング規約など) だけは、ここに理由を一言添える。
@@ -42,10 +43,13 @@ task format:check             # 整形差分の検証のみ
 task check                    # format → Release build → test (コミット前の確認)
 task run -- "こんにちは" -s 0  # サンプル実行 (エンジンはアプリが自動起動)
 task run:test                 # appsettings.json の Test.Message で実行
+task devices                  # 再生デバイスの番号の一覧
+task devices:speak -- -s 3    # 各デバイスからその番号を読み上げる
 task publish                  # standalone EXE を src_dotnet/publish に出力
 task publish:zip              # 同上 + バージョン付き ZIP
 task install                  # publish して %LOCALAPPDATA%\Programs\VoicevoxRunCached に入れる (INSTALL_DIR=... で変更。設定・cache・logs は残す)
-task uninstall                # 同上の exe と appsettings.json を消す
+task uninstall                # 同上で入れたもの (exe・appsettings.json・cache・logs) を消す
+task uninstall:keep-data      # exe と appsettings.json だけ消す (設定を新しくして入れ直すとき)
 task clean                    # bin / obj / publish を削除
 task fix-all -- -Fast         # _fix-all.ps1 (引数なしで tests + SonarQube + ReSharper まで)
 task hooks:install            # コミット時のチェック (.githooks) を有効にする (clone 後に 1 回)
@@ -53,26 +57,32 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 
 - テストは .NET 11 + Microsoft.Testing.Platform のため `dotnet test` では動かない (`task test` を使う)。1 クラスだけなら `dotnet run --project src_dotnet/VoicevoxRunCached.Tests -- --treenode-filter "/*/*/クラス名/*"`
 - リリース手順は `doc/RELEASE.md`
-- コマンドとオプションは README の「コマンドリファレンス」と `--help` (`ArgumentParser.ShowUsage`)
+- コマンドとオプションは README の「コマンドとオプション」と `--help` (`ArgumentParser.ShowUsage`)
 
 ## Request Flow
 
 1. `Program.cs` → `ApplicationBootstrap` (設定の読み込み・検証、Serilog) → `CommandRouter.ExecuteCommandAsync` の switch → 各ハンドラ
 2. 読み上げは `TextToSpeechProcessor`: `SpeechLock` の中で、`TextSegmentProcessor` で文に分割 → `AudioCacheManager` でキャッシュ (Opus) を引く
-3. `SegmentProducer` (producer) と `AudioPlayer.PlayStreamingAsync` (consumer) を `Channel<TextSegment>` で並走させる。producer はキャッシュ済みを WAV にデコードして流し、未キャッシュ分は `ISpeechEngine` で 1 件ずつ合成して流す
+3. `SegmentProducer` (producer) と `AudioPlayer.PlayStreamingAsync` (consumer。`PlaybackLock` の中) を `Channel<TextSegment>` で並走させる。producer が終われば `SpeechLock` を手放し、再生の終わりはロックの外で待つ (CeVIO に接続したときは再生の終わりまで持つ)。producer はキャッシュ済みを WAV にデコードして流し、未キャッシュ分は `ISpeechEngine` で 1 件ずつ合成して流す
 4. `--out` 指定時は `AudioExportService` が WAV / Opus で保存
 
 ## 守ること
 
 理由は各クラスのコメントにある。
 
-### プロセス間ロック (`SpeechLock` / `InterProcessLock`)
-- エンジンかキャッシュに触れるコマンド (読み上げ・`--test`・`--init`・`speakers`・`--clear`) は `SpeechLock.RunAsync` で囲む。囲まないのは `devices` だけ
-- ロックは `%TEMP%\VoicevoxRunCached.speech.lock` を `FileShare.None` で開くファイルロック。名前付き Mutex は使わない
+### プロセス間ロック (`SpeechLock` / `PlaybackLock` / `InterProcessLock`)
+- エンジンかキャッシュに触れるコマンド (読み上げ・`--test`・`--init`・`speakers`・`--clear`) は `SpeechLock.RunAsync` で囲む。囲まないのは `devices` (一覧) だけ。`devices --speak` は `TextToSpeechProcessor` を通して囲む
+- `devices --speak` は先に全部の番号をまとめて合成し (`--no-play`)、デバイスごとに鳴らす (`--cache-only` にしない。進捗は出さない `Quiet`) (`DeviceCommandHandler`) — `DeviceCommandHandlerTests.AllDeviceNumbersText_SplitsIntoEachDeviceNumberText`
+- ロックは `%TEMP%\VoicevoxRunCached.speech.lock` と `%TEMP%\VoicevoxRunCached.playback.{番号|default}.lock` を `FileShare.None` で開くファイルロック。名前付き Mutex は使わない
+- 読み上げは、キャッシュ参照・合成を `SpeechLock` の中で、再生をデバイスごとの `PlaybackLock` の中で行う。producer が終わったら再生の途中でも `SpeechLock` を手放す (`TextToSpeechProcessor`)。ロックの外の再生はエンジン・キャッシュに触れない (フィラーの読み込みは手放す前に `FillerGate.CloseAsync` で締め切る) — `TextToSpeechProcessorTests.WaitingForPlaybackDevice_ReleasesSpeechLock` / `FillerGateTests`
+- ただしエンジンに接続を持ったまま (`ISpeechEngine.HoldsConnectionUntilExit`。CeVIO が接続した後) なら、再生が終わるまで `SpeechLock` を手放さない — `TextToSpeechProcessorTests.ConnectedToCevio_HoldsSpeechLockUntilPlaybackEnds` / `CevioEngineTests.HoldsConnectionUntilExit_OnlyAfterConnecting`
+- `--out` は `SpeechLock` の中で保存する (`{out}.tmp` が固定名のため)。失敗は再生を終えてから投げる — `TextToSpeechProcessorTests.OutFile_IsSavedBeforeReleasingSpeechLock`
+- `PlaybackLock` の待ちきれなかったときの文は「再生しませんでした」(合成は済んでいる) — `PlaybackLockTests.MaxWait_CountsTimeAlreadyWaitedForSpeechLock`
+- 取る順は `SpeechLock` → `PlaybackLock`。`PlaybackLock` は consumer の中で待つ (待つ間も合成を進める)
 - ロックを**解放する前に**全エンジンの `StopIfNotKept` を呼ぶ — 各テストクラスの `EngineStartedByUs_IsStoppedBeforeReleasingLock`
 - `--clear` もロックの中で消す — `CacheCommandHandlerTests`
-- 待つ上限は `Lock.MaxWaitSeconds` / `--max-wait` (`SpeechLock.ResolveMaxWait`。未設定 = 上限なし、0 = 待たない)。超えたら `LOCK_001` (終了コード 9)、`CommandRouter` はスタックトレースなしの Warning — `InterProcessLockTests` / `SpeechLockTests`
-- テストは本物のロックファイルを使わない (`TestLockFile.CreateSpeechLock` / `AppServiceProvider.SpeechLockPath`)。既定が共有のファイルであることは `AppServiceProviderTests.SpeechLock_UsesSharedLockFileByDefault`
+- 待つ上限は `Lock.MaxWaitSeconds` / `--max-wait` (`SpeechLock.ResolveMaxWait`。未設定 = 上限なし、0 = 待たない)。読み上げでは 2 つのロックを待った時間の合計に掛ける。超えたら `LOCK_001` (終了コード 9)、`CommandRouter` はスタックトレースなしの Warning — `InterProcessLockTests` / `SpeechLockTests` / `PlaybackLockTests.MaxWait_CountsTimeAlreadyWaitedForSpeechLock`
+- テストは本物のロックファイルを使わない (`TestLockFile.CreateSpeechLock` / `TempLockDirectory.CreatePlaybackLock` / `AppServiceProvider.SpeechLockPath` / `PlaybackLockDirectory`)。既定が共有のファイルであることは `AppServiceProviderTests.SpeechLock_UsesSharedLockFileByDefault` / `PlaybackLock_UsesSharedLockDirectoryByDefault`
 - ロックより前に走る書き込み確認 (`DirectoryValidation.BeWritableDirectory`) のファイル名は毎回一意にし、`FileOptions.DeleteOnClose` で消す
 
 ### 合成エンジンの切り替え (`ISpeechEngine` / `SpeechEngineProvider`)
@@ -108,6 +118,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - 標準入出力はリダイレクトし (標準入力は閉じる)、終了を待つ。`StopIfNotKept` は何もしない
 
 ### CeVIO AI (`CevioEngine` / `CevioHostManager` / `CevioRemoteService`)
+- 外部連携は同時に 1 アプリで、接続はプロセスの終了まで残る (COM を解放しても切れない)。`HoldsConnectionUntilExit` で再生の終わりまで `SpeechLock` を持つ。`OutputWaveToFile` が true でも WAV が無ければ `EngineNotAvailable` — `CevioEngineTests.Synthesize_ReportedSuccessWithoutWav_IsEngineUnavailable`
 - COM に触れるのは `CevioRemoteService` だけ (遅延バインディング)。同期の COM 呼び出しは `CevioEngine.RunComAsync` で包む。テストは `FakeCevioRemoteService`
 - ホストの起動に `ServiceControl2V40.StartHost` を使わない。`CevioHostManager` が `UseShellExecute = true` で起動する — `CevioHostManagerTests.StartHost_DoesNotInheritHandles`。自分で起動したホストだけを `KeepHostRunning: false` のとき閉じる
 - 起動したプロセスが終わったら、同じ実行ファイルのプロセスがあれば起動を待ち (閉じない)、無ければすぐ `EngineNotAvailable` — `CevioHostManagerTests.HostHandedToStartingInstance_WaitsAndIsNotClosed` / `HostExitsDuringStartup_FailsWithoutWaitingForTimeout` / `StartingInstanceExits_FailsWithoutWaitingForTimeout`
@@ -123,14 +134,14 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - キャッシュ由来の音声は producer が `AudioCacheManager.DecodeOrDelete` で WAV にデコードしてから流す (`Task.Run` で再生と並行)。読めなければ未キャッシュとして合成し直し、`--cache-only` なら失敗として数える — `SegmentProducerTests` / `AudioCacheManagerIntegrationTests` / `TextToSpeechProcessorTests.CorruptedCache_IsResynthesizedAndRewritten`
 - 1 回の入力に同じ文が複数あれば、2 回目以降は 1 回目の結果 (失敗なら失敗) を使い、保存も 1 回だけ — `SegmentProducerTests`
 - `ISpeechEngine.IsEngineUnavailable` の失敗の後は、残りの未キャッシュ分を呼ばずに失敗として数え、channel に流さない (キャッシュ済みは流す)。`--init` も同じ — `SegmentProducerTests` / `FillerManagerTests`
-- 片側の例外は `WhenAllOrCancelOnFaultAsync` でもう一方も止める — `WhenAllOrCancelOnFaultTests`
+- producer が終わる前の片側の例外は `WhenFirstCompletesOrCancelOnFaultAsync` でもう一方も止める — `WhenFirstCompletesOrCancelOnFaultTests`
 - キャッシュ保存は fire-and-forget し、producer の `finally` で待つ。`writer.TryComplete()` は `WhenAll` より**前** — `ChannelProducerOrderingTests`
 - フィラーは次のセグメントが `FillerStartDelayMs` 以内に来なければ挟む。読み上げと同じエンジン・話者の声で、音量は `--volume` を掛ける (話速・音高は既定のまま)。`--init` は `Filler.Enabled` に関係なく生成し、`Enabled` は再生にだけ効く。未生成の話者では鳴らさず、Warning は 1 実行 1 回
 - フィラーの文と回数はエンジンごと (`FillerTexts` は空なら `Filler.FillerTexts` で、`--init` と再生の両方が使う。`MaxFillersPerWait` は null = 上限なし (JSON に null と書く)、0 = 鳴らさない、VOICEPEAK の省略時は 2) — `FillerWaitBudgetTests` / `FillerManagerTests.EngineFillerTexts_*` / `ApplicationBootstrapTests.MaxFillersPerWait_IsLoaded`
-- フィラーの失敗は本編を止めない (`AudioPlayer.TryPlayFillerAsync`)。ただし再生タイムアウト (`TimeoutException`) は投げ直す
+- フィラーの失敗は本編を止めない (`AudioPlayer.TryPlayFillerAsync`)。ただし再生タイムアウト (`TimeoutException`) とデバイスのエラー (`MmException`) は投げ直す
 
 ### 音声形式
-- `TextSegment.AudioData` は形式 (WAV / Ogg Opus) もサンプルレートも混在する (内訳は `TextSegment.AudioData` のコメント)。読むときは必ず `AudioFormatDetector.CreateWaveStream` で判定する (`WaveFileReader` 決め打ち禁止)。再生はセグメントごとに `Init` する。`AudioExportService` は 48kHz mono 16bit に揃えて結合する
+- `TextSegment.AudioData` は形式 (WAV / Ogg Opus) もサンプルレートも混在する (内訳は `TextSegment.AudioData` のコメント)。読むときは必ず `AudioFormatDetector.CreateWaveStream` で判定する (`WaveFileReader` 決め打ち禁止)。再生は 1 回の読み上げで `Init` を 1 回だけ行い、48kHz mono にそろえて `PlaybackStream` に並べて流し続ける (文ごとに止めると Bluetooth のデバイスが休み、次の文の始めが切れる。並んでいない間は無音を流す) — `PlaybackStreamTests`。`AudioExportService` は 48kHz mono 16bit に揃えて結合する
 - エンコードは `OpusCodec.EncodeWav` (`Cache.OpusBitrateKbps`、キャッシュ・フィラー・`--out .opus` 共通)。ビットレートはキャッシュキーに含めない
 - デコード (`OpusCodec.DecodeToWav`) は **48kHz 固定** — `OpusCodecTests`
 
@@ -196,9 +207,14 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - Serilog は `LoggingManager` がプログラムで構成する (`Serilog:*` は読まない)
 
 ### オーディオデバイス
-- `OutputDevice = -1` で OS 既定、`0+` で WaveOut の index
+- 再生デバイスは候補の一覧で決める。`OutputDeviceSelector.Resolve` が `--device` (無ければ `Audio.SpeakerDevices` の合う項目の `Devices`。VOICEPEAK・CeVIO は感情を見ない) に `Audio.Devices` (空なら `-1` = OS 既定) を続けた候補を作り、`AudioPlayer` → `AudioDeviceManager` / `WavePlayerManager` に決めた index を引数で渡す — `OutputDeviceSelectorTests.Resolve_*`
+- 候補の各要素は番号 (-1 = OS 既定) かデバイス名の一部 (文字列。書き方は `OutputDeviceSelector.TryValidateSpec`)。`SpeakerDevices[].Devices` は空なら設定エラー — `ValidatorsTests.AudioSettings_SpeakerDevicesWithoutDevices_Fails`
+- WaveOut の index は再生するときにロックの前で `OutputDeviceSelector.ToIndex` が決める (候補を上から探す。名前全体の一致を優先、複数に合えば次に進まず `AUDIO_009`、どれも無ければ `AUDIO_008`。`CommandRouter` はスタックトレースなしの Warning) — `OutputDeviceSelectorTests.ToIndex_*`
+- 除外デバイス (`Audio.ExcludedDevices`。名前だけで番号は設定エラー) は候補に当たっても次に進む。OS 既定 (-1) が除外デバイスでも飛ばす (名前は `WaveOutDevices.OsDefaultName`。取れなければ -1 を使う)。`devices --speak` も読み上げない — `OutputDeviceSelectorTests.ToIndex_Excluded*` / `ToIndex_OsDefault*`
+- 冒頭の無音 (`Audio.DeviceOptions[].LeadingSilenceMs`) は、鳴らすデバイスの名前 (-1 は OS 既定の名前) に合う最初の項目で決め (`OutputDeviceSelector.FindOptions`)、`AudioPlayer` が最初の音 (本編かフィラー) にだけ本編と同じ流れで足す (別の流れで先に鳴らすと Bluetooth がまた休む) — `OutputDeviceSelectorTests.FindOptions_MatchesDeviceName`
+- 古い `Audio.OutputDevice` が残っていたら設定エラー (`ApplicationBootstrap.RejectRemovedSettings`) — `ApplicationBootstrapTests.RemovedOutputDevice_IsConfigurationError`
 - バッファは `WavePlayerManager.GetBufferMilliseconds` で換算する。CA1416 を避けるため `Directory.Build.props` で全プロジェクトを Windows 専用と宣言している
-- warm-up は `AudioDeviceManager.StartPreparation` で始める (コンストラクタで始めない)。読み上げは `--no-play` 以外のときロック取得直後に `AudioPlayer.BeginDevicePreparation`
+- warm-up は `AudioDeviceManager.StartPreparation` で始める (コンストラクタで始めない)。読み上げは `PlaybackLock` を取った直後に `AudioPlayer.BeginDevicePreparation` (先に始めると同じデバイスの再生に重なる)。デバイスを切り替えるとき前の warm-up を同期で待たない
 
 ## Project Structure
 

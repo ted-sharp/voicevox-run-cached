@@ -19,6 +19,7 @@ public class AudioDeviceManager : IDisposable
     private readonly AudioSettings _settings;
     private readonly ILogger _logger;
     private Task? _devicePreparationTask;
+    private int? _preparedDevice;
     private bool _disposed;
 
     public AudioDeviceManager(AudioSettings settings, ILogger logger)
@@ -28,22 +29,28 @@ public class AudioDeviceManager : IDisposable
     }
 
     /// <summary>
-    /// <c>Audio.PrepareDevice</c> が有効なら warm-up をバックグラウンドで始める。2 回目以降は何もしない。
+    /// <c>Audio.PrepareDevice</c> が有効なら <paramref name="device"/> の warm-up をバックグラウンドで始める。
+    /// 同じデバイスで 2 回目以降は何もしない。
     /// </summary>
+    /// <param name="device">WaveOut の index (-1 は OS 既定)</param>
     /// <remarks>
     /// 再生することが決まった時点で呼び、キャッシュ参照やエンジン起動と並行して温めておく
     /// (完了は <see cref="EnsureDeviceReadyAsync"/> で待つ)。
+    /// 別のデバイスを渡したら (<c>devices --speak</c> で順に鳴らすとき) そのデバイスを温め直す。
     /// </remarks>
-    public void StartPreparation()
+    public void StartPreparation(int device)
     {
-        if (!_settings.PrepareDevice || _devicePreparationTask != null)
+        if (!_settings.PrepareDevice || (_devicePreparationTask != null && _preparedDevice == device))
         {
             return;
         }
 
-        _logger.LogDebug("デバイス事前準備を開始します");
+        _logger.LogDebug("デバイス事前準備を開始します - デバイス: {Device}", device);
+        // 前のデバイスの warm-up は待たない (同期で待つと、呼び出し元が SpeechLock を持ったまま止まる)。
+        // 前の warm-up は自身のタイムアウト (DevicePreparationTimeoutSeconds) で必ず終わり、別のデバイスなので新しい warm-up とぶつからない
+        _preparedDevice = device;
         // 失敗は PrewarmAudioDeviceAsync が例外付きの Warning にして握る (warm-up に失敗しても再生は続ける) ので、このタスクは失敗しない
-        _devicePreparationTask = Task.Run(() => PrewarmAudioDeviceAsync(_settings.PreparationDurationMs));
+        _devicePreparationTask = Task.Run(() => PrewarmAudioDeviceAsync(device, _settings.PreparationDurationMs));
     }
 
     public void Dispose()
@@ -64,11 +71,11 @@ public class AudioDeviceManager : IDisposable
     }
 
     /// <summary>
-    /// warm-up の完了を待つ。まだ始めていなければここで始める。
+    /// <paramref name="device"/> の warm-up の完了を待つ。まだ始めていなければここで始める。
     /// </summary>
-    public async Task EnsureDeviceReadyAsync()
+    public async Task EnsureDeviceReadyAsync(int device)
     {
-        StartPreparation();
+        StartPreparation(device);
 
         if (_devicePreparationTask != null)
         {
@@ -76,7 +83,7 @@ public class AudioDeviceManager : IDisposable
         }
     }
 
-    private async Task PrewarmAudioDeviceAsync(int durationMs = 100)
+    private async Task PrewarmAudioDeviceAsync(int device, int durationMs)
     {
         try
         {
@@ -88,9 +95,9 @@ public class AudioDeviceManager : IDisposable
             using var wavePlayer = new WaveOut();
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(AudioConstants.DevicePreparationTimeoutSeconds));
 
-            if (_settings.OutputDevice >= 0)
+            if (device >= 0)
             {
-                wavePlayer.DeviceNumber = _settings.OutputDevice;
+                wavePlayer.DeviceNumber = device;
             }
 
             wavePlayer.BufferMilliseconds = WavePlayerManager.GetBufferMilliseconds(_settings);

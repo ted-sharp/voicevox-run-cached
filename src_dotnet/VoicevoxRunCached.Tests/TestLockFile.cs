@@ -21,3 +21,17 @@ internal sealed class TestLockFile : IDisposable
 
     public void Dispose() => File.Delete(Path);
 }
+
+/// <summary>
+/// テストごとの <see cref="PlaybackLock"/> のロックファイルを置くフォルダ。Dispose で消す (理由は <see cref="TestLockFile"/> と同じ)。
+/// </summary>
+internal sealed class TempLockDirectory : IDisposable
+{
+    public string Path { get; } = Directory.CreateDirectory(
+        System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"vrc_locks_{Guid.NewGuid():N}")).FullName;
+
+    public PlaybackLock CreatePlaybackLock(Microsoft.Extensions.Logging.ILogger? logger = null)
+        => new(logger ?? NullLogger.Instance) { LockDirectory = Path };
+
+    public void Dispose() => Directory.Delete(Path, recursive: true);
+}
