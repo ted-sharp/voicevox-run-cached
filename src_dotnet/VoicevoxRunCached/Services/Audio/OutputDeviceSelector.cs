@@ -70,45 +70,72 @@ public static class OutputDeviceSelector
     }
 
     /// <summary>
-    /// 指定 <paramref name="spec"/> を WaveOut の index にする。
+    /// 指定 <paramref name="spec"/> を WaveOut の index にする。見つからなければ <paramref name="fallbacks"/> を順に探す。
     /// </summary>
     /// <param name="spec">index (-1 は OS 既定) か、デバイス名の一部 (大文字小文字を区別しない)</param>
+    /// <param name="fallbacks">代わりのデバイス (<see cref="AudioSettings.FallbackDevices"/>。書き方は <paramref name="spec"/> と同じ)</param>
     /// <param name="waveOutNames">WaveOut のデバイス名 (要素の位置が index)</param>
-    /// <param name="fallbackToDefault">見つからなければ OS 既定にする (<see cref="AudioSettings.FallbackToDefaultDevice"/>)</param>
     /// <exception cref="VoicevoxRunCachedException">
-    /// 見つからない (<see cref="ErrorCodes.Audio.OutputDeviceNotFound"/>。<paramref name="fallbackToDefault"/> なら投げない)・
+    /// どれも見つからない (<see cref="ErrorCodes.Audio.OutputDeviceNotFound"/>)・
     /// 名前が複数のデバイスに合う (<see cref="ErrorCodes.Audio.OutputDeviceAmbiguous"/>)
     /// </exception>
     /// <remarks>
     /// <para>名前全体が一致するデバイスを部分一致より優先する。同じ語を含むデバイスが複数あっても、名前全体を書けば選べるように。</para>
-    /// <para>複数に合うのは書き方の問題 (どれを鳴らすか決められない) なので、<paramref name="fallbackToDefault"/> でも投げる。</para>
+    /// <para>複数に合うのは書き方の問題 (どれを鳴らすか決められない) なので、次の候補に進まずに投げる。</para>
+    /// <para>-1 は常にあるので、<paramref name="fallbacks"/> の最後に書けば、どれも無いとき OS 既定で鳴る (エラーにならない)。</para>
     /// <para>確かめずに無い index を渡すと、合成した後の waveOutOpen で想定外のエラー (スタックトレース付きの終了コード 1) になるため、
     /// 呼び出し元はロックを待つ前に呼ぶ。</para>
     /// </remarks>
-    public static DeviceChoice ToIndex(string spec, IReadOnlyList<string> waveOutNames, bool fallbackToDefault)
+    public static DeviceChoice ToIndex(string spec, IReadOnlyList<string> fallbacks, IReadOnlyList<string> waveOutNames)
     {
         ArgumentNullException.ThrowIfNull(spec);
+        ArgumentNullException.ThrowIfNull(fallbacks);
         ArgumentNullException.ThrowIfNull(waveOutNames);
 
+        foreach (var candidate in (IEnumerable<string>)[spec, .. fallbacks])
+        {
+            if (Find(candidate, waveOutNames) is { } index)
+            {
+                return new DeviceChoice(index, candidate);
+            }
+        }
+
+        var available = waveOutNames.Count == 0
+            ? "-1 (OS 既定) だけ"
+            : $"-1 (OS 既定) と {DescribeDevices(waveOutNames, Enumerable.Range(0, waveOutNames.Count))}";
+        var reason = fallbacks.Count == 0
+            ? $"再生デバイス {DescribeSpec(spec)} が見つかりません"
+            : $"再生デバイス {DescribeSpec(spec)} も、代わりのデバイス ({String.Join(", ", fallbacks.Select(DescribeSpec))}) も見つかりません";
+        throw new VoicevoxRunCachedException(
+            errorCode: ErrorCodes.Audio.OutputDeviceNotFound,
+            message: $"Output device not found: {spec} (fallbacks: {String.Join(", ", fallbacks)})",
+            userMessage: $"{reason} (つながっているのは {available})。",
+            suggestedSolution: "devices --speak で確かめてください。番号は USB や Bluetooth のデバイスを抜き差しすると変わることがあるので、名前の一部で書くとずれません。"
+                + "見つからないときに鳴らすデバイスは Audio.FallbackDevices に順に書けます (最後に -1 を書くと OS 既定)。");
+    }
+
+    /// <summary>
+    /// <paramref name="spec"/> に合うデバイスの index。無ければ null、複数に合えば投げる。
+    /// </summary>
+    private static int? Find(string spec, IReadOnlyList<string> waveOutNames)
+    {
         if (TryParseIndex(spec, out var index))
         {
-            return index < waveOutNames.Count
-                ? new DeviceChoice(index, FellBackToDefault: false)
-                : NotFound(fallbackToDefault, $"再生デバイス {index} 番がありません", waveOutNames);
+            return index < waveOutNames.Count ? index : null;
         }
 
         var name = spec.Trim();
         var exact = IndicesWhere(waveOutNames, n => String.Equals(n.Trim(), name, StringComparison.OrdinalIgnoreCase));
         if (exact.Count == 1)
         {
-            return new DeviceChoice(exact[0], FellBackToDefault: false);
+            return exact[0];
         }
 
         var partial = IndicesWhere(waveOutNames, n => n.Contains(name, StringComparison.OrdinalIgnoreCase));
         return partial.Count switch
         {
-            1 => new DeviceChoice(partial[0], FellBackToDefault: false),
-            0 => NotFound(fallbackToDefault, $"名前に \"{name}\" を含む再生デバイスがありません", waveOutNames),
+            1 => partial[0],
+            0 => null,
             _ => throw new VoicevoxRunCachedException(
                 errorCode: ErrorCodes.Audio.OutputDeviceAmbiguous,
                 message: $"Output device name \"{name}\" matches {partial.Count} devices",
@@ -117,22 +144,11 @@ public static class OutputDeviceSelector
         };
     }
 
-    private static DeviceChoice NotFound(bool fallbackToDefault, string reason, IReadOnlyList<string> waveOutNames)
-    {
-        if (fallbackToDefault)
-        {
-            return new DeviceChoice(-1, FellBackToDefault: true);
-        }
-        var available = waveOutNames.Count == 0
-            ? "-1 (OS 既定) だけ"
-            : $"-1 (OS 既定) と {DescribeDevices(waveOutNames, Enumerable.Range(0, waveOutNames.Count))}";
-        throw new VoicevoxRunCachedException(
-            errorCode: ErrorCodes.Audio.OutputDeviceNotFound,
-            message: $"Output device not found: {reason}",
-            userMessage: $"{reason} (つながっているのは {available})。",
-            suggestedSolution: "devices --speak で確かめてください。番号は USB や Bluetooth のデバイスを抜き差しすると変わることがあるので、名前の一部で書くとずれません。"
-                + "見つからないときに OS 既定で鳴らすなら Audio.FallbackToDefaultDevice を true にします。");
-    }
+    /// <summary>
+    /// 指定を利用者向けに書く (<c>-1 (OS 既定)</c> / <c>2 番</c> / <c>"Jabra"</c>)。
+    /// </summary>
+    public static string DescribeSpec(string spec)
+        => TryParseIndex(spec, out var index) ? (index < 0 ? "-1 (OS 既定)" : $"{index} 番") : $"\"{spec.Trim()}\"";
 
     private static bool TryParseIndex(string spec, out int index)
         => Int32.TryParse(spec.Trim(), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out index);
@@ -154,5 +170,5 @@ public static class OutputDeviceSelector
 /// <see cref="OutputDeviceSelector.ToIndex"/> の結果。
 /// </summary>
 /// <param name="Index">WaveOut の index (-1 は OS 既定)</param>
-/// <param name="FellBackToDefault">指定のデバイスが見つからず、OS 既定にした</param>
-public sealed record DeviceChoice(int Index, bool FellBackToDefault);
+/// <param name="UsedSpec">使った指定 (指定のデバイスが見つからず代わりのデバイスにしたときは、その代わりの指定)</param>
+public sealed record DeviceChoice(int Index, string UsedSpec);

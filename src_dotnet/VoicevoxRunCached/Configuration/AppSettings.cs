@@ -147,9 +147,13 @@ public class AudioSettings
     public string OutputDevice { get; set; } = "-1";
 
     /// <summary>
-    /// 指定の再生デバイスが見つからないとき、エラーにせず OS 既定で鳴らす。
+    /// 指定の再生デバイスが見つからないときに、代わりに探すデバイス (上から順。書き方は <see cref="OutputDevice"/> と同じ)。
+    /// 最後に <c>-1</c> を書けば、どれも無いとき OS 既定で鳴る。
     /// </summary>
-    public bool FallbackToDefaultDevice { get; set; }
+    /// <remarks>
+    /// 初期値を入れてはいけない (ConfigurationBinder が既存の要素に追記するため)。
+    /// </remarks>
+    public string[] FallbackDevices { get; set; } = [];
 
     public double Volume { get; set; } = 1.0;
     public bool PrepareDevice { get; set; } = false;

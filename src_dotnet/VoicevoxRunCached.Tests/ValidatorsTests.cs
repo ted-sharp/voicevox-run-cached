@@ -193,8 +193,9 @@ public class ValidatorsTests
     public async Task AudioSettings_OutputDevice(string device, bool expected)
     {
         var validator = new AudioSettingsValidator();
-        var result = validator.Validate(new AudioSettings { OutputDevice = device });
-        await Assert.That(result.IsValid).IsEqualTo(expected);
+        await Assert.That(validator.Validate(new AudioSettings { OutputDevice = device }).IsValid).IsEqualTo(expected);
+        // 代わりのデバイスも同じ書き方
+        await Assert.That(validator.Validate(new AudioSettings { FallbackDevices = ["-1", device] }).IsValid).IsEqualTo(expected);
     }
 
     [Test]

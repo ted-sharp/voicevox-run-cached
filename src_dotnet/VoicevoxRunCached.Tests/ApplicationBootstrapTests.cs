@@ -100,7 +100,7 @@ public class ApplicationBootstrapTests
     public async Task SpeakerDevices_IsLoaded()
     {
         var dir = CreateConfigDirectory("""
-            { "Audio": { "OutputDevice": 2, "FallbackToDefaultDevice": true, "SpeakerDevices": [
+            { "Audio": { "OutputDevice": 2, "FallbackDevices": ["Headphones", -1], "SpeakerDevices": [
                 { "Engine": "Voicevox", "Speaker": "3", "Device": 1 },
                 { "Engine": "voicepeak", "Speaker": "Frimomen", "Device": "Jabra" }
             ] } }
@@ -116,7 +116,7 @@ public class ApplicationBootstrapTests
             await Assert.That(settings.Audio.SpeakerDevices[1].Engine).IsEqualTo(SpeechEngineKind.Voicepeak);
             await Assert.That(settings.Audio.SpeakerDevices[1].Device).IsEqualTo("Jabra");
             await Assert.That(settings.Audio.OutputDevice).IsEqualTo("2");
-            await Assert.That(settings.Audio.FallbackToDefaultDevice).IsTrue();
+            await Assert.That(settings.Audio.FallbackDevices).IsEquivalentTo(["Headphones", "-1"]);
         }
         finally
         {

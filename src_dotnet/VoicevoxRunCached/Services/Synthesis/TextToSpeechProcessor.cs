@@ -98,17 +98,18 @@ public class TextToSpeechProcessor
     }
 
     /// <summary>
-    /// 再生デバイスを決める (指定が見つからなければ、<see cref="AudioSettings.FallbackToDefaultDevice"/> なら OS 既定)。
+    /// 再生デバイスを決める (指定が見つからなければ <see cref="AudioSettings.FallbackDevices"/> を順に探す)。
     /// ロックを待つ前に呼ぶ (理由は <see cref="OutputDeviceSelector.ToIndex"/>)。
     /// </summary>
     private int ChooseDevice(VoiceRequest request, string? deviceOverride)
     {
         var spec = OutputDeviceSelector.Resolve(_audioSettings, request, deviceOverride);
         var names = WaveOutDevices.List().Select(d => d.Name).ToList();
-        var choice = OutputDeviceSelector.ToIndex(spec, names, _audioSettings.FallbackToDefaultDevice);
-        if (choice.FellBackToDefault)
+        var choice = OutputDeviceSelector.ToIndex(spec, _audioSettings.FallbackDevices, names);
+        if (choice.UsedSpec != spec)
         {
-            _logger.LogWarning("再生デバイス \"{Device}\" が見つからないため、OS 既定のデバイスで鳴らします", spec);
+            _logger.LogWarning("再生デバイス {Device} が見つからないため、代わりのデバイス {Fallback} で鳴らします",
+                OutputDeviceSelector.DescribeSpec(spec), OutputDeviceSelector.DescribeSpec(choice.UsedSpec));
         }
         return choice.Index;
     }

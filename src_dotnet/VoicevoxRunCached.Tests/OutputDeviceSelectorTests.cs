@@ -86,15 +86,15 @@ public class OutputDeviceSelectorTests
     [Arguments("スピーカー (Senary Audio)", 2)]
     public async Task ToIndex_FindsDevice(string spec, int expected)
     {
-        var choice = OutputDeviceSelector.ToIndex(spec, Names, fallbackToDefault: false);
+        var choice = OutputDeviceSelector.ToIndex(spec, [], Names);
 
-        await Assert.That(choice).IsEqualTo(new DeviceChoice(expected, FellBackToDefault: false));
+        await Assert.That(choice).IsEqualTo(new DeviceChoice(expected, spec));
     }
 
     [Test]
     public async Task ToIndex_OsDefault_ExistsWithoutDevices()
     {
-        await Assert.That(OutputDeviceSelector.ToIndex("-1", [], fallbackToDefault: false).Index).IsEqualTo(-1);
+        await Assert.That(OutputDeviceSelector.ToIndex("-1", [], []).Index).IsEqualTo(-1);
     }
 
     [Test]
@@ -106,7 +106,7 @@ public class OutputDeviceSelectorTests
         // スタックトレース付きの終了コード 1 になっていた
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
         {
-            OutputDeviceSelector.ToIndex(spec, Names, fallbackToDefault: false);
+            OutputDeviceSelector.ToIndex(spec, [], Names);
             return Task.CompletedTask;
         });
 
@@ -117,24 +117,52 @@ public class OutputDeviceSelectorTests
     }
 
     [Test]
-    [Arguments("4")]
-    [Arguments("nothing")]
-    public async Task ToIndex_MissingWithFallback_UsesOsDefault(string spec)
+    public async Task ToIndex_Missing_TriesFallbacksInOrder()
     {
-        var choice = OutputDeviceSelector.ToIndex(spec, Names, fallbackToDefault: true);
+        // 見つからない候補は飛ばし、代わりのデバイスを上から探して最初に見つかったものを使う
+        var choice = OutputDeviceSelector.ToIndex("nothing", ["9", "dell", "jabra"], Names);
 
-        await Assert.That(choice).IsEqualTo(new DeviceChoice(-1, FellBackToDefault: true));
+        await Assert.That(choice).IsEqualTo(new DeviceChoice(1, "dell"));
     }
 
     [Test]
-    [Arguments(false)]
-    [Arguments(true)]
-    public async Task ToIndex_Ambiguous_FailsEvenWithFallback(bool fallbackToDefault)
+    public async Task ToIndex_Found_IgnoresFallbacks()
     {
-        // どれを鳴らすか決められないのは書き方の問題なので、OS 既定に逃がさずエラーにする
+        await Assert.That(OutputDeviceSelector.ToIndex("jabra", ["dell"], Names)).IsEqualTo(new DeviceChoice(3, "jabra"));
+    }
+
+    [Test]
+    public async Task ToIndex_OsDefaultAsLastFallback_IsUsedWhenNothingElseFound()
+    {
+        // -1 は常にあるので、最後に書けばどれも無いとき OS 既定で鳴る
+        var choice = OutputDeviceSelector.ToIndex("nothing", ["usb headset", "-1"], Names);
+
+        await Assert.That(choice).IsEqualTo(new DeviceChoice(-1, "-1"));
+    }
+
+    [Test]
+    public async Task ToIndex_FallbacksNotFound_FailsListingCandidates()
+    {
         var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
         {
-            OutputDeviceSelector.ToIndex("senary", Names, fallbackToDefault);
+            OutputDeviceSelector.ToIndex("nothing", ["9", "usb headset"], Names);
+            return Task.CompletedTask;
+        });
+
+        await Assert.That(ex!.ErrorCode).IsEqualTo(ErrorCodes.Audio.OutputDeviceNotFound);
+        await Assert.That(ex.UserMessage).Contains("\"nothing\" も、代わりのデバイス (9 番, \"usb headset\") も見つかりません");
+    }
+
+    [Test]
+    [Arguments("senary", new string[0])]
+    // 代わりのデバイスで複数に合っても、次の候補に進まずエラーにする
+    [Arguments("nothing", new[] { "senary", "-1" })]
+    public async Task ToIndex_Ambiguous_Fails(string spec, string[] fallbacks)
+    {
+        // どれを鳴らすか決められないのは書き方の問題なので、ほかのデバイスに逃がさずエラーにする
+        var ex = await Assert.ThrowsAsync<VoicevoxRunCachedException>(() =>
+        {
+            OutputDeviceSelector.ToIndex(spec, fallbacks, Names);
             return Task.CompletedTask;
         });
 
