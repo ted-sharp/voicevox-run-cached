@@ -1,6 +1,6 @@
 # VoicevoxRunCached リリースノート
 
-## Unreleased (3.1.1)
+## Unreleased (3.2.0)
 
 - CLI/コマンド:
   - 話者ごとに再生デバイスを選べる (`Audio.SpeakerDevices`)。`--device` で 1 回だけ指定もできる
