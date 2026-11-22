@@ -209,6 +209,7 @@ task hooks:install            # コミット時のチェック (.githooks) を�
 - 候補の各要素は番号 (-1 = OS 既定) かデバイス名の一部 (文字列。書き方は `OutputDeviceSelector.TryValidateSpec`)。`SpeakerDevices[].Devices` は空なら設定エラー — `ValidatorsTests.AudioSettings_SpeakerDevicesWithoutDevices_Fails`
 - WaveOut の index は再生するときにロックの前で `OutputDeviceSelector.ToIndex` が決める (候補を上から探す。名前全体の一致を優先、複数に合えば次に進まず `AUDIO_009`、どれも無ければ `AUDIO_008`。`CommandRouter` はスタックトレースなしの Warning) — `OutputDeviceSelectorTests.ToIndex_*`
 - 除外デバイス (`Audio.ExcludedDevices`。名前だけで番号は設定エラー) は候補に当たっても次に進む。OS 既定 (-1) が除外デバイスでも飛ばす (名前は `WaveOutDevices.OsDefaultName`。取れなければ -1 を使う)。`devices --speak` も読み上げない — `OutputDeviceSelectorTests.ToIndex_Excluded*` / `ToIndex_OsDefault*`
+- 冒頭の無音 (`Audio.DeviceOptions[].LeadingSilenceMs`) は、鳴らすデバイスの名前 (-1 は OS 既定の名前) に合う最初の項目で決め (`OutputDeviceSelector.FindOptions`)、`AudioPlayer` が最初の音 (本編かフィラー) にだけ本編と同じ流れで足す (別の流れで先に鳴らすと Bluetooth がまた休む) — `OutputDeviceSelectorTests.FindOptions_MatchesDeviceName`
 - 古い `Audio.OutputDevice` が残っていたら設定エラー (`ApplicationBootstrap.RejectRemovedSettings`) — `ApplicationBootstrapTests.RemovedOutputDevice_IsConfigurationError`
 - バッファは `WavePlayerManager.GetBufferMilliseconds` で換算する。CA1416 を避けるため `Directory.Build.props` で全プロジェクトを Windows 専用と宣言している
 - warm-up は `AudioDeviceManager.StartPreparation` で始める (コンストラクタで始めない)。読み上げは `PlaybackLock` を取った直後に `AudioPlayer.BeginDevicePreparation` (先に始めると同じデバイスの再生に重なる)。デバイスを切り替えるとき前の warm-up を同期で待たない
