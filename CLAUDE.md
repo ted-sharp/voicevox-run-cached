@@ -43,6 +43,8 @@ task format:check             # 整形差分の検証のみ
 task check                    # format → Release build → test (コミット前の確認)
 task run -- "こんにちは" -s 0  # サンプル実行 (エンジンはアプリが自動起動)
 task run:test                 # appsettings.json の Test.Message で実行
+task devices                  # 再生デバイスの番号の一覧
+task devices:speak -- -s 3    # 各デバイスからその番号を読み上げる
 task publish                  # standalone EXE を src_dotnet/publish に出力
 task publish:zip              # 同上 + バージョン付き ZIP
 task install                  # publish して %LOCALAPPDATA%\Programs\VoicevoxRunCached に入れる (INSTALL_DIR=... で変更。設定・cache・logs は残す)

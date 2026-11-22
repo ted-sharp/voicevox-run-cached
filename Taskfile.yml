@@ -69,6 +69,16 @@ tasks:
     cmds:
       - dotnet run --project {{.PROJ}} -- --test {{.CLI_ARGS}}
 
+  devices:
+    desc: 再生デバイスの番号の一覧
+    cmds:
+      - dotnet run --project {{.PROJ}} -- devices {{.CLI_ARGS}}
+
+  devices:speak:
+    desc: 各デバイスからその番号を読み上げる (例 task devices:speak -- -s 3)
+    cmds:
+      - dotnet run --project {{.PROJ}} -- devices --speak {{.CLI_ARGS}}
+
   publish:
     desc: standalone EXE を src_dotnet/publish/VoicevoxRunCached に出力
     cmds:
